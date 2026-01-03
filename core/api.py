@@ -1035,6 +1035,8 @@ async def generate_cloud_uri(
         name = request.name
         user_id = request.user_id
         expiry_days = request.expiry_days
+        is_user_token_flow = False  # Will be set to True if user is using existing app token
+        source_app_id: Optional[str] = None  # Set when using existing token to inherit org_id
 
         is_admin_call = _validate_admin_secret(admin_secret)
 
@@ -1057,25 +1059,42 @@ async def generate_cloud_uri(
                 # Decode the token to ensure it's valid
                 payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
 
-                # Only allow users to create apps for themselves (or admin)
                 token_user_id = payload.get("user_id")
+                token_app_id = payload.get("app_id")
                 token_permissions = payload.get("permissions", [])
-                if not user_id:
-                    user_id = token_user_id
-                if not user_id:
+
+                if not token_user_id:
                     raise HTTPException(status_code=401, detail="Token is missing user_id")
-                if not (token_user_id == user_id or "admin" in token_permissions):
-                    raise HTTPException(
-                        status_code=403,
-                        detail="You can only create apps for your own account unless you have admin permissions",
-                    )
+
+                if token_app_id:
+                    # Token has app_id - this is a user with an existing token creating a new app
+                    # They can ONLY provide name; everything else is derived or auto-generated
+                    is_user_token_flow = True
+                    source_app_id = token_app_id  # Store to look up org_id later
+                    user_id = token_user_id
+                    app_id = str(uuid.uuid4())  # Always generate new app_id
+                    expiry_days = 5475  # 15 years - default expiry for user-created apps
+                else:
+                    is_user_token_flow = False
+                    # Token has no app_id - this is cloud-ui backend with a fresh token
+                    # Allow all fields from request
+                    if not user_id:
+                        user_id = token_user_id
+                    if not (token_user_id == user_id or "admin" in token_permissions):
+                        raise HTTPException(
+                            status_code=403,
+                            detail="You can only create apps for your own account unless you have admin permissions",
+                        )
+                    if not app_id:
+                        app_id = str(uuid.uuid4())
             except jwt.InvalidTokenError as e:
                 raise HTTPException(status_code=401, detail=str(e))
         elif not user_id:
             raise HTTPException(status_code=400, detail="user_id is required when using admin secret")
-
-        if not app_id:
-            app_id = str(uuid.uuid4())
+        else:
+            # Admin call - generate app_id if not provided
+            if not app_id:
+                app_id = str(uuid.uuid4())
 
         logger.debug(
             "Generating cloud URI for app_id=%s, name=%s, user_id=%s (admin_header=%s)",
@@ -1095,14 +1114,37 @@ async def generate_cloud_uri(
         # Clean name
         name = name.replace(" ", "_").lower()
 
+        # Determine org_id and created_by_user_id
+        inherited_org_id: Optional[str] = None
+        inherited_created_by: Optional[str] = None
+
+        if is_user_token_flow:
+            # Look up the source app to inherit org_id
+            source_app = await user_service.get_app_by_id(source_app_id)
+            if source_app:
+                inherited_org_id = source_app.get("org_id")
+                inherited_created_by = source_app.get("created_by_user_id")
+                logger.debug(
+                    "Inheriting org_id=%s from source app %s for new app %s",
+                    inherited_org_id,
+                    source_app_id,
+                    app_id,
+                )
+            else:
+                logger.warning(
+                    "Source app %s not found in apps table - new app %s will have no org association",
+                    source_app_id,
+                    app_id,
+                )
+
         # Check if the user is within app limit and generate URI
         uri = await user_service.generate_cloud_uri(
             user_id,
             app_id,
             name,
             expiry_days,
-            org_id=request.org_id,
-            created_by_user_id=request.created_by_user_id,
+            org_id=inherited_org_id if is_user_token_flow else request.org_id,
+            created_by_user_id=inherited_created_by if is_user_token_flow else request.created_by_user_id,
             is_admin_call=is_admin_call,
         )
 

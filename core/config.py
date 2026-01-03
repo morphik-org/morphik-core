@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     dev_user_id: str = "dev_user"
     ADMIN_SERVICE_SECRET: Optional[str] = None
 
+    # Control plane sync (for dedicated clusters to sync apps back to cloud-ui)
+    CONTROL_PLANE_URL: Optional[str] = None  # e.g., https://morphik.ai
+    CONTROL_PLANE_SECRET: Optional[str] = None  # Secret to authenticate with control plane
+
     # Registered models configuration
     REGISTERED_MODELS: Dict[str, Dict[str, Any]] = {}
 
