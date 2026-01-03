@@ -3,6 +3,7 @@ import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+import httpx
 import jwt
 from sqlalchemy import or_, select
 
@@ -242,7 +243,7 @@ class UserService:
         user_id: str,
         app_id: str,
         name: str,
-        expiry_days: int = 30,
+        expiry_days: int = 5475,  # 15 years
         *,
         org_id: Optional[str] = None,
         created_by_user_id: Optional[str] = None,
@@ -333,6 +334,16 @@ class UserService:
             uri=uri,
         )
 
+        # Sync to control plane if configured (for dedicated clusters)
+        await self._sync_app_to_control_plane(
+            app_id=app_id,
+            user_id=user_id,
+            org_id=org_id,
+            created_by_user_id=created_by_user_id,
+            name=name,
+            uri=uri,
+        )
+
         return uri
 
     async def _app_name_exists(
@@ -398,6 +409,23 @@ class UserService:
                 app_record.uri = uri
             await session.commit()
 
+    async def get_app_by_id(self, app_id: str) -> Optional[Dict[str, Any]]:
+        """Get an app record by its app_id."""
+        from core.models.apps import AppModel  # Local import to avoid cycles
+
+        async with self.db.async_session() as session:
+            app_record = await session.get(AppModel, app_id)
+            if app_record is None:
+                return None
+            return {
+                "app_id": app_record.app_id,
+                "org_id": app_record.org_id,
+                "user_id": str(app_record.user_id) if app_record.user_id else None,
+                "created_by_user_id": app_record.created_by_user_id,
+                "name": app_record.name,
+                "uri": app_record.uri,
+            }
+
     async def list_apps(
         self,
         *,
@@ -458,3 +486,62 @@ class UserService:
         except (ValueError, TypeError):
             logger.debug("Value %s is not a valid UUID – storing NULL in apps.user_id", value)
             return None
+
+    async def _sync_app_to_control_plane(
+        self,
+        *,
+        app_id: str,
+        user_id: str,
+        org_id: Optional[str],
+        created_by_user_id: Optional[str],
+        name: str,
+        uri: str,
+    ) -> None:
+        """
+        Sync app record to control plane (cloud-ui) for dashboard visibility.
+
+        Only needed when users create apps directly via API/SDK on dedicated clusters
+        (cloud-ui already writes to its own DB for UI-initiated flows).
+
+        If CONTROL_PLANE_URL is not configured, this is a no-op.
+
+        On failure, logs a warning but does NOT fail the request.
+        """
+        if not self.settings.CONTROL_PLANE_URL:
+            return  # Not configured - dedicated-only cluster
+
+        if not self.settings.CONTROL_PLANE_SECRET:
+            logger.warning("CONTROL_PLANE_URL is set but CONTROL_PLANE_SECRET is missing")
+            return
+
+        sync_url = f"{self.settings.CONTROL_PLANE_URL.rstrip('/')}/api/internal/sync-app"
+
+        payload = {
+            "app_id": app_id,
+            "user_id": user_id,
+            "org_id": org_id,
+            "created_by_user_id": created_by_user_id,
+            "name": name,
+            "uri": uri,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    sync_url,
+                    json=payload,
+                    headers={"X-Control-Plane-Secret": self.settings.CONTROL_PLANE_SECRET},
+                )
+                if response.status_code == 200:
+                    logger.info("Synced app %s to control plane", app_id)
+                else:
+                    logger.warning(
+                        "Control plane sync returned %s for app %s: %s",
+                        response.status_code,
+                        app_id,
+                        response.text[:200],
+                    )
+        except httpx.TimeoutException:
+            logger.warning("Control plane sync timed out for app %s", app_id)
+        except Exception as e:
+            logger.warning("Control plane sync failed for app %s: %s", app_id, e)
