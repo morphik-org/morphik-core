@@ -383,7 +383,7 @@ def get_settings() -> Settings:
             "SECRET_MANAGER": secret_manager,
             "API_DOMAIN": api_domain,
             "MORPHIK_EMBEDDING_API_DOMAIN": embedding_api_endpoints,
-            "CONTROL_PLANE_URL": config["morphik"].get("control_plane_url", "https://morphik.ai"),
+            "CONTROL_PLANE_URL": config["morphik"].get("control_plane_url", "https://www.morphik.ai"),
             "CONTROL_PLANE_SECRET": os.environ.get("CONTROL_PLANE_SECRET"),
         }
     )
