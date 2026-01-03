@@ -402,7 +402,7 @@ class GenerateUriRequest(BaseModel):
         None,
         description="Optional owner user ID. If omitted, derived from the bearer token.",
     )
-    expiry_days: int = Field(default=3650, description="Number of days until the token expires")
+    expiry_days: int = Field(default=5475, description="Number of days until the token expires (default: 15 years)")
     org_id: Optional[str] = Field(None, description="Optional organization identifier for multi-tenant control planes")
     created_by_user_id: Optional[str] = Field(
         None,
