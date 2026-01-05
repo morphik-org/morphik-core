@@ -134,6 +134,9 @@ class Settings(BaseSettings):
     # Colpali embedding mode: off, local, or api
     COLPALI_MODE: Literal["off", "local", "api"] = "local"
 
+    # Parser configuration
+    PARSER_MODE: Literal["local", "api"] = "local"
+
     # Mode configuration
     MODE: Literal["cloud", "self_hosted"] = "cloud"
     SECRET_MANAGER: Literal["env", "infisical"] = "env"
@@ -379,6 +382,7 @@ def get_settings() -> Settings:
         {
             "ENABLE_COLPALI": config["morphik"]["enable_colpali"],
             "COLPALI_MODE": config["morphik"].get("colpali_mode", "local"),
+            "PARSER_MODE": config["morphik"].get("parser_mode", "local"),
             "MODE": config["morphik"].get("mode", "cloud"),
             "SECRET_MANAGER": secret_manager,
             "API_DOMAIN": api_domain,

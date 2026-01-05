@@ -148,9 +148,10 @@ enable_colpali = true
 mode = "self_hosted"  # "cloud" or "self_hosted"
 secret_manager = "env"  # "env" (default) or "infisical"
 api_domain = "api.morphik.ai"  # API domain for cloud URIs
-# ColPali API endpoints (used when colpali_mode = "api")
+# ColPali API endpoints (used when colpali_mode = "api" or parser_mode = "api")
 morphik_embedding_api_domain = ["https://embedding-api.morphik.ai"]
 colpali_mode = "api" # "off", "local", or "api"
+parser_mode = "api" # "local" or "api" - "api" offloads parsing to GPU servers
 
 [pdf_viewer]
 frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
