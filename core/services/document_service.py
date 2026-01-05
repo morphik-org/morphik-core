@@ -1512,9 +1512,10 @@ class DocumentService:
                     return False
             return False
 
-        def _convert_image_to_text(content_str: str) -> str:
-            """Convert an image chunk (base64 or data URI) to markdown text using Docling OCR.
+        async def _convert_image_to_text(content_str: str) -> str:
+            """Convert an image chunk (base64 or data URI) to markdown text using parser.
 
+            Uses the parser (local Docling or API) based on configuration.
             Returns the extracted markdown text, or empty string on failure.
             """
             try:
@@ -1526,31 +1527,9 @@ class DocumentService:
                     raw_b64 = content_str
                 image_bytes = base64.b64decode(raw_b64)
 
-                # Save to temp file and process with Docling
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                    tmp.write(image_bytes)
-                    tmp_path = tmp.name
-
-                try:
-                    from docling.datamodel.base_models import InputFormat
-                    from docling.datamodel.pipeline_options import PdfPipelineOptions
-                    from docling.document_converter import DocumentConverter, ImageFormatOption
-
-                    # Create converter with OCR enabled for images
-                    pipeline_options = PdfPipelineOptions()
-                    pipeline_options.do_ocr = True
-                    converter = DocumentConverter(
-                        format_options={
-                            InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options),
-                        }
-                    )
-                    result = converter.convert(tmp_path)
-                    return result.document.export_to_markdown()
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
+                # Use the parser (supports both local and API mode)
+                _, text = await self.parser.parse_file_to_text(image_bytes, "image.png")
+                return text
             except Exception as e:
                 logger.warning(f"Failed to convert image to text: {e}")
                 return ""
@@ -1583,9 +1562,9 @@ class DocumentService:
                     if not mime:
                         mime = inferred_mime
 
-            # Handle "text" output format: convert image to markdown text via Docling OCR
+            # Handle "text" output format: convert image to markdown text via parser
             if (output_format or "base64") == "text" and is_img:
-                extracted_text = _convert_image_to_text(chunk.content)
+                extracted_text = await _convert_image_to_text(chunk.content)
                 if extracted_text:
                     content_value = extracted_text
                     metadata["is_image"] = False  # Content is now text
