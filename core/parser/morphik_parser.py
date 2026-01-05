@@ -7,7 +7,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
+from httpx import AsyncClient, Timeout
 
+from core.config import get_settings
 from core.models.chunk import Chunk
 from core.parser.base_parser import BaseParser
 from core.parser.video.parse_video import VideoParser, load_config
@@ -200,13 +202,14 @@ class MorphikParser(BaseParser):
         anthropic_api_key: Optional[str] = None,
         frame_sample_rate: int = 1,
         use_contextual_chunking: bool = False,
-        settings: Optional[Any] = None,
     ):
         # Initialize basic configuration
         self._assemblyai_api_key = assemblyai_api_key
         self._anthropic_api_key = anthropic_api_key
         self.frame_sample_rate = frame_sample_rate
-        self.settings = settings
+
+        # Get settings from config
+        self.settings = get_settings()
 
         # Initialize chunker based on configuration
         if use_contextual_chunking:
@@ -216,6 +219,17 @@ class MorphikParser(BaseParser):
 
         # Initialize logger
         self.logger = logging.getLogger(__name__)
+
+        # Setup for API mode parsing
+        self._parse_api_endpoints: Optional[List[str]] = None
+        self._parse_api_key: Optional[str] = None
+        if getattr(self.settings, "PARSER_MODE", "local") == "api":
+            if self.settings.MORPHIK_EMBEDDING_API_DOMAIN:
+                self._parse_api_endpoints = [
+                    f"{ep.rstrip('/')}/parse" for ep in self.settings.MORPHIK_EMBEDDING_API_DOMAIN
+                ]
+                self._parse_api_key = self.settings.MORPHIK_EMBEDDING_API_KEY
+                self.logger.info(f"Parser API mode enabled with {len(self._parse_api_endpoints)} endpoint(s)")
 
     @classmethod
     def _get_docling_converter(cls) -> DocumentConverter:
@@ -325,19 +339,33 @@ class MorphikParser(BaseParser):
 
         return chunks, len(file)
 
-    async def _parse_document(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
-        """Parse document using Docling, or read directly for plain text files."""
-        # For plain text files, read directly without parsing to preserve formatting
-        if self._is_plain_text_file(filename):
-            try:
-                text = file.decode("utf-8")
-            except UnicodeDecodeError:
-                # Fallback to latin-1 if utf-8 fails
-                text = file.decode("latin-1")
-            return {}, text
+    async def _parse_document_via_api(self, file: bytes, filename: str) -> str:
+        """Parse document via remote API (GPU server)."""
+        if not self._parse_api_endpoints or not self._parse_api_key:
+            raise RuntimeError("Parser API not configured")
 
-        # For complex formats (PDF, DOCX, PPTX, etc.), use Docling
-        # Save to temp file since Docling works with file paths
+        headers = {"Authorization": f"Bearer {self._parse_api_key}"}
+        timeout = Timeout(read=300.0, connect=30.0, write=60.0, pool=30.0)
+
+        last_error: Optional[Exception] = None
+        for endpoint in self._parse_api_endpoints:
+            try:
+                async with AsyncClient(timeout=timeout) as client:
+                    files = {"file": (filename, file)}
+                    data = {"filename": filename}
+                    resp = await client.post(endpoint, files=files, data=data, headers=headers)
+                    resp.raise_for_status()
+                    result = resp.json()
+                    return result.get("text", "")
+            except Exception as e:
+                self.logger.warning(f"Parse API call to {endpoint} failed: {e}")
+                last_error = e
+                continue
+
+        raise RuntimeError(f"All parse API endpoints failed. Last error: {last_error}")
+
+    async def _parse_document_local(self, file: bytes, filename: str) -> str:
+        """Parse document using local Docling."""
         suffix = os.path.splitext(filename)[1] or ".pdf"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_file.write(file)
@@ -346,25 +374,43 @@ class MorphikParser(BaseParser):
         try:
             converter = self._get_docling_converter()
             result = converter.convert(temp_path)
-
-            # Export to markdown format (preserves structure better than plain text)
             text = result.document.export_to_markdown()
 
-            # If no text extracted, log warning
             if not text.strip():
                 self.logger.warning(f"Docling returned no text for {filename}")
 
-            return {}, text
+            return text
         except Exception as e:
             self.logger.error(f"Docling parsing failed for {filename}: {e}")
-            # Return empty text on failure - let caller handle it
-            return {}, ""
+            return ""
         finally:
-            # Clean up temp file
             try:
                 os.unlink(temp_path)
             except OSError:
                 pass
+
+    async def _parse_document(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
+        """Parse document using Docling (local or API), or read directly for plain text files."""
+        # For plain text files, read directly without parsing
+        if self._is_plain_text_file(filename):
+            try:
+                text = file.decode("utf-8")
+            except UnicodeDecodeError:
+                text = file.decode("latin-1")
+            return {}, text
+
+        # For complex formats, use API if configured, otherwise local Docling
+        if self._parse_api_endpoints:
+            try:
+                text = await self._parse_document_via_api(file, filename)
+                return {}, text
+            except Exception as e:
+                self.logger.warning(f"API parsing failed, falling back to local: {e}")
+                text = await self._parse_document_local(file, filename)
+                return {}, text
+        else:
+            text = await self._parse_document_local(file, filename)
+            return {}, text
 
     async def parse_file_to_text(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Parse file content into text based on file type"""
