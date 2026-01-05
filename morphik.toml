@@ -60,7 +60,7 @@ azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZUR
 #### Component configurations ####
 
 [completion]
-model = "openai_gpt4-1-mini" #"openai_gpt4o"  # Reference to a key in registered_models
+model = "gemini_flash_3" #"openai_gpt4o"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.3
 
