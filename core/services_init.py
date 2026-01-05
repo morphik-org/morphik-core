@@ -84,7 +84,6 @@ parser = MorphikParser(
     assemblyai_api_key=settings.ASSEMBLYAI_API_KEY,
     anthropic_api_key=settings.ANTHROPIC_API_KEY,
     use_contextual_chunking=settings.USE_CONTEXTUAL_CHUNKING,
-    settings=settings,
 )
 
 embedding_model = LiteLLMEmbeddingModel(model_key=settings.EMBEDDING_MODEL)
