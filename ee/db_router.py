@@ -22,6 +22,11 @@ try:
 except ImportError:  # pragma: no cover
     FastMultiVectorStore = None  # type: ignore
 
+try:
+    from core.vector_store.local_multivector_store import LocalMultiVectorStore
+except ImportError:  # pragma: no cover
+    LocalMultiVectorStore = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["get_database_for_app", "get_vector_store_for_app", "get_multi_vector_store_for_app"]
@@ -31,6 +36,7 @@ _CONTROL_PLANE_DB: Optional[PostgresDatabase] = None
 _CONTROL_PLANE_VSTORE: Optional["PGVectorStore"] = None
 _CONTROL_PLANE_MVSTORE: Optional["MultiVectorStore"] = None
 _CONTROL_PLANE_FAST_MVSTORE: Optional["FastMultiVectorStore"] = None
+_CONTROL_PLANE_LOCAL_MVSTORE: Optional["LocalMultiVectorStore"] = None
 
 
 async def get_database_for_app(app_id: str | None) -> PostgresDatabase:
@@ -68,7 +74,7 @@ async def get_vector_store_for_app(app_id: str | None):
 
 
 async def get_multi_vector_store_for_app(app_id: str | None):
-    """Return the configured multivector store (FastMultiVectorStore or MultiVectorStore)."""
+    """Return the configured multivector store (FastMultiVectorStore, LocalMultiVectorStore, or MultiVectorStore)."""
     settings = get_settings()
 
     if settings.MULTIVECTOR_STORE_PROVIDER == "morphik":
@@ -89,6 +95,30 @@ async def get_multi_vector_store_for_app(app_id: str | None):
             logger.info("Initialized shared FastMultiVectorStore")
 
         return _CONTROL_PLANE_FAST_MVSTORE
+
+    if settings.MULTIVECTOR_STORE_PROVIDER == "local":
+        if LocalMultiVectorStore is None:
+            return None
+
+        global _CONTROL_PLANE_LOCAL_MVSTORE  # noqa: PLW0603
+
+        if _CONTROL_PLANE_LOCAL_MVSTORE is None:
+            store = LocalMultiVectorStore(
+                uri=settings.POSTGRES_URI,
+                chroma_host=settings.CHROMA_HOST,
+                chroma_port=settings.CHROMA_PORT,
+                chroma_ssl=settings.CHROMA_SSL,
+                namespace="public",
+            )
+            await asyncio.to_thread(store.initialize)
+            _CONTROL_PLANE_LOCAL_MVSTORE = store
+            logger.info(
+                "Initialized shared LocalMultiVectorStore (ChromaDB) at %s:%d",
+                settings.CHROMA_HOST,
+                settings.CHROMA_PORT,
+            )
+
+        return _CONTROL_PLANE_LOCAL_MVSTORE
 
     if MultiVectorStore is None:
         return None

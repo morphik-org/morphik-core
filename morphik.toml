@@ -121,7 +121,7 @@ region = "us-east-2"
 bucket_name = "morphik-s3-storage"
 storage_path = "morphik-storage"
 cache_enabled = true
-cache_max_size_gb = 10
+cache_max_size_gb = 40
 cache_path = "./storage/cache"
 s3_upload_concurrency = 16
 
@@ -130,6 +130,13 @@ provider = "pgvector"
 
 [multivector_store]
 provider = "morphik" #  "postgres" #   (morphik is faster, but also proprietary)
+
+# [multivector_store]
+# provider = "local"
+# ChromaDB settings (only used when provider = "local")
+# chroma_host = "localhost"
+# chroma_port = 5353
+# chroma_ssl = false
 
 [redis]
 url = "redis://localhost:6379/0"  # Full Redis URL (takes precedence over host/port)

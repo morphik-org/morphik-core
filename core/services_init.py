@@ -28,6 +28,7 @@ from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
 from core.vector_store.fast_multivector_store import FastMultiVectorStore
+from core.vector_store.local_multivector_store import LocalMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
 
@@ -154,6 +155,19 @@ else:
                 colpali_vector_store = FastMultiVectorStore(
                     uri=settings.POSTGRES_URI, tpuf_api_key=settings.TURBOPUFFER_API_KEY, namespace="public"
                 )
+            elif settings.MULTIVECTOR_STORE_PROVIDER == "local":
+                colpali_vector_store = LocalMultiVectorStore(
+                    uri=settings.POSTGRES_URI,
+                    chroma_host=settings.CHROMA_HOST,
+                    chroma_port=settings.CHROMA_PORT,
+                    chroma_ssl=settings.CHROMA_SSL,
+                    namespace="public",
+                )
+                logger.info(
+                    "Initialized LocalMultiVectorStore (ChromaDB) at %s:%d",
+                    settings.CHROMA_HOST,
+                    settings.CHROMA_PORT,
+                )
             else:
                 colpali_vector_store = MultiVectorStore(
                     uri=settings.POSTGRES_URI, enable_external_storage=True, auto_initialize=False
@@ -182,6 +196,19 @@ else:
                     raise ValueError("TURBOPUFFER_API_KEY is required when using morphik multivector store provider")
                 colpali_vector_store = FastMultiVectorStore(
                     uri=settings.POSTGRES_URI, tpuf_api_key=settings.TURBOPUFFER_API_KEY, namespace="public"
+                )
+            elif settings.MULTIVECTOR_STORE_PROVIDER == "local":
+                colpali_vector_store = LocalMultiVectorStore(
+                    uri=settings.POSTGRES_URI,
+                    chroma_host=settings.CHROMA_HOST,
+                    chroma_port=settings.CHROMA_PORT,
+                    chroma_ssl=settings.CHROMA_SSL,
+                    namespace="public",
+                )
+                logger.info(
+                    "Initialized LocalMultiVectorStore (ChromaDB) at %s:%d",
+                    settings.CHROMA_HOST,
+                    settings.CHROMA_PORT,
                 )
             else:
                 colpali_vector_store = MultiVectorStore(

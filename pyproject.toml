@@ -61,6 +61,7 @@ dependencies = [
     "pdf2image>=1.16.0",
     "uvicorn>=0.34.2",
     "weasyprint>=61.2",
+    "chromadb>=1.0.0",
     # --- profiling & analysis ---
     "yappi>=1.6.0",
     "snakeviz>=2.2.0",
@@ -74,6 +75,7 @@ dependencies = [
     "fastkmeans",
     "morphik-rust",
     "opencv-python-headless>=4.12.0.88",
+    "fixed-dimensional-encoding>=0.1.0",
 ]
 
 [dependency-groups]

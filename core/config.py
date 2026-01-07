@@ -125,9 +125,14 @@ class Settings(BaseSettings):
     VECTOR_STORE_DATABASE_NAME: Optional[str] = None
 
     # Multivector store configuration
-    MULTIVECTOR_STORE_PROVIDER: Literal["postgres", "morphik"] = "postgres"
+    MULTIVECTOR_STORE_PROVIDER: Literal["postgres", "morphik", "local"] = "postgres"
     # Enable dual ingestion to both fast and slow multivector stores during migration
     ENABLE_DUAL_MULTIVECTOR_INGESTION: bool = False
+
+    # ChromaDB configuration (for local multivector store)
+    CHROMA_HOST: str = "localhost"
+    CHROMA_PORT: int = 8000
+    CHROMA_SSL: bool = False
 
     # Colpali configuration
     ENABLE_COLPALI: bool
@@ -481,5 +486,11 @@ def get_settings() -> Settings:
                     em.format(missing_value="TURBOPUFFER_API_KEY", field="multivector_store.provider", value="morphik")
                 )
             settings_dict["TURBOPUFFER_API_KEY"] = os.environ["TURBOPUFFER_API_KEY"]
+
+        # Load ChromaDB settings if using local provider
+        if settings_dict["MULTIVECTOR_STORE_PROVIDER"] == "local":
+            settings_dict["CHROMA_HOST"] = config["multivector_store"].get("chroma_host", "localhost")
+            settings_dict["CHROMA_PORT"] = config["multivector_store"].get("chroma_port", 8000)
+            settings_dict["CHROMA_SSL"] = config["multivector_store"].get("chroma_ssl", False)
 
     return Settings(**settings_dict)
