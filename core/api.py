@@ -1242,12 +1242,40 @@ async def list_cloud_apps(
 @app.delete("/apps")
 async def delete_cloud_app(
     app_name: str = Query(..., description="Name of the application to delete"),
-    auth: AuthContext = Depends(verify_token),
+    authorization: Optional[str] = Header(default=None),
+    admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
 ) -> Dict[str, Any]:
     """Delete all resources associated with a given cloud application."""
 
-    user_id = auth.user_id
-    logger.info(f"Deleting app {app_name} for user {user_id}")
+    # Check if admin secret is provided and valid
+    is_admin_call = False
+    try:
+        is_admin_call = _validate_admin_secret(admin_secret)
+    except HTTPException:
+        # Invalid admin secret provided
+        raise
+
+    user_id: Optional[str] = None
+
+    if not is_admin_call:
+        # Require Bearer token if no admin secret
+        if not authorization:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+        token = authorization[7:]
+        try:
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            user_id = payload.get("user_id")
+        except jwt.InvalidTokenError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    logger.info(f"Deleting app {app_name} for user {user_id} (admin_call={is_admin_call})")
 
     from sqlalchemy import delete as sa_delete
     from sqlalchemy import select
@@ -1257,7 +1285,12 @@ async def delete_cloud_app(
 
     # 1) Resolve app_id from apps table ----------------------------------
     async with document_service.db.async_session() as session:
-        stmt = select(AppModel).where(AppModel.user_id == user_id, AppModel.name == app_name)
+        if is_admin_call:
+            # Admin call: look up by name only
+            stmt = select(AppModel).where(AppModel.name == app_name)
+        else:
+            # User call: look up by user_id and name
+            stmt = select(AppModel).where(AppModel.user_id == user_id, AppModel.name == app_name)
         res = await session.execute(stmt)
         app_row = res.scalar_one_or_none()
 
@@ -1265,6 +1298,8 @@ async def delete_cloud_app(
         raise HTTPException(status_code=404, detail="Application not found")
 
     app_id = app_row.app_id
+    # For admin calls, get user_id from the app record
+    effective_user_id = user_id if user_id else str(app_row.user_id)
 
     # ------------------------------------------------------------------
     # Create an AuthContext scoped to *this* application so that the
@@ -1274,7 +1309,7 @@ async def delete_cloud_app(
     # ------------------------------------------------------------------
 
     app_auth = AuthContext(
-        user_id=auth.user_id,
+        user_id=effective_user_id,
         app_id=app_id,
     )
 
@@ -1331,7 +1366,7 @@ async def delete_cloud_app(
     # 5) Update user_limits --------------------------------------------
     user_service = UserService()
     await user_service.initialize()
-    await user_service.unregister_app(user_id, app_id)
+    await user_service.unregister_app(effective_user_id, app_id)
 
     return {
         "app_name": app_name,
