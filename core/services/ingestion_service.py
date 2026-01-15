@@ -1386,6 +1386,31 @@ class IngestionService:
         dpi = settings.COLPALI_PDF_DPI
 
         try:
+            # Check document density to decide processing strategy
+            # High-density docs (large images per page) need batched processing to avoid OOM
+            pdf_document = fitz.open("pdf", file_content)
+            try:
+                page_count = len(pdf_document)
+            finally:
+                pdf_document.close()
+
+            file_size_mb = len(file_content) / (1024 * 1024)
+            density_mb_per_page = file_size_mb / page_count if page_count > 0 else 0
+
+            # High-density threshold: 1.0 MB per page indicates large images/drawings
+            # These can cause OOM when all pages are rendered simultaneously
+            HIGH_DENSITY_THRESHOLD_MB = 1.0
+            HIGH_DENSITY_BATCH_SIZE = 2  # Process 2 pages at a time for high-density docs
+
+            if density_mb_per_page > HIGH_DENSITY_THRESHOLD_MB:
+                logger.info(
+                    f"High-density PDF detected: {file_size_mb:.2f}MB / {page_count} pages = "
+                    f"{density_mb_per_page:.2f}MB/page (threshold: {HIGH_DENSITY_THRESHOLD_MB}). "
+                    f"Using batched rendering with batch_size={HIGH_DENSITY_BATCH_SIZE}."
+                )
+                return self._render_pdf_with_pymupdf_batched(file_content, dpi, batch_size=HIGH_DENSITY_BATCH_SIZE)
+
+            # Normal processing for low-density PDFs
             images_with_bytes = self._render_pdf_with_pymupdf(file_content, dpi, include_bytes=True)
             logger.info(f"PyMuPDF processed {len(images_with_bytes)} pages")
             return [
@@ -1406,6 +1431,52 @@ class IngestionService:
             except Exception as fallback_error:
                 logger.error(f"pdf2image fallback failed: {fallback_error}")
                 raise PdfConversionError(f"Unable to convert PDF to images: {fallback_error}") from fallback_error
+
+    def _render_pdf_with_pymupdf_batched(self, file_content: bytes, dpi: int, batch_size: int = 2) -> List[Chunk]:
+        """
+        Render a high-density PDF in batches to limit memory usage.
+
+        For PDFs with large images per page (e.g., architectural drawings, high-res scans),
+        rendering all pages simultaneously can cause OOM. This method processes pages in
+        small batches, releasing pixmap memory between batches.
+
+        Args:
+            file_content: Raw PDF bytes
+            dpi: Resolution for rendering
+            batch_size: Number of pages to render simultaneously (default: 2)
+
+        Returns:
+            List of Chunk objects for each page
+        """
+        all_chunks: List[Chunk] = []
+        pdf_document = fitz.open("pdf", file_content)
+
+        try:
+            total_pages = len(pdf_document)
+            for batch_start in range(0, total_pages, batch_size):
+                batch_end = min(batch_start + batch_size, total_pages)
+                logger.debug(f"Rendering pages {batch_start + 1}-{batch_end} of {total_pages} (batched mode)")
+
+                # Render and convert this batch
+                for page_num in range(batch_start, batch_end):
+                    page = pdf_document[page_num]
+                    mat = fitz.Matrix(dpi / 72, dpi / 72)
+                    pix = page.get_pixmap(matrix=mat)
+                    png_bytes = pix.tobytes("png")
+                    b64 = bytes_to_data_uri(png_bytes, "image/png")
+
+                    # Create chunk immediately
+                    chunk = self._image_bytes_to_chunk(png_bytes, mime_type="image/png", base64_override=b64)
+                    all_chunks.append(chunk)
+
+                    # Explicitly release pixmap memory - this is the key memory optimization
+                    del pix
+                    del png_bytes
+
+            logger.info(f"PyMuPDF processed {total_pages} pages in batched mode")
+            return all_chunks
+        finally:
+            pdf_document.close()
 
     def _process_word_for_colpali(self, file_content: bytes, chunks: List[Chunk]) -> List[Chunk]:
         """Process Word document for ColPali embedding."""
