@@ -382,7 +382,7 @@ class PGVectorStore(BaseVectorStore):
 
     async def store_embeddings(
         self, chunks: List[DocumentChunk], app_id: Optional[str] = None
-    ) -> Tuple[bool, List[str]]:
+    ) -> Tuple[bool, List[str], Dict[str, Any]]:
         """
         Bulk-insert embeddings in one go instead of row-by-row ORM adds.
 
@@ -396,7 +396,7 @@ class PGVectorStore(BaseVectorStore):
                 multivector_backend="none",
                 vector_store_backend="pgvector",
             )
-            return True, []
+            return True, [], self._last_store_metrics
 
         # Flatten to plain dicts so SQLAlchemy can send one executemany call.
         rows = [
@@ -413,7 +413,14 @@ class PGVectorStore(BaseVectorStore):
 
         if not rows:
             logger.warning("No embeddings to store – all chunks had empty vectors")
-            return True, []
+            self._last_store_metrics = build_store_metrics(
+                chunk_payload_backend="none",
+                multivector_backend="none",
+                vector_store_backend="pgvector",
+            )
+            return True, [], self._last_store_metrics
+
+        chunk_payload_bytes = sum(len(row["content"].encode("utf-8")) for row in rows if row.get("content"))
 
         write_start = time.perf_counter()
         async with self.get_session_with_retry() as session:
@@ -425,12 +432,13 @@ class PGVectorStore(BaseVectorStore):
             chunk_payload_backend="none",
             multivector_backend="none",
             vector_store_backend="pgvector",
+            chunk_payload_bytes=chunk_payload_bytes,
             vector_store_write_s=write_duration,
             vector_store_rows=len(rows),
         )
 
         stored_ids = [f"{r['document_id']}-{r['chunk_number']}" for r in rows]
-        return True, stored_ids
+        return True, stored_ids, self._last_store_metrics
 
     def latest_store_metrics(self) -> Dict[str, Any]:
         return dict(self._last_store_metrics) if self._last_store_metrics else {}

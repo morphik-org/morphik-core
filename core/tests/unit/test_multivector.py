@@ -157,7 +157,7 @@ async def test_store_and_query_embeddings(vector_store):
     chunks = get_sample_document_chunks(num_chunks=5, num_vectors=3, dim=128)
 
     # Store the embeddings
-    result, stored_ids = await vector_store.store_embeddings(chunks)
+    result, stored_ids, _ = await vector_store.store_embeddings(chunks)
 
     # Verify storage was successful
     assert result is True
@@ -206,7 +206,7 @@ async def test_query_with_doc_ids(vector_store):
 async def test_store_embeddings_empty(vector_store):
     """Test storing empty embeddings list"""
     vector_store.initialize()
-    result, stored_ids = await vector_store.store_embeddings([])
+    result, stored_ids, _ = await vector_store.store_embeddings([])
     assert result is True
     assert stored_ids == []
 
