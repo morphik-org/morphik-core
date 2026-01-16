@@ -81,3 +81,17 @@ class BaseStorage(ABC):
             bool: True if successful
         """
         pass
+
+    @abstractmethod
+    async def get_object_size(self, bucket: str, key: str) -> int:
+        """
+        Get stored object size in bytes.
+
+        Args:
+            bucket: Bucket/container name
+            key: Storage key/path
+
+        Returns:
+            int: Object size in bytes
+        """
+        pass

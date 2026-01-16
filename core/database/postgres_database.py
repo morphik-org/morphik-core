@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from core.config import get_settings
 from core.utils.folder_utils import normalize_folder_path
+from core.utils.storage_usage import normalize_app_id
 from core.utils.typed_metadata import MetadataBundle, TypedMetadataError, normalize_metadata
 
 from ..models.auth import AuthContext
@@ -816,6 +817,53 @@ class PostgresDatabase:
                     if not self._has_document_access(doc_model, auth):
                         logger.error("User does not have write access to document %s", document_id)
                         return False
+
+                    usage_row = await session.execute(
+                        text(
+                            """
+                            SELECT app_id, raw_bytes, chunk_bytes, multivector_bytes
+                            FROM document_storage_usage
+                            WHERE document_id = :doc_id
+                            """
+                        ),
+                        {"doc_id": document_id},
+                    )
+                    usage = usage_row.first()
+                    if usage:
+                        normalized_app_id = normalize_app_id(usage.app_id)
+                        raw_bytes = int(usage.raw_bytes or 0)
+                        chunk_bytes = int(usage.chunk_bytes or 0)
+                        multivector_bytes = int(usage.multivector_bytes or 0)
+                        now = datetime.now(UTC)
+
+                        await session.execute(
+                            text("DELETE FROM document_storage_usage WHERE document_id = :doc_id"),
+                            {"doc_id": document_id},
+                        )
+
+                        await session.execute(
+                            text(
+                                """
+                                INSERT INTO app_storage_usage
+                                    (app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
+                                VALUES
+                                    (:app_id, 0, 0, 0, :now, :now)
+                                ON CONFLICT (app_id)
+                                DO UPDATE SET
+                                    raw_bytes = GREATEST(app_storage_usage.raw_bytes - :raw_bytes, 0),
+                                    chunk_bytes = GREATEST(app_storage_usage.chunk_bytes - :chunk_bytes, 0),
+                                    multivector_bytes = GREATEST(app_storage_usage.multivector_bytes - :multivector_bytes, 0),
+                                    updated_at = :now
+                                """
+                            ),
+                            {
+                                "app_id": normalized_app_id,
+                                "raw_bytes": raw_bytes,
+                                "chunk_bytes": chunk_bytes,
+                                "multivector_bytes": multivector_bytes,
+                                "now": now,
+                            },
+                        )
 
                     await session.delete(doc_model)
 
@@ -2526,3 +2574,258 @@ class PostgresDatabase:
         except Exception as e:
             logger.error(f"Error searching documents by name: {str(e)}")
             return []
+
+    # -------------------------------------------------------------------------
+    # Storage usage accounting
+    # -------------------------------------------------------------------------
+
+    async def record_document_storage_deltas(
+        self,
+        document_id: str,
+        app_id: Optional[str],
+        *,
+        raw_bytes_delta: int = 0,
+        chunk_bytes_delta: int = 0,
+        multivector_bytes_delta: int = 0,
+    ) -> None:
+        if not document_id:
+            logger.warning("record_document_storage_deltas called with empty document_id")
+            return
+
+        raw_delta = int(raw_bytes_delta or 0)
+        chunk_delta = int(chunk_bytes_delta or 0)
+        multivector_delta = int(multivector_bytes_delta or 0)
+        if raw_delta == 0 and chunk_delta == 0 and multivector_delta == 0:
+            return
+
+        normalized_app_id = normalize_app_id(app_id)
+        now = datetime.now(UTC)
+
+        async with self.async_session() as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO document_storage_usage
+                            (document_id, app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
+                        VALUES
+                            (:document_id, :app_id, :raw_delta, :chunk_delta, :multivector_delta, :now, :now)
+                        ON CONFLICT (document_id)
+                        DO UPDATE SET
+                            app_id = EXCLUDED.app_id,
+                            raw_bytes = GREATEST(document_storage_usage.raw_bytes + :raw_delta, 0),
+                            chunk_bytes = GREATEST(document_storage_usage.chunk_bytes + :chunk_delta, 0),
+                            multivector_bytes = GREATEST(document_storage_usage.multivector_bytes + :multivector_delta, 0),
+                            updated_at = :now
+                        """
+                    ),
+                    {
+                        "document_id": document_id,
+                        "app_id": normalized_app_id,
+                        "raw_delta": raw_delta,
+                        "chunk_delta": chunk_delta,
+                        "multivector_delta": multivector_delta,
+                        "now": now,
+                    },
+                )
+
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO app_storage_usage
+                            (app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
+                        VALUES
+                            (:app_id, :raw_delta, :chunk_delta, :multivector_delta, :now, :now)
+                        ON CONFLICT (app_id)
+                        DO UPDATE SET
+                            raw_bytes = GREATEST(app_storage_usage.raw_bytes + :raw_delta, 0),
+                            chunk_bytes = GREATEST(app_storage_usage.chunk_bytes + :chunk_delta, 0),
+                            multivector_bytes = GREATEST(app_storage_usage.multivector_bytes + :multivector_delta, 0),
+                            updated_at = :now
+                        """
+                    ),
+                    {
+                        "app_id": normalized_app_id,
+                        "raw_delta": raw_delta,
+                        "chunk_delta": chunk_delta,
+                        "multivector_delta": multivector_delta,
+                        "now": now,
+                    },
+                )
+
+    async def set_document_raw_bytes(self, document_id: str, app_id: Optional[str], raw_bytes: int) -> None:
+        if not document_id:
+            logger.warning("set_document_raw_bytes called with empty document_id")
+            return
+
+        normalized_app_id = normalize_app_id(app_id)
+        target_raw = max(0, int(raw_bytes or 0))
+        now = datetime.now(UTC)
+
+        async with self.async_session() as session:
+            async with session.begin():
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT app_id, raw_bytes, chunk_bytes, multivector_bytes
+                        FROM document_storage_usage
+                        WHERE document_id = :document_id
+                        """
+                    ),
+                    {"document_id": document_id},
+                )
+                row = result.first()
+                previous_raw = int(row.raw_bytes) if row and row.raw_bytes is not None else 0
+                previous_chunk = int(row.chunk_bytes) if row and row.chunk_bytes is not None else 0
+                previous_mv = int(row.multivector_bytes) if row and row.multivector_bytes is not None else 0
+
+                old_app_id = normalize_app_id(row.app_id) if row and row.app_id else normalized_app_id
+                app_changed = row is not None and old_app_id != normalized_app_id
+                if app_changed and (previous_raw or previous_chunk or previous_mv):
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO app_storage_usage
+                                (app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
+                            VALUES
+                                (:app_id, 0, 0, 0, :now, :now)
+                            ON CONFLICT (app_id)
+                            DO UPDATE SET
+                                raw_bytes = GREATEST(app_storage_usage.raw_bytes - :raw_bytes, 0),
+                                chunk_bytes = GREATEST(app_storage_usage.chunk_bytes - :chunk_bytes, 0),
+                                multivector_bytes = GREATEST(app_storage_usage.multivector_bytes - :multivector_bytes, 0),
+                                updated_at = :now
+                            """
+                        ),
+                        {
+                            "app_id": old_app_id,
+                            "raw_bytes": previous_raw,
+                            "chunk_bytes": previous_chunk,
+                            "multivector_bytes": previous_mv,
+                            "now": now,
+                        },
+                    )
+
+                if row:
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE document_storage_usage
+                            SET app_id = :app_id, raw_bytes = :raw_bytes, updated_at = :now
+                            WHERE document_id = :document_id
+                            """
+                        ),
+                        {
+                            "document_id": document_id,
+                            "app_id": normalized_app_id,
+                            "raw_bytes": target_raw,
+                            "now": now,
+                        },
+                    )
+                else:
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO document_storage_usage
+                                (document_id, app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
+                            VALUES
+                                (:document_id, :app_id, :raw_bytes, 0, 0, :now, :now)
+                            """
+                        ),
+                        {
+                            "document_id": document_id,
+                            "app_id": normalized_app_id,
+                            "raw_bytes": target_raw,
+                            "now": now,
+                        },
+                    )
+
+                if app_changed:
+                    delta_raw = target_raw
+                    delta_chunk = previous_chunk
+                    delta_mv = previous_mv
+                else:
+                    delta_raw = target_raw - previous_raw
+                    delta_chunk = 0
+                    delta_mv = 0
+
+                if delta_raw or delta_chunk or delta_mv:
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO app_storage_usage
+                                (app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
+                            VALUES
+                                (:app_id, :delta_raw, :delta_chunk, :delta_mv, :now, :now)
+                            ON CONFLICT (app_id)
+                            DO UPDATE SET
+                                raw_bytes = GREATEST(app_storage_usage.raw_bytes + :delta_raw, 0),
+                                chunk_bytes = GREATEST(app_storage_usage.chunk_bytes + :delta_chunk, 0),
+                                multivector_bytes = GREATEST(app_storage_usage.multivector_bytes + :delta_mv, 0),
+                                updated_at = :now
+                            """
+                        ),
+                        {
+                            "app_id": normalized_app_id,
+                            "delta_raw": delta_raw,
+                            "delta_chunk": delta_chunk,
+                            "delta_mv": delta_mv,
+                            "now": now,
+                        },
+                    )
+
+    async def delete_document_storage_usage(self, document_id: str) -> None:
+        if not document_id:
+            logger.warning("delete_document_storage_usage called with empty document_id")
+            return
+
+        async with self.async_session() as session:
+            async with session.begin():
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT app_id, raw_bytes, chunk_bytes, multivector_bytes
+                        FROM document_storage_usage
+                        WHERE document_id = :document_id
+                        """
+                    ),
+                    {"document_id": document_id},
+                )
+                row = result.first()
+                if not row:
+                    return
+
+                normalized_app_id = normalize_app_id(row.app_id)
+                raw_bytes = int(row.raw_bytes or 0)
+                chunk_bytes = int(row.chunk_bytes or 0)
+                multivector_bytes = int(row.multivector_bytes or 0)
+                now = datetime.now(UTC)
+
+                await session.execute(
+                    text("DELETE FROM document_storage_usage WHERE document_id = :document_id"),
+                    {"document_id": document_id},
+                )
+
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO app_storage_usage
+                            (app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
+                        VALUES
+                            (:app_id, 0, 0, 0, :now, :now)
+                        ON CONFLICT (app_id)
+                        DO UPDATE SET
+                            raw_bytes = GREATEST(app_storage_usage.raw_bytes - :raw_bytes, 0),
+                            chunk_bytes = GREATEST(app_storage_usage.chunk_bytes - :chunk_bytes, 0),
+                            multivector_bytes = GREATEST(app_storage_usage.multivector_bytes - :multivector_bytes, 0),
+                            updated_at = :now
+                        """
+                    ),
+                    {
+                        "app_id": normalized_app_id,
+                        "raw_bytes": raw_bytes,
+                        "chunk_bytes": chunk_bytes,
+                        "multivector_bytes": multivector_bytes,
+                        "now": now,
+                    },
+                )

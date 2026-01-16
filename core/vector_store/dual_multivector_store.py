@@ -58,7 +58,7 @@ class DualMultiVectorStore(BaseVectorStore):
 
     async def store_embeddings(
         self, chunks: List[DocumentChunk], app_id: Optional[str] = None
-    ) -> Tuple[bool, List[str]]:
+    ) -> Tuple[bool, List[str], dict]:
         """
         Store embeddings in both stores simultaneously during migration.
 
@@ -85,19 +85,21 @@ class DualMultiVectorStore(BaseVectorStore):
             # Handle results
             fast_success = False
             fast_ids: list[str] = []
+            fast_metrics: dict = {}
             if isinstance(fast_result, BaseException):
                 logger.error(f"Fast store ingestion failed: {fast_result}")
             else:
-                fast_success, fast_ids = fast_result
+                fast_success, fast_ids, fast_metrics = fast_result
 
             slow_success = False
             slow_ids: list[str] = []
+            slow_metrics: dict = {}
             if isinstance(slow_result, BaseException):
                 logger.error(f"Slow store ingestion failed: {slow_result}")
                 # If slow store fails, this is critical since we search from it
                 raise slow_result
             else:
-                slow_success, slow_ids = slow_result
+                slow_success, slow_ids, slow_metrics = slow_result
 
             # Log results
             if fast_success:
@@ -111,7 +113,14 @@ class DualMultiVectorStore(BaseVectorStore):
                 logger.error("Slow store: ingestion failed")
 
             # Return slow store result as primary (since we search from it)
-            return slow_success, slow_ids
+            metrics: dict = {}
+            if fast_metrics:
+                metrics["fast"] = fast_metrics
+            if slow_metrics:
+                metrics["slow"] = slow_metrics
+            if metrics:
+                metrics["mode"] = "dual"
+            return slow_success, slow_ids, metrics
 
         except Exception as e:
             logger.error(f"Error during dual ingestion: {e}")

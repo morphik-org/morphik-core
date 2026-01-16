@@ -43,6 +43,7 @@ from core.storage.base_storage import BaseStorage
 from core.storage.utils_file_extensions import detect_content_type, detect_file_type
 from core.utils.fast_ops import bytes_to_data_uri, encode_base64
 from core.utils.folder_utils import normalize_folder_path, normalize_ingest_folder_inputs
+from core.utils.storage_usage import extract_storage_bytes
 from core.utils.typed_metadata import MetadataBundle, merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
 
@@ -427,6 +428,50 @@ class IngestionService:
         except Exception as rec_err:  # noqa: BLE001
             logger.error("Failed recording storage usage for doc %s: %s", document_id, rec_err)
 
+    async def _record_raw_storage_bytes(
+        self, auth: Optional[AuthContext], document_id: str, content_length: int
+    ) -> None:
+        if not auth or not document_id:
+            return
+
+        try:
+            await self.db.set_document_raw_bytes(document_id, auth.app_id, content_length)
+        except Exception as rec_err:  # noqa: BLE001
+            logger.error("Failed recording raw storage bytes for doc %s: %s", document_id, rec_err)
+
+    async def _get_storage_object_size(self, bucket: str, key: str) -> Optional[int]:
+        if not key:
+            return None
+
+        if not hasattr(self.storage, "get_object_size"):
+            return None
+
+        try:
+            return await self.storage.get_object_size(bucket, key)
+        except Exception as size_err:  # noqa: BLE001
+            logger.warning("Failed reading stored size for %s/%s: %s", bucket, key, size_err)
+            return None
+
+    async def _record_vector_storage_bytes(
+        self, auth: Optional[AuthContext], document_id: str, store_metrics: Optional[Dict[str, Any]]
+    ) -> None:
+        if not auth or not document_id:
+            return
+
+        chunk_bytes, multivector_bytes = extract_storage_bytes(store_metrics)
+        if not chunk_bytes and not multivector_bytes:
+            return
+
+        try:
+            await self.db.record_document_storage_deltas(
+                document_id,
+                auth.app_id,
+                chunk_bytes_delta=chunk_bytes,
+                multivector_bytes_delta=multivector_bytes,
+            )
+        except Exception as rec_err:  # noqa: BLE001
+            logger.error("Failed recording vector storage bytes for doc %s: %s", document_id, rec_err)
+
     # -------------------------------------------------------------------------
     # File ingestion
     # -------------------------------------------------------------------------
@@ -522,6 +567,9 @@ class IngestionService:
             )
 
             await self._record_storage_usage(auth, len(file_content_bytes), doc.external_id)
+            stored_size = await self._get_storage_object_size(bucket_name, full_storage_path)
+            if stored_size is not None:
+                await self._record_raw_storage_bytes(auth, doc.external_id, stored_size)
 
         except Exception as e:
             logger.error(f"Failed to upload file {filename} (doc_id: {doc.external_id}) to storage or update DB: {e}")
@@ -678,6 +726,9 @@ class IngestionService:
                     logger.warning("Failed to delete old file %s/%s: %s", old_bucket, old_key, e)
 
         await self._record_storage_usage(auth, len(content_bytes), doc.external_id)
+        stored_size = await self._get_storage_object_size(bucket_name, full_storage_path)
+        if stored_size is not None:
+            await self._record_raw_storage_bytes(auth, doc.external_id, stored_size)
 
         try:
             job_payload = self._build_ingestion_job_payload(
@@ -760,6 +811,12 @@ class IngestionService:
             logger.info(f"Replacing document content with parsed file text of length {len(updated_content)}")
 
             await self._record_storage_usage(auth, len(file_content), doc.external_id)
+            stored_size = await self._get_storage_object_size(
+                doc.storage_info.get("bucket") if doc.storage_info else "",
+                doc.storage_info.get("key") if doc.storage_info else "",
+            )
+            if stored_size is not None:
+                await self._record_raw_storage_bytes(auth, doc.external_id, stored_size)
         elif not metadata_only_update:
             logger.error("Neither content nor file provided for document update")
             return None
@@ -1092,7 +1149,7 @@ class IngestionService:
         is_update: bool = False,
         auth: Optional[AuthContext] = None,
         metadata_bundle: Optional[MetadataBundle] = None,
-    ) -> List[str]:
+    ) -> Tuple[List[str], Dict[str, Any]]:
         """Helper to store chunks and document."""
         max_retries = 3
         retry_delay = 1.0
@@ -1104,10 +1161,10 @@ class IngestionService:
 
             while attempt < max_retries and not success:
                 try:
-                    success, result = await store.store_embeddings(objects, auth.app_id if auth else None)
+                    success, result, metrics = await store.store_embeddings(objects, auth.app_id if auth else None)
                     if not success:
                         raise Exception(f"Failed to store {store_name} chunk embeddings")
-                    return result
+                    return result, metrics
                 except Exception as e:
                     attempt += 1
                     error_msg = str(e)
@@ -1189,9 +1246,11 @@ class IngestionService:
 
         # Store in the appropriate vector store based on use_colpali
         if use_colpali and self.colpali_vector_store and chunk_objects_multivector:
-            chunk_ids = await store_with_retry(self.colpali_vector_store, chunk_objects_multivector, "colpali")
+            chunk_ids, store_metrics = await store_with_retry(
+                self.colpali_vector_store, chunk_objects_multivector, "colpali"
+            )
         else:
-            chunk_ids = await store_with_retry(self.vector_store, chunk_objects, "regular")
+            chunk_ids, store_metrics = await store_with_retry(self.vector_store, chunk_objects, "regular")
 
         doc.chunk_ids = chunk_ids
 
@@ -1201,7 +1260,8 @@ class IngestionService:
 
         logger.debug("Stored document metadata in database")
         logger.debug(f"Chunk IDs stored: {doc.chunk_ids}")
-        return doc.chunk_ids
+        await self._record_vector_storage_bytes(auth, doc.external_id, store_metrics)
+        return doc.chunk_ids, store_metrics
 
     # -------------------------------------------------------------------------
     # ColPali multi-vector chunk creation
@@ -1386,6 +1446,31 @@ class IngestionService:
         dpi = settings.COLPALI_PDF_DPI
 
         try:
+            # Check document density to decide processing strategy
+            # High-density docs (large images per page) need batched processing to avoid OOM
+            pdf_document = fitz.open("pdf", file_content)
+            try:
+                page_count = len(pdf_document)
+            finally:
+                pdf_document.close()
+
+            file_size_mb = len(file_content) / (1024 * 1024)
+            density_mb_per_page = file_size_mb / page_count if page_count > 0 else 0
+
+            # High-density threshold: 1.0 MB per page indicates large images/drawings
+            # These can cause OOM when all pages are rendered simultaneously
+            HIGH_DENSITY_THRESHOLD_MB = 1.0
+            HIGH_DENSITY_BATCH_SIZE = 2  # Process 2 pages at a time for high-density docs
+
+            if density_mb_per_page > HIGH_DENSITY_THRESHOLD_MB:
+                logger.info(
+                    f"High-density PDF detected: {file_size_mb:.2f}MB / {page_count} pages = "
+                    f"{density_mb_per_page:.2f}MB/page (threshold: {HIGH_DENSITY_THRESHOLD_MB}). "
+                    f"Using batched rendering with batch_size={HIGH_DENSITY_BATCH_SIZE}."
+                )
+                return self._render_pdf_with_pymupdf_batched(file_content, dpi, batch_size=HIGH_DENSITY_BATCH_SIZE)
+
+            # Normal processing for low-density PDFs
             images_with_bytes = self._render_pdf_with_pymupdf(file_content, dpi, include_bytes=True)
             logger.info(f"PyMuPDF processed {len(images_with_bytes)} pages")
             return [
@@ -1406,6 +1491,52 @@ class IngestionService:
             except Exception as fallback_error:
                 logger.error(f"pdf2image fallback failed: {fallback_error}")
                 raise PdfConversionError(f"Unable to convert PDF to images: {fallback_error}") from fallback_error
+
+    def _render_pdf_with_pymupdf_batched(self, file_content: bytes, dpi: int, batch_size: int = 2) -> List[Chunk]:
+        """
+        Render a high-density PDF in batches to limit memory usage.
+
+        For PDFs with large images per page (e.g., architectural drawings, high-res scans),
+        rendering all pages simultaneously can cause OOM. This method processes pages in
+        small batches, releasing pixmap memory between batches.
+
+        Args:
+            file_content: Raw PDF bytes
+            dpi: Resolution for rendering
+            batch_size: Number of pages to render simultaneously (default: 2)
+
+        Returns:
+            List of Chunk objects for each page
+        """
+        all_chunks: List[Chunk] = []
+        pdf_document = fitz.open("pdf", file_content)
+
+        try:
+            total_pages = len(pdf_document)
+            for batch_start in range(0, total_pages, batch_size):
+                batch_end = min(batch_start + batch_size, total_pages)
+                logger.debug(f"Rendering pages {batch_start + 1}-{batch_end} of {total_pages} (batched mode)")
+
+                # Render and convert this batch
+                for page_num in range(batch_start, batch_end):
+                    page = pdf_document[page_num]
+                    mat = fitz.Matrix(dpi / 72, dpi / 72)
+                    pix = page.get_pixmap(matrix=mat)
+                    png_bytes = pix.tobytes("png")
+                    b64 = bytes_to_data_uri(png_bytes, "image/png")
+
+                    # Create chunk immediately
+                    chunk = self._image_bytes_to_chunk(png_bytes, mime_type="image/png", base64_override=b64)
+                    all_chunks.append(chunk)
+
+                    # Explicitly release pixmap memory - this is the key memory optimization
+                    del pix
+                    del png_bytes
+
+            logger.info(f"PyMuPDF processed {total_pages} pages in batched mode")
+            return all_chunks
+        finally:
+            pdf_document.close()
 
     def _process_word_for_colpali(self, file_content: bytes, chunks: List[Chunk]) -> List[Chunk]:
         """Process Word document for ColPali embedding."""
