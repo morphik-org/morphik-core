@@ -102,3 +102,11 @@ class LocalStorage(BaseStorage):
         if file_path.exists():
             file_path.unlink()
         return True
+
+    async def get_object_size(self, bucket: str, key: str) -> int:
+        """Return object size in bytes from local storage."""
+        full_key = f"{bucket}/{key}" if (bucket and bucket != "storage") else key
+        file_path = self.storage_path / full_key
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        return await asyncio.to_thread(lambda: file_path.stat().st_size)

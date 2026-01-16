@@ -30,6 +30,7 @@ from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_content_type, is_colpali_native_format
 from core.utils.folder_utils import normalize_ingest_folder_inputs
+from core.utils.storage_usage import extract_storage_bytes
 from core.utils.typed_metadata import MetadataBundle
 from core.vector_store.base_vector_store import BaseVectorStore
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
@@ -186,7 +187,14 @@ async def update_document_progress(ingestion_service, document_id, auth, current
 
 
 _STORE_TIME_KEYS = ("chunk_payload_upload_s", "multivector_upload_s", "vector_store_write_s", "cache_write_s")
-_STORE_COUNT_KEYS = ("chunk_payload_objects", "multivector_objects", "vector_store_rows", "cache_write_objects")
+_STORE_COUNT_KEYS = (
+    "chunk_payload_objects",
+    "multivector_objects",
+    "vector_store_rows",
+    "cache_write_objects",
+    "chunk_payload_bytes",
+    "multivector_bytes",
+)
 _STORE_BACKEND_KEYS = ("chunk_payload_backend", "multivector_backend", "vector_store_backend")
 
 
@@ -924,7 +932,7 @@ async def process_ingestion_job(
 
                     # Store this batch immediately to release memory pressure
                     batch_store_start = time.time()
-                    success, stored_ids = await ingestion_service.colpali_vector_store.store_embeddings(
+                    success, stored_ids, store_metrics = await ingestion_service.colpali_vector_store.store_embeddings(
                         batch_chunk_objects, auth.app_id if auth else None
                     )
                     batch_store_time = time.time() - batch_store_start
@@ -932,9 +940,8 @@ async def process_ingestion_job(
                     if not success:
                         raise RuntimeError("Failed to store ColPali batch embeddings")
                     colpali_chunk_ids.extend(stored_ids)
-                    store_metrics_getter = getattr(ingestion_service.colpali_vector_store, "latest_store_metrics", None)
-                    if callable(store_metrics_getter):
-                        _accumulate_store_metrics(store_metrics_total, store_metrics_getter())
+                    if store_metrics:
+                        _accumulate_store_metrics(store_metrics_total, store_metrics)
                     progress_logger.info(
                         "ingest batch doc_id=%s %d/%d size=%d embed_s=%.2f store_s=%.2f",
                         document_id,
@@ -1010,6 +1017,20 @@ async def process_ingestion_job(
                     },
                     auth=auth,
                 )
+                if auth:
+                    chunk_bytes, multivector_bytes = extract_storage_bytes(store_metrics_total)
+                    if chunk_bytes or multivector_bytes:
+                        try:
+                            await ingestion_service.db.record_document_storage_deltas(
+                                document_id,
+                                auth.app_id,
+                                chunk_bytes_delta=chunk_bytes,
+                                multivector_bytes_delta=multivector_bytes,
+                            )
+                        except Exception as storage_err:  # noqa: BLE001
+                            logger.error(
+                                "Failed recording ColPali storage bytes for doc %s: %s", document_id, storage_err
+                            )
             else:
                 metadata_bundle = None
                 if isinstance(doc.metadata, dict) and isinstance(doc.metadata_types, dict):
@@ -1018,7 +1039,7 @@ async def process_ingestion_job(
                         types=dict(doc.metadata_types),
                         is_normalized=True,
                     )
-                await ingestion_service._store_chunks_and_doc(
+                _, store_metrics = await ingestion_service._store_chunks_and_doc(
                     chunk_objects,
                     doc,
                     use_colpali,
@@ -1027,9 +1048,8 @@ async def process_ingestion_job(
                     auth=auth,
                     metadata_bundle=metadata_bundle,
                 )
-                store_metrics_getter = getattr(ingestion_service.vector_store, "latest_store_metrics", None)
-                if callable(store_metrics_getter):
-                    _accumulate_store_metrics(store_metrics_total, store_metrics_getter())
+                if store_metrics:
+                    _accumulate_store_metrics(store_metrics_total, store_metrics)
             store_time = time.time() - store_start
             phase_times["store_chunks_and_update_doc"] = store_time
 

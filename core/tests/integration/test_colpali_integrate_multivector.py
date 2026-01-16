@@ -99,7 +99,7 @@ async def process_pdf_pages(pdf_path, embedding_model, vector_store):
 
     # Store all chunks in the vector store
     logger.info(f"Storing {len(chunks)} chunks in the vector store")
-    success, stored_ids = await vector_store.store_embeddings(chunks)
+    success, stored_ids, _ = await vector_store.store_embeddings(chunks)
 
     if not success:
         logger.error("Failed to store embeddings")
@@ -140,7 +140,7 @@ async def process_text_content(embedding_model, vector_store):
 
     # Store text chunks in the vector store
     logger.info(f"Storing {len(chunks)} text chunks in the vector store")
-    success, stored_ids = await vector_store.store_embeddings(chunks)
+    success, stored_ids, _ = await vector_store.store_embeddings(chunks)
 
     if not success:
         logger.error("Failed to store text embeddings")

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.models.chunk import DocumentChunk
 
@@ -8,8 +8,8 @@ class BaseVectorStore(ABC):
     @abstractmethod
     async def store_embeddings(
         self, chunks: List[DocumentChunk], app_id: Optional[str] = None
-    ) -> Tuple[bool, List[str]]:
-        """Store document chunks and their embeddings"""
+    ) -> Tuple[bool, List[str], Dict[str, Any]]:
+        """Store document chunks and their embeddings and return store metrics."""
         pass
 
     @abstractmethod
