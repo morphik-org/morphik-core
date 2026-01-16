@@ -431,14 +431,14 @@ class FastMultiVectorStore(BaseVectorStore):
 
     async def store_embeddings(
         self, chunks: List[DocumentChunk], app_id: Optional[str] = None
-    ) -> Tuple[bool, List[str]]:
+    ) -> Tuple[bool, List[str], Dict[str, Any]]:
         if not chunks:
             self._last_store_metrics = build_store_metrics(
                 chunk_payload_backend=storage_provider_name(self.chunk_storage),
                 multivector_backend=storage_provider_name(self.vector_storage),
                 vector_store_backend="turbopuffer",
             )
-            return True, []
+            return True, [], self._last_store_metrics
 
         resolved_app_id = app_id
         if resolved_app_id is None:
@@ -458,9 +458,14 @@ class FastMultiVectorStore(BaseVectorStore):
         )
 
         payload_start = time.perf_counter()
-        storage_keys = await asyncio.gather(*[self._save_chunk_to_storage(chunk, resolved_app_id) for chunk in chunks])
+        storage_results = await asyncio.gather(
+            *[self._save_chunk_to_storage(chunk, resolved_app_id) for chunk in chunks]
+        )
+        storage_keys = [result[0] for result in storage_results]
+        chunk_payload_bytes = sum(result[1] for result in storage_results if result[0])
         storage_metrics["chunk_payload_upload_s"] = time.perf_counter() - payload_start
         storage_metrics["chunk_payload_objects"] = sum(1 for key in storage_keys if key)
+        storage_metrics["chunk_payload_bytes"] = chunk_payload_bytes
         stored_ids = [f"{chunk.document_id}-{chunk.chunk_number}" for chunk in chunks]
         doc_ids, chunk_numbers, metdatas, multivecs = [], [], [], []
         for chunk in chunks:
@@ -468,7 +473,7 @@ class FastMultiVectorStore(BaseVectorStore):
             chunk_numbers.append(chunk.chunk_number)
             metdatas.append(json.dumps(chunk.metadata))
 
-        async def _save_mv(c: DocumentChunk) -> Tuple[str, str, float]:
+        async def _save_mv(c: DocumentChunk) -> Tuple[str, str, float, int]:
             async with self._multivector_upload_sem:
                 return await self._save_multivector_to_storage_with_cache_time(c)
 
@@ -476,9 +481,10 @@ class FastMultiVectorStore(BaseVectorStore):
         multivecs_with_cache = await asyncio.gather(*[_save_mv(chunk) for chunk in chunks])
         storage_metrics["multivector_upload_s"] = time.perf_counter() - multivector_start
         storage_metrics["multivector_objects"] = len(multivecs_with_cache)
+        storage_metrics["multivector_bytes"] = sum(item[3] for item in multivecs_with_cache)
         storage_metrics["cache_write_s"] = sum(item[2] for item in multivecs_with_cache)
         storage_metrics["cache_write_objects"] = len(multivecs_with_cache)
-        multivecs = [(bucket, key) for bucket, key, _ in multivecs_with_cache]
+        multivecs = [(bucket, key) for bucket, key, _, _ in multivecs_with_cache]
 
         write_start = time.perf_counter()
         result = await self.ns(resolved_app_id).write(
@@ -496,7 +502,7 @@ class FastMultiVectorStore(BaseVectorStore):
         storage_metrics["vector_store_write_s"] = time.perf_counter() - write_start
         self._last_store_metrics = storage_metrics
         logger.debug(f"Stored {len(chunks)} chunks, tpuf ns: {result.model_dump_json()}")
-        return True, stored_ids
+        return True, stored_ids, self._last_store_metrics
 
     async def query_similar(
         self,
@@ -667,7 +673,7 @@ class FastMultiVectorStore(BaseVectorStore):
 
         return True
 
-    async def _save_multivector_to_storage_with_cache_time(self, chunk: DocumentChunk) -> Tuple[str, str, float]:
+    async def _save_multivector_to_storage_with_cache_time(self, chunk: DocumentChunk) -> Tuple[str, str, float, int]:
         # Use float32 - ColPali model outputs bfloat16 which shares float32's exponent range.
         # Preserves dynamic range while reducing file size 2x vs float64.
         as_np = np.asarray(chunk.embedding, dtype=np.float32)
@@ -691,14 +697,20 @@ class FastMultiVectorStore(BaseVectorStore):
             if isinstance(self.vector_storage, LocalStorage):
                 bucket = ""
 
+        stored_size = 0
+        try:
+            stored_size = await self.vector_storage.get_object_size(bucket, key)
+        except Exception as size_err:  # noqa: BLE001
+            logger.warning("Failed reading stored size for multivector %s: %s", key, size_err)
+
         # Cache on ingest so retrieval hits cache immediately
         cache_start = time.perf_counter()
         await self.cache.put("vectors", bucket, key, npy_bytes)
         cache_write_time = time.perf_counter() - cache_start
-        return bucket, key, cache_write_time
+        return bucket, key, cache_write_time, stored_size
 
     async def save_multivector_to_storage(self, chunk: DocumentChunk) -> Tuple[str, str]:
-        bucket, key, _ = await self._save_multivector_to_storage_with_cache_time(chunk)
+        bucket, key, _, _ = await self._save_multivector_to_storage_with_cache_time(chunk)
         return bucket, key
 
     async def load_multivector_from_storage(self, bucket: str, key: str) -> torch.Tensor:
@@ -863,10 +875,10 @@ class FastMultiVectorStore(BaseVectorStore):
         chunk_number: int,
         chunk_metadata: Optional[str],
         app_id: Optional[str] = None,
-    ) -> Optional[str]:
-        """Store chunk content in external storage and return storage key."""
+    ) -> Tuple[Optional[str], int]:
+        """Store chunk content in external storage and return (storage key, bytes stored)."""
         if not self.chunk_storage:
-            return None
+            return None, 0
 
         try:
             # Use provided app_id or fall back to document lookup
@@ -899,11 +911,16 @@ class FastMultiVectorStore(BaseVectorStore):
                 )
 
             logger.debug(f"Stored chunk content externally with key: {storage_key}")
-            return storage_key
+            payload_bytes = 0
+            try:
+                payload_bytes = await self.chunk_storage.get_object_size(self.chunk_bucket or "", storage_key)
+            except Exception as size_err:  # noqa: BLE001
+                logger.warning("Failed reading stored size for chunk %s: %s", storage_key, size_err)
+            return storage_key, payload_bytes
 
         except Exception as e:
             logger.error(f"Failed to store content externally for {document_id}-{chunk_number}: {e}")
-            return None
+            return None, 0
 
     async def _save_chunk_to_storage(self, chunk: DocumentChunk, app_id: Optional[str] = None):
         return await self._store_content_externally(

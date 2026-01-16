@@ -83,13 +83,17 @@ def build_store_metrics(
     vector_store_rows: int = 0,
     cache_write_s: float = 0.0,
     cache_write_objects: int = 0,
+    chunk_payload_bytes: int = 0,
+    multivector_bytes: int = 0,
 ) -> Dict[str, Any]:
     return {
         "chunk_payload_upload_s": chunk_payload_upload_s,
         "chunk_payload_objects": chunk_payload_objects,
+        "chunk_payload_bytes": chunk_payload_bytes,
         "chunk_payload_backend": chunk_payload_backend,
         "multivector_upload_s": multivector_upload_s,
         "multivector_objects": multivector_objects,
+        "multivector_bytes": multivector_bytes,
         "multivector_backend": multivector_backend,
         "vector_store_write_s": vector_store_write_s,
         "vector_store_backend": vector_store_backend,

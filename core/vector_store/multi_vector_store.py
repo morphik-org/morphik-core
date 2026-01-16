@@ -407,10 +407,10 @@ class MultiVectorStore(BaseVectorStore):
         chunk_number: int,
         chunk_metadata: Optional[str],
         app_id: Optional[str] = None,
-    ) -> Optional[str]:
-        """Store chunk content in external storage and return storage key."""
+    ) -> Tuple[Optional[str], int]:
+        """Store chunk content in external storage and return (storage key, bytes stored)."""
         if not self.storage:
-            return None
+            return None, 0
 
         try:
             # Use provided app_id or fall back to document lookup
@@ -443,11 +443,16 @@ class MultiVectorStore(BaseVectorStore):
                 )
 
             logger.debug(f"Stored chunk content externally with key: {storage_key}")
-            return storage_key
+            payload_bytes = 0
+            try:
+                payload_bytes = await self.storage.get_object_size(MULTIVECTOR_CHUNKS_BUCKET, storage_key)
+            except Exception as size_err:  # noqa: BLE001
+                logger.warning("Failed reading stored size for chunk %s: %s", storage_key, size_err)
+            return storage_key, payload_bytes
 
         except Exception as e:
             logger.error(f"Failed to store content externally for {document_id}-{chunk_number}: {e}")
-            return None
+            return None, 0
 
     def _is_storage_key(self, content: str) -> bool:
         """Check if content field contains a storage key rather than actual content."""
@@ -616,7 +621,7 @@ class MultiVectorStore(BaseVectorStore):
 
     async def store_embeddings(
         self, chunks: List[DocumentChunk], app_id: Optional[str] = None
-    ) -> Tuple[bool, List[str]]:
+    ) -> Tuple[bool, List[str], Dict[str, Any]]:
         """Store document chunks with their multi-vector embeddings."""
         # Prepare a list of row tuples for executemany
         rows = []
@@ -631,10 +636,10 @@ class MultiVectorStore(BaseVectorStore):
         if not valid_chunks:
             self._last_store_metrics = build_store_metrics(
                 chunk_payload_backend=storage_provider_name(self.storage),
-                multivector_backend="none",
+                multivector_backend="postgres",
                 vector_store_backend="postgres",
             )
-            return True, []
+            return True, [], self._last_store_metrics
 
         resolved_app_id = app_id
         if resolved_app_id is None:
@@ -644,6 +649,7 @@ class MultiVectorStore(BaseVectorStore):
 
         # Parallelize external content storage when enabled
         storage_keys: List[Optional[str]] = [None] * len(valid_chunks)
+        payload_sizes: List[int] = [0] * len(valid_chunks)
         if self.enable_external_storage and self.storage:
             payload_start = time.perf_counter()
 
@@ -651,18 +657,25 @@ class MultiVectorStore(BaseVectorStore):
                 sem = getattr(self, "_content_upload_sem", None)
                 if sem:
                     async with sem:
-                        storage_keys[idx] = await self._store_content_externally(
+                        storage_key, payload_bytes = await self._store_content_externally(
                             c.content, c.document_id, c.chunk_number, json.dumps(c.metadata or {}), resolved_app_id
                         )
+                        storage_keys[idx] = storage_key
+                        if storage_key:
+                            payload_sizes[idx] = payload_bytes
                 else:
-                    storage_keys[idx] = await self._store_content_externally(
+                    storage_key, payload_bytes = await self._store_content_externally(
                         c.content, c.document_id, c.chunk_number, json.dumps(c.metadata or {}), resolved_app_id
                     )
+                    storage_keys[idx] = storage_key
+                    if storage_key:
+                        payload_sizes[idx] = payload_bytes
 
             await asyncio.gather(*[_store_content(idx, c) for idx, c in enumerate(valid_chunks)])
             payload_duration = time.perf_counter() - payload_start
         else:
             payload_duration = 0.0
+            payload_sizes = [0 for _ in valid_chunks]
 
         for idx, chunk in enumerate(valid_chunks):
             binary_embeddings = self._binary_quantize(chunk.embedding)
@@ -691,17 +704,18 @@ class MultiVectorStore(BaseVectorStore):
 
         self._last_store_metrics = build_store_metrics(
             chunk_payload_backend=storage_provider_name(self.storage),
-            multivector_backend="none",
+            multivector_backend="postgres",
             vector_store_backend="postgres",
             chunk_payload_upload_s=payload_duration,
             chunk_payload_objects=sum(1 for key in storage_keys if key),
+            chunk_payload_bytes=sum(payload_sizes),
             vector_store_write_s=write_duration,
             vector_store_rows=len(rows),
         )
 
         stored_ids = [f"{r[0]}-{r[1]}" for r in rows]
         logger.debug(f"{len(stored_ids)} multi-vector embeddings added in bulk")
-        return True, stored_ids
+        return True, stored_ids, self._last_store_metrics
 
     async def query_similar(
         self,

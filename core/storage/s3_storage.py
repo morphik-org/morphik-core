@@ -239,6 +239,21 @@ class S3Storage(BaseStorage):
             logger.error(f"Error generating presigned URL: {e}")
             return ""
 
+    async def get_object_size(self, bucket: str, key: str) -> int:
+        """Return object size in bytes using HEAD."""
+        target_bucket = bucket or self.default_bucket
+        loop = asyncio.get_running_loop()
+
+        def _sync_head() -> int:
+            response = self.s3_client.head_object(Bucket=target_bucket, Key=key)
+            return int(response.get("ContentLength") or 0)
+
+        try:
+            return await loop.run_in_executor(_get_s3_executor(), _sync_head)
+        except ClientError as e:
+            logger.error("Error getting size for s3://%s/%s: %s", target_bucket, key, e)
+            raise
+
     async def delete_file(self, bucket: str, key: str) -> bool:
         """Delete file from S3."""
         try:

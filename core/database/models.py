@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import Column, DateTime, Index, Integer, String, text
+from sqlalchemy import BigInteger, Column, DateTime, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base
 
@@ -44,6 +44,39 @@ class DocumentModel(Base):
         Index("idx_documents_app_folder_path", "app_id", "folder_path"),
         Index("idx_documents_app_folder_id", "app_id", "folder_id"),
         Index("idx_documents_app_end_user", "app_id", "end_user_id"),
+    )
+
+
+class DocumentStorageUsageModel(Base):
+    """Per-document storage accounting for app-level aggregation."""
+
+    __tablename__ = "document_storage_usage"
+
+    document_id = Column(String, primary_key=True)
+    app_id = Column(String, nullable=False)
+    raw_bytes = Column(BigInteger, default=0)
+    chunk_bytes = Column(BigInteger, default=0)
+    multivector_bytes = Column(BigInteger, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP")
+    )
+
+    __table_args__ = (Index("idx_doc_storage_app_id", "app_id"),)
+
+
+class AppStorageUsageModel(Base):
+    """Aggregated storage accounting by app."""
+
+    __tablename__ = "app_storage_usage"
+
+    app_id = Column(String, primary_key=True)
+    raw_bytes = Column(BigInteger, default=0)
+    chunk_bytes = Column(BigInteger, default=0)
+    multivector_bytes = Column(BigInteger, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP")
     )
 
 
