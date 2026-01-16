@@ -2829,3 +2829,67 @@ class PostgresDatabase:
                         "now": now,
                     },
                 )
+
+    async def get_app_storage_usage(self, app_id: str) -> Dict[str, Any]:
+        if not app_id:
+            return {"app_id": normalize_app_id(app_id), "raw_bytes": 0, "chunk_bytes": 0, "multivector_bytes": 0}
+
+        normalized_app_id = normalize_app_id(app_id)
+        async with self.async_session() as session:
+            usage_result = await session.execute(
+                text(
+                    """
+                    SELECT raw_bytes, chunk_bytes, multivector_bytes, updated_at
+                    FROM app_storage_usage
+                    WHERE app_id = :app_id
+                    """
+                ),
+                {"app_id": normalized_app_id},
+            )
+            usage_row = usage_result.first()
+
+            count_result = await session.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM document_storage_usage
+                    WHERE app_id = :app_id
+                    """
+                ),
+                {"app_id": normalized_app_id},
+            )
+            count_row = count_result.first()
+
+        raw_bytes = int(usage_row.raw_bytes or 0) if usage_row else 0
+        chunk_bytes = int(usage_row.chunk_bytes or 0) if usage_row else 0
+        multivector_bytes = int(usage_row.multivector_bytes or 0) if usage_row else 0
+        updated_at = usage_row.updated_at if usage_row else None
+        document_count = int(count_row[0]) if count_row else 0
+
+        return {
+            "app_id": normalized_app_id,
+            "raw_bytes": raw_bytes,
+            "chunk_bytes": chunk_bytes,
+            "multivector_bytes": multivector_bytes,
+            "document_count": document_count,
+            "updated_at": updated_at,
+        }
+
+    async def get_app_record(self, app_id: str) -> Optional[Dict[str, Any]]:
+        if not app_id:
+            return None
+
+        from core.models.apps import AppModel  # Local import to avoid cycles
+
+        async with self.async_session() as session:
+            app_record = await session.get(AppModel, app_id)
+            if app_record is None:
+                return None
+            return {
+                "app_id": app_record.app_id,
+                "org_id": app_record.org_id,
+                "user_id": str(app_record.user_id) if app_record.user_id else None,
+                "created_by_user_id": app_record.created_by_user_id,
+                "name": app_record.name,
+                "uri": app_record.uri,
+            }
