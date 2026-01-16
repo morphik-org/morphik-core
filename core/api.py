@@ -42,6 +42,7 @@ from core.routes.health import router as health_router
 from core.routes.ingest import router as ingest_router
 from core.routes.logs import router as logs_router  # noqa: E402 – import after FastAPI app
 from core.routes.models import router as models_router
+from core.routes.usage import router as usage_router
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, ingestion_service
 from core.utils.folder_utils import normalize_folder_selector
@@ -323,6 +324,9 @@ app.include_router(models_router)
 
 # Register logs router
 app.include_router(logs_router)
+
+# Register usage router
+app.include_router(usage_router)
 
 # Register graph router
 app.include_router(graph_router)
