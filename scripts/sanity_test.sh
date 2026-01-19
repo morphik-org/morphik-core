@@ -358,7 +358,7 @@ wait_for_processing() {
         status_counts=$(echo "$response" | python3 -c "
 import sys, json
 from collections import Counter
-docs = json.load(sys.stdin)
+docs = json.load(sys.stdin).get('documents', [])
 statuses = Counter(d.get('system_metadata', {}).get('status', 'unknown') for d in docs)
 print(f\"total={len(docs)} completed={statuses.get('completed',0)} processing={statuses.get('processing',0)} failed={statuses.get('failed',0)}\")
 " 2>/dev/null) || status_counts="error"
@@ -965,7 +965,7 @@ wait_for_folder_docs_processing() {
         status_counts=$(echo "$response" | python3 -c "
 import sys, json
 from collections import Counter
-docs = json.load(sys.stdin)
+docs = json.load(sys.stdin).get('documents', [])
 statuses = Counter(d.get('system_metadata', {}).get('status', 'unknown') for d in docs)
 print(f'total={len(docs)} completed={statuses.get(\"completed\",0)} processing={statuses.get(\"processing\",0)}')
 " 2>/dev/null) || status_counts="error"
@@ -999,7 +999,7 @@ test_folder_depth_filtering() {
         return
     }
 
-    count=$(echo "$response" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || count=0
+    count=$(echo "$response" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('documents', [])))" 2>/dev/null) || count=0
     if [[ "$count" -eq 1 ]]; then
         log_success "folder_depth=0 returned $count doc (expected 1 from /sanity_test only)"
     else
@@ -1015,7 +1015,7 @@ test_folder_depth_filtering() {
         return
     }
 
-    count=$(echo "$response" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || count=0
+    count=$(echo "$response" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('documents', [])))" 2>/dev/null) || count=0
     # /sanity_test (1) + /sanity_test/level1 (1) + /sanity_test/sibling (1) = 3
     if [[ "$count" -eq 3 ]]; then
         log_success "folder_depth=1 returned $count docs (expected 3)"
@@ -1032,7 +1032,7 @@ test_folder_depth_filtering() {
         return
     }
 
-    count=$(echo "$response" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || count=0
+    count=$(echo "$response" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('documents', [])))" 2>/dev/null) || count=0
     # All 5 docs: /sanity_test, /level1, /level2, /level3, /sibling
     if [[ "$count" -eq 5 ]]; then
         log_success "folder_depth=-1 returned $count docs (expected 5 - all descendants)"
@@ -1049,7 +1049,7 @@ test_folder_depth_filtering() {
         return
     }
 
-    count=$(echo "$response" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || count=0
+    count=$(echo "$response" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('documents', [])))" 2>/dev/null) || count=0
     # /sanity_test (1) + /level1 (1) + /sibling (1) + /level2 (1) = 4
     if [[ "$count" -eq 4 ]]; then
         log_success "folder_depth=2 returned $count docs (expected 4)"
@@ -1233,7 +1233,8 @@ EOF
 import sys, json, os
 expected_id = sys.argv[1]
 expected_path = sys.argv[2]
-docs = json.loads(os.environ["DOC_DATA"])
+raw = json.loads(os.environ["DOC_DATA"])
+docs = raw.get("documents", []) if isinstance(raw, dict) else raw
 if not docs:
     print("missing")
     sys.exit(0)
@@ -1759,6 +1760,44 @@ test_document_management_and_updates() {
         log_success "list_docs returned total_count=$total_count"
     else
         log_error "list_docs returned no documents"
+    fi
+
+    # list_docs filename filters via document_filters
+    # Use batch_file2 (index 1) since batch_file1 (index 0) gets renamed by update_file test above
+    local filename_target="test_document.txt"
+    if [[ ${#BATCH_FILENAMES[@]} -gt 1 ]]; then
+        filename_target="${BATCH_FILENAMES[1]}"
+    elif [[ ${#BATCH_FILENAMES[@]} -gt 0 ]]; then
+        filename_target="${BATCH_FILENAMES[0]}"
+    fi
+
+    log_info "Test: /documents/list_docs filename filters"
+    response=$(curl -sf -X POST "$BASE_URL/documents/list_docs" \
+        -H "Content-Type: application/json" \
+        -d "{\"document_filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"filename\": {\"\$eq\": \"$filename_target\"}}]}, \"skip\": 0, \"limit\": 5, \"include_total_count\": true}" 2>&1) || {
+        log_error "/documents/list_docs filename filter request failed"
+    }
+    local filename_count
+    filename_count=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_count',0))" 2>/dev/null) || filename_count=0
+    if [[ "$filename_count" -gt 0 ]]; then
+        log_success "list_docs filename filter matched $filename_count document(s) for $filename_target"
+    else
+        log_error "list_docs filename filter returned no documents for $filename_target"
+    fi
+
+    # list_docs filename regex with OR conditions
+    log_info "Test: /documents/list_docs filename regex with OR"
+    response=$(curl -sf -X POST "$BASE_URL/documents/list_docs" \
+        -H "Content-Type: application/json" \
+        -d "{\"document_filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"\$or\": [{\"filename\": {\"\$regex\": {\"pattern\": \"^test_document\\\\.(txt|md)$\", \"flags\": \"i\"}}}, {\"file_type\": \"csv\"}]}]}, \"skip\": 0, \"limit\": 5, \"include_total_count\": true}" 2>&1) || {
+        log_error "/documents/list_docs filename regex/or request failed"
+    }
+    local regex_count
+    regex_count=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_count',0))" 2>/dev/null) || regex_count=0
+    if [[ "$regex_count" -gt 0 ]]; then
+        log_success "list_docs filename regex/or matched $regex_count document(s)"
+    else
+        log_error "list_docs filename regex/or returned no documents"
     fi
 
     # search/documents by filename
