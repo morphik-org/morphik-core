@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, Integer, String, text
 from sqlalchemy.dialects.postgresql import UUID
 
 from core.database.postgres_database import Base
@@ -27,4 +27,5 @@ class AppModel(Base):
     created_by_user_id = Column(String, nullable=True)  # User who created the app
     name = Column(String, nullable=False)
     uri = Column(String, nullable=False)
+    token_version = Column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
