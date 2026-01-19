@@ -16,23 +16,16 @@ class OutputFormat(str, Enum):
     TEXT = "text"
 
 
-class ListDocumentsRequest(BaseModel):
-    """Request model for listing documents"""
-
-    document_filters: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Metadata filters with operator support: $and, $or, $nor, $not, $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $type, $regex, $contains. Implicit equality uses JSONB containment; explicit operators support typed comparisons.",
-    )
-    skip: int = Field(default=0, ge=0, description="Number of documents to skip before returning results.")
-    limit: int = Field(default=1000, gt=0, description="Maximum number of documents to return.")
-
-
 class ListDocsRequest(BaseModel):
     """Flexible request model for listing documents with projection and aggregates."""
 
     document_filters: Optional[Dict[str, Any]] = Field(
         None,
-        description="Metadata filters with operator support: $and, $or, $nor, $not, $eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $exists, $type, $regex, $contains. Implicit equality uses JSONB containment; explicit operators support typed comparisons.",
+        description=(
+            "Metadata filters with operator support: $and, $or, $nor, $not, $eq, $ne, $gt, $gte, $lt, $lte, "
+            "$in, $nin, $exists, $type, $regex, $contains. Implicit equality uses JSONB containment; explicit "
+            "operators support typed comparisons. Reserved key: 'filename' filters the filename column."
+        ),
     )
     skip: int = Field(default=0, ge=0, description="Number of documents to skip")
     limit: int = Field(default=100, ge=0, description="Maximum number of documents to return")

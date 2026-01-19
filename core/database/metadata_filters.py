@@ -29,6 +29,10 @@ class InvalidMetadataFilterError(ValueError):
 class MetadataFilterBuilder:
     """Translate JSON-style metadata filters into SQL, covering arrays, regex, and substring operators."""
 
+    _COLUMN_FIELDS = {
+        "filename": "filename",
+    }
+
     def build(self, filters: Optional[Dict[str, Any]]) -> str:
         """Construct a SQL WHERE clause from a metadata filter dictionary."""
         if filters is None:
@@ -109,6 +113,9 @@ class MetadataFilterBuilder:
 
     def _build_field_metadata_clause(self, field: str, value: Any) -> str:
         """Build SQL clause for a single metadata field."""
+        if field in self._COLUMN_FIELDS:
+            return self._build_column_field_clause(field, value)
+
         if isinstance(value, dict) and not any(key.startswith("$") for key in value):
             # Treat as literal JSON sub-document match
             return self._jsonb_contains_clause(field, value)
@@ -182,6 +189,25 @@ class MetadataFilterBuilder:
             return self._jsonb_contains_clause(field, value)
 
         return self._jsonb_contains_clause(field, value)
+
+    def _build_column_field_clause(self, field: str, value: Any) -> str:
+        """Build SQL clause for a reserved column field (e.g., filename)."""
+        column = self._COLUMN_FIELDS[field]
+        builder = TextColumnFilterBuilder(column)
+
+        if isinstance(value, dict):
+            if not value:
+                raise InvalidMetadataFilterError(f"{field} filter cannot be empty.")
+            if any(key.startswith("$") for key in value):
+                return builder.build(value)
+            raise InvalidMetadataFilterError(
+                f"{field} filter must use operators (e.g., {{'{field}': {{'$eq': 'example.pdf'}}}})."
+            )
+
+        if isinstance(value, list):
+            return builder._build_in_clause(value, negate=False)
+
+        return builder._build_comparison_clause("$eq", value)
 
     def _build_exists_clause(self, field: str, operand: Any) -> str:
         """Build clause handling $exists operator."""
@@ -549,6 +575,253 @@ class MetadataFilterBuilder:
             )
 
         return dt_value.isoformat()
+
+    @staticmethod
+    def _escape_single_quotes(value: str) -> str:
+        """Escape single quotes for SQL literals."""
+        return value.replace("'", "''")
+
+
+class TextColumnFilterBuilder:
+    """Translate filter expressions into SQL for a single text column."""
+
+    def __init__(self, column: str):
+        self._column = column
+
+    def build(self, filters: Optional[Dict[str, Any]]) -> str:
+        """Construct a SQL WHERE clause from a filter dictionary."""
+        if filters is None:
+            return ""
+
+        if not isinstance(filters, dict):
+            raise InvalidMetadataFilterError("Filename filters must be provided as a JSON object.")
+
+        if not filters:
+            return ""
+
+        clause = self._parse_filter(filters, context="filename filter")
+        if not clause:
+            raise InvalidMetadataFilterError("Filename filter produced no valid conditions.")
+        return clause
+
+    def _parse_filter(self, expression: Any, context: str) -> str:
+        """Recursively parse an operator filter into SQL."""
+        if isinstance(expression, dict):
+            if not expression:
+                raise InvalidMetadataFilterError(f"{context.capitalize()} cannot be empty.")
+
+            clauses: List[str] = []
+            for key, value in expression.items():
+                if key == "$and":
+                    if not isinstance(value, list):
+                        raise InvalidMetadataFilterError("$and operator expects a non-empty list of conditions.")
+                    clauses.append(
+                        self._combine_clauses(
+                            [self._parse_filter(item, context="$and condition") for item in value],
+                            "AND",
+                            'operator "$and"',
+                        )
+                    )
+                elif key == "$or":
+                    if not isinstance(value, list):
+                        raise InvalidMetadataFilterError("$or operator expects a non-empty list of conditions.")
+                    clauses.append(
+                        self._combine_clauses(
+                            [self._parse_filter(item, context="$or condition") for item in value],
+                            "OR",
+                            'operator "$or"',
+                        )
+                    )
+                elif key == "$nor":
+                    if not isinstance(value, list):
+                        raise InvalidMetadataFilterError("$nor operator expects a non-empty list of conditions.")
+                    inner = self._combine_clauses(
+                        [self._parse_filter(item, context="$nor condition") for item in value],
+                        "OR",
+                        'operator "$nor"',
+                    )
+                    clauses.append(f"(NOT {inner})")
+                elif key == "$not":
+                    sub_context = 'operator "$not"'
+                    clauses.append(f"(NOT {self._parse_filter(value, context=sub_context)})")
+                else:
+                    clauses.append(self._build_operator_clause(key, value))
+
+            return self._combine_clauses(clauses, "AND", context)
+
+        if isinstance(expression, list):
+            if not expression:
+                raise InvalidMetadataFilterError(f"{context.capitalize()} cannot be an empty list.")
+            subclauses = [self._parse_filter(item, context="nested condition") for item in expression]
+            return self._combine_clauses(subclauses, "OR", context)
+
+        raise InvalidMetadataFilterError(f"{context.capitalize()} must be expressed as a JSON object.")
+
+    def _combine_clauses(self, clauses: List[str], operator: str, context: str) -> str:
+        """Combine multiple SQL clauses with a logical operator."""
+        cleaned = [clause for clause in clauses if clause]
+        if not cleaned:
+            raise InvalidMetadataFilterError(f"No valid conditions supplied for {context}.")
+        if len(cleaned) == 1:
+            return cleaned[0]
+        return "(" + f" {operator} ".join(cleaned) + ")"
+
+    def _build_operator_clause(self, operator: str, operand: Any) -> str:
+        """Build SQL clause for operator-based filename filters."""
+        if operator in {"$eq", "$ne", "$gt", "$gte", "$lt", "$lte"}:
+            return self._build_comparison_clause(operator, operand)
+        if operator == "$in":
+            return self._build_in_clause(operand, negate=False)
+        if operator == "$nin":
+            return self._build_in_clause(operand, negate=True)
+        if operator == "$exists":
+            return self._build_exists_clause(operand)
+        if operator == "$regex":
+            return self._build_regex_clause(operand)
+        if operator == "$contains":
+            return self._build_contains_clause(operand)
+        raise InvalidMetadataFilterError(f"Unsupported filename filter operator '{operator}'.")
+
+    def _build_comparison_clause(self, operator: str, operand: Any) -> str:
+        """Build comparison clauses for the filename column."""
+        column = self._column
+
+        if operator == "$eq":
+            if operand is None:
+                return f"({column} IS NULL)"
+            if not isinstance(operand, str):
+                raise InvalidMetadataFilterError("Filename $eq operator expects a string value.")
+            escaped = self._escape_single_quotes(operand)
+            return f"({column} = '{escaped}')"
+
+        if operator == "$ne":
+            if operand is None:
+                return f"({column} IS NOT NULL)"
+            if not isinstance(operand, str):
+                raise InvalidMetadataFilterError("Filename $ne operator expects a string value.")
+            escaped = self._escape_single_quotes(operand)
+            return f"({column} IS DISTINCT FROM '{escaped}')"
+
+        if operand is None or not isinstance(operand, str):
+            raise InvalidMetadataFilterError(f"Filename {operator} operator expects a string value.")
+
+        escaped = self._escape_single_quotes(operand)
+        sql_operator = self._map_comparison_operator(operator)
+        return f"({column} {sql_operator} '{escaped}')"
+
+    def _build_in_clause(self, operand: Any, negate: bool) -> str:
+        """Build IN/NOT IN clauses with NULL handling."""
+        if not isinstance(operand, list) or not operand:
+            raise InvalidMetadataFilterError("Filename $in/$nin operator expects a non-empty list of values.")
+
+        has_null = any(item is None for item in operand)
+        values = [item for item in operand if item is not None]
+
+        escaped_values: List[str] = []
+        for item in values:
+            if not isinstance(item, str):
+                raise InvalidMetadataFilterError("Filename $in/$nin operator expects string values.")
+            escaped_values.append(f"'{self._escape_single_quotes(item)}'")
+
+        column = self._column
+        in_list = ", ".join(escaped_values)
+
+        if not negate:
+            clauses: List[str] = []
+            if escaped_values:
+                clauses.append(f"({column} IN ({in_list}))")
+            if has_null:
+                clauses.append(f"({column} IS NULL)")
+            return self._combine_clauses(clauses, "OR", "filename $in operator")
+
+        if has_null:
+            if escaped_values:
+                return f"(({column} IS NOT NULL) AND ({column} NOT IN ({in_list})))"
+            return f"({column} IS NOT NULL)"
+
+        return f"(({column} IS NULL) OR ({column} NOT IN ({in_list})))"
+
+    def _build_exists_clause(self, operand: Any) -> str:
+        """Build clause handling $exists operator."""
+        expected = operand
+        if isinstance(expected, str):
+            expected = expected.lower() in {"1", "true", "yes"}
+        elif isinstance(expected, (int, float)):
+            expected = bool(expected)
+        elif not isinstance(expected, bool):
+            raise InvalidMetadataFilterError("Filename $exists operator expects a boolean value.")
+
+        column = self._column
+        return f"({column} IS NOT NULL)" if expected else f"({column} IS NULL)"
+
+    def _build_regex_clause(self, operand: Any) -> str:
+        """Apply PostgreSQL regex operators to the filename column."""
+        pattern, case_insensitive = self._normalize_regex_operand(operand)
+        regex_operator = "~*" if case_insensitive else "~"
+
+        escaped_pattern = pattern.replace("\\", "\\\\").replace("'", "''")
+        return f"({self._column} {regex_operator} '{escaped_pattern}')"
+
+    def _normalize_regex_operand(self, operand: Any) -> tuple[str, bool]:
+        """Validate regex operands; accept strings or {'pattern','flags'} with only the 'i' flag."""
+        if isinstance(operand, str):
+            return operand, False
+
+        if isinstance(operand, dict):
+            pattern = operand.get("pattern")
+            if not isinstance(pattern, str) or not pattern:
+                raise InvalidMetadataFilterError("Filename $regex operator expects a non-empty pattern.")
+
+            flags = operand.get("flags", "")
+            if not isinstance(flags, str):
+                raise InvalidMetadataFilterError("Filename $regex operator expects flags to be a string.")
+
+            unsupported_flags = {flag for flag in flags if flag not in {"", "i"}}
+            if unsupported_flags:
+                raise InvalidMetadataFilterError(
+                    f"Filename $regex operator does not support flags: {', '.join(sorted(unsupported_flags))}."
+                )
+
+            return pattern, "i" in flags
+
+        raise InvalidMetadataFilterError("Filename $regex operator expects a string or object with 'pattern'.")
+
+    def _build_contains_clause(self, operand: Any) -> str:
+        """Perform substring matching with LIKE/ILIKE."""
+        value, case_sensitive = self._normalize_contains_operand(operand)
+        like_operator = "LIKE" if case_sensitive else "ILIKE"
+
+        escaped_pattern = self._escape_like_pattern(value)
+        return f"({self._column} {like_operator} '%{escaped_pattern}%')"
+
+    def _normalize_contains_operand(self, operand: Any) -> tuple[str, bool]:
+        """Validate substring operands; accept strings or {'value','case_sensitive'}."""
+        if isinstance(operand, str):
+            return operand, False
+
+        if isinstance(operand, dict):
+            value = operand.get("value")
+            if not isinstance(value, str) or not value:
+                raise InvalidMetadataFilterError("Filename $contains operator expects a non-empty string value.")
+            case_sensitive = operand.get("case_sensitive", False)
+            if not isinstance(case_sensitive, bool):
+                raise InvalidMetadataFilterError(
+                    "Filename $contains operator expects 'case_sensitive' to be a boolean."
+                )
+            return value, case_sensitive
+
+        raise InvalidMetadataFilterError("Filename $contains operator expects a string or object with 'value'.")
+
+    def _escape_like_pattern(self, value: str) -> str:
+        """Escape wildcard characters for SQL LIKE/ILIKE patterns."""
+        escaped = value.replace("\\", "\\\\")
+        escaped = escaped.replace("%", "\\%").replace("_", "\\_")
+        return escaped.replace("'", "''")
+
+    def _map_comparison_operator(self, operator: str) -> str:
+        """Map comparison operators to SQL symbols."""
+        mapping = {"$gt": ">", "$gte": ">=", "$lt": "<", "$lte": "<="}
+        return mapping[operator]
 
     @staticmethod
     def _escape_single_quotes(value: str) -> str:
