@@ -310,12 +310,18 @@ class UserService:
             logger.info("Failed to register app %s for user %s", app_id, user_id)
             return None
 
+        token_version = 0
+        existing_app = await self.get_app_by_id(app_id)
+        if existing_app and "token_version" in existing_app:
+            token_version = existing_app.get("token_version") or 0
+
         # Create token payload (keep entity_id for backward compatibility)
         payload = {
             "user_id": user_id,
             "entity_id": user_id,  # backward compat
             "app_id": app_id,
             "name": name,
+            "token_version": token_version,
             "exp": int((datetime.now(UTC) + timedelta(days=expiry_days)).timestamp()),
         }
 
@@ -407,6 +413,8 @@ class UserService:
                     app_record.created_by_user_id = created_by_user_id
                 app_record.name = name
                 app_record.uri = uri
+                if getattr(app_record, "token_version", None) is None:
+                    app_record.token_version = 0
             await session.commit()
 
     async def get_app_by_id(self, app_id: str) -> Optional[Dict[str, Any]]:
@@ -424,6 +432,7 @@ class UserService:
                 "created_by_user_id": app_record.created_by_user_id,
                 "name": app_record.name,
                 "uri": app_record.uri,
+                "token_version": getattr(app_record, "token_version", 0) or 0,
             }
 
     async def list_apps(

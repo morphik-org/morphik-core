@@ -12,6 +12,11 @@ TEST_DIR="/tmp/morphik_sanity_test"
 TEST_RUN_ID="test_$(date +%s)"
 TIMEOUT_SECONDS=120
 POLL_INTERVAL=3
+ADMIN_SERVICE_SECRET="${ADMIN_SERVICE_SECRET:-}"
+JWT_SECRET_KEY="${JWT_SECRET_KEY:-}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/sanity_uri_tests.sh"
 
 # Colors for output
 RED='\033[0;31m'
@@ -39,6 +44,12 @@ BATCH_FILENAMES=()
 LAST_CHUNK_DOC_ID=""
 LAST_CHUNK_NUMBER=""
 
+# Auth configuration - set after setup_auth() runs
+AUTH_TOKEN=""
+declare -a AUTH_CURL_OPTS=()
+AUTH_APP_ID=""
+AUTH_APP_NAME=""
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -51,12 +62,106 @@ log_section() { echo -e "\n${YELLOW}══════════════�
 
 check_server() {
     log_info "Checking server availability at $BASE_URL..."
-    if curl -sf "$BASE_URL/health" > /dev/null 2>&1; then
+    if curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/health" > /dev/null 2>&1; then
         log_success "Server is running"
         return 0
     else
         log_error "Server is not responding at $BASE_URL"
         exit 1
+    fi
+}
+
+setup_auth() {
+    log_section "Setting Up Authentication"
+
+    # Check if auth is required by making an unauthenticated request
+    local auth_check_code
+    auth_check_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/documents" \
+        -H "Content-Type: application/json" \
+        -d '{"skip":0,"limit":1}' || echo "000")
+
+    if [[ "$auth_check_code" != "401" ]]; then
+        log_info "Auth bypass mode detected (status $auth_check_code) - no token needed"
+        return 0
+    fi
+
+    log_info "Auth required (status 401) - creating test app..."
+
+    if [[ -z "$ADMIN_SERVICE_SECRET" && -z "$JWT_SECRET_KEY" ]]; then
+        log_error "Auth required but neither ADMIN_SERVICE_SECRET nor JWT_SECRET_KEY is set"
+        log_info "Set one of these environment variables to run tests with auth enabled"
+        exit 1
+    fi
+
+    AUTH_APP_NAME="sanity_test_${TEST_RUN_ID}"
+    local user_id
+    user_id=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
+
+    local response
+    if [[ -n "$ADMIN_SERVICE_SECRET" ]]; then
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/cloud/generate_uri" \
+            -H "Content-Type: application/json" \
+            -H "X-Morphik-Admin-Secret: $ADMIN_SERVICE_SECRET" \
+            -d "{\"name\":\"$AUTH_APP_NAME\",\"user_id\":\"$user_id\"}" 2>&1) || {
+            log_error "Failed to create test app with admin secret: $response"
+            exit 1
+        }
+    else
+        local bootstrap_token
+        bootstrap_token=$(python3 - <<PYEOF 2>/dev/null || true
+import jwt
+import time
+payload = {
+    "user_id": "$user_id",
+    "entity_id": "$user_id",
+    "exp": int(time.time()) + 3600,
+}
+print(jwt.encode(payload, "$JWT_SECRET_KEY", algorithm="HS256"))
+PYEOF
+        )
+        if [[ -z "$bootstrap_token" ]]; then
+            log_error "Failed to generate bootstrap token"
+            exit 1
+        fi
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/cloud/generate_uri" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $bootstrap_token" \
+            -d "{\"name\":\"$AUTH_APP_NAME\",\"user_id\":\"$user_id\"}" 2>&1) || {
+            log_error "Failed to create test app with bootstrap token: $response"
+            exit 1
+        }
+    fi
+
+    AUTH_APP_ID=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('app_id',''))" 2>/dev/null)
+    local uri
+    uri=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('uri',''))" 2>/dev/null)
+
+    if [[ -z "$AUTH_APP_ID" || -z "$uri" ]]; then
+        log_error "App creation response missing app_id or uri"
+        exit 1
+    fi
+
+    # Extract token from URI: morphik://name:TOKEN@host
+    AUTH_TOKEN=$(echo "$uri" | sed -n 's/morphik:\/\/[^:]*:\([^@]*\)@.*/\1/p')
+    if [[ -z "$AUTH_TOKEN" ]]; then
+        log_error "Failed to extract token from URI"
+        exit 1
+    fi
+
+    AUTH_CURL_OPTS=(-H "Authorization: Bearer $AUTH_TOKEN")
+    log_success "Created test app: $AUTH_APP_ID (token configured)"
+}
+
+cleanup_auth_app() {
+    if [[ -n "$AUTH_APP_NAME" && -n "$AUTH_TOKEN" ]]; then
+        log_info "Cleaning up auth test app: $AUTH_APP_NAME"
+        if [[ -n "$ADMIN_SERVICE_SECRET" ]]; then
+            curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X DELETE "$BASE_URL/apps?app_name=${AUTH_APP_NAME}" \
+                -H "X-Morphik-Admin-Secret: $ADMIN_SERVICE_SECRET" > /dev/null 2>&1 || true
+        else
+            curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X DELETE "$BASE_URL/apps?app_name=${AUTH_APP_NAME}" \
+                -H "Authorization: Bearer $AUTH_TOKEN" > /dev/null 2>&1 || true
+        fi
     fi
 }
 
@@ -235,7 +340,7 @@ EOF
     log_info "Ingesting $filename ($colpali_label)..."
 
     local response
-    response=$(curl -sf -X POST "$BASE_URL/ingest/file" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/file" \
         -F "file=@$file_path" \
         -F "metadata=$metadata" \
         -F "use_colpali=$use_colpali" 2>&1) || {
@@ -314,7 +419,7 @@ EOF
 
     local body_file="$TEST_DIR/protected_guardrails_response.json"
     local http_code
-    http_code=$(curl -s -o "$body_file" -w "%{http_code}" -X POST "$BASE_URL/ingest/text" \
+    http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o "$body_file" -w "%{http_code}" -X POST "$BASE_URL/ingest/text" \
         -H "Content-Type: application/json" \
         -d "$payload")
 
@@ -345,7 +450,7 @@ wait_for_processing() {
 
         # Get status of documents from this test run
         local response
-        response=$(curl -sf -X POST "$BASE_URL/documents" \
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents" \
             -H "Content-Type: application/json" \
             -d "{\"document_filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
             log_warn "Failed to fetch document status"
@@ -400,7 +505,7 @@ test_basic_retrieval() {
     # Test 1: Basic text search
     log_info "Test: Basic text search for 'morphik test'"
     local response
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik test sanity\", \"k\": 5, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "Basic retrieval request failed"
@@ -418,7 +523,7 @@ test_basic_retrieval() {
 
     # Test 2: Search for specific content
     log_info "Test: Search for 'vector embeddings semantic search'"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"vector embeddings semantic search\", \"k\": 3, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "Semantic search request failed"
@@ -440,7 +545,7 @@ test_metadata_filtering() {
     # Test 1: Filter by category
     log_info "Test: Filter by category='documentation'"
     local response
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik\", \"k\": 10, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"category\": \"documentation\"}}" 2>&1) || {
         log_error "Category filter request failed"
@@ -464,7 +569,7 @@ print('yes' if (chunks and all_match) else 'no')
 
     # Test 2: Filter by file_type
     log_info "Test: Filter by file_type='md'"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"markdown formatting\", \"k\": 5, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"file_type\": \"md\"}}" 2>&1) || {
         log_error "File type filter request failed"
@@ -486,7 +591,7 @@ print('yes' if (chunks and all_match) else 'no')
 
     # Test 3: Filter by priority (numeric)
     log_info "Test: Filter by priority >= 2"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"data\", \"k\": 10, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"priority\": {\"\$gte\": 2}}}" 2>&1) || {
         log_error "Priority filter request failed"
@@ -518,7 +623,7 @@ test_date_filtering() {
     # Test 1: Filter by date range using naive datetime (no timezone)
     log_info "Test: Filter by date range (naive datetime, last 5 days)"
     local response
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik test\", \"k\": 20, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"created_date_naive\": {\"\$gte\": \"$five_days_ago\"}}}" 2>&1) || {
         log_error "Naive date filter request failed"
@@ -538,7 +643,7 @@ test_date_filtering() {
     log_info "Test: Filter by date with timezone (+00:00 format)"
     local five_days_ago_tz=$(python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(days=5)).strftime('%Y-%m-%dT%H:%M:%S+00:00'))")
 
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik test\", \"k\": 20, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"created_date_tz\": {\"\$gte\": \"$five_days_ago_tz\"}}}" 2>&1) || {
         log_error "TZ date filter request failed"
@@ -557,7 +662,7 @@ test_date_filtering() {
     log_info "Test: Filter by date with Z suffix"
     local five_days_ago_z=$(python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) - timedelta(days=5)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
 
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik test\", \"k\": 20, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"created_date_z\": {\"\$gte\": \"$five_days_ago_z\"}}}" 2>&1) || {
         log_error "Z-suffix date filter request failed"
@@ -574,7 +679,7 @@ test_date_filtering() {
 
     # Test 4: Filter by exact date range (between 2 and 5 days ago)
     log_info "Test: Filter by date range (between 2-5 days ago)"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik\", \"k\": 20, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"days_offset\": {\"\$gte\": -5, \"\$lte\": -2}}}" 2>&1) || {
         log_error "Date range filter request failed"
@@ -597,7 +702,7 @@ print('yes' if (chunks and all_in_range) else 'no')
 
     # Test 5: Filter for recent docs only (last 2 days)
     log_info "Test: Filter for recent docs (days_offset >= -2)"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik\", \"k\": 20, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"days_offset\": {\"\$gte\": -2}}}" 2>&1) || {
         log_error "Recent docs filter request failed"
@@ -624,7 +729,7 @@ test_output_formats() {
     # Test with ColPali to get image chunks
     log_info "Test: output_format=base64 (default)"
     local response
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"IQ imbalance compensation\", \"k\": 2, \"use_colpali\": true, \"output_format\": \"base64\", \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "base64 format request failed"
@@ -648,7 +753,7 @@ print('yes' if has_b64 else 'no')
 
     # Test URL format
     log_info "Test: output_format=url"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"IQ imbalance compensation\", \"k\": 2, \"use_colpali\": true, \"output_format\": \"url\", \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "url format request failed"
@@ -671,7 +776,7 @@ print('yes' if has_url else 'no')
 
     # Test text format (OCR)
     log_info "Test: output_format=text"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"IQ imbalance compensation\", \"k\": 2, \"use_colpali\": true, \"output_format\": \"text\", \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "text format request failed"
@@ -704,7 +809,7 @@ test_colpali_vs_standard() {
     # Standard retrieval (text embeddings)
     log_info "Test: Standard text embedding retrieval"
     local response
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"document processing features\", \"k\": 3, \"use_colpali\": false, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "Standard retrieval request failed"
@@ -722,7 +827,7 @@ test_colpali_vs_standard() {
 
     # ColPali retrieval (visual embeddings)
     log_info "Test: ColPali visual embedding retrieval"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"document processing features\", \"k\": 3, \"use_colpali\": true, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "ColPali retrieval request failed"
@@ -745,7 +850,7 @@ test_content_preservation() {
     # Test markdown formatting preserved
     log_info "Test: Markdown formatting preservation"
     local response
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"markdown formatting headers\", \"k\": 3, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"file_type\": \"md\"}}" 2>&1) || {
         log_error "Markdown content request failed"
@@ -774,7 +879,7 @@ print('yes' if has_formatting else 'no')
 
     # Test unicode preservation
     log_info "Test: Unicode character preservation"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"special characters unicode\", \"k\": 5, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "Unicode content request failed"
@@ -817,7 +922,7 @@ test_folder_creation_and_nesting() {
     # Test 1: Create a top-level folder
     log_info "Test: Create top-level folder /sanity_test"
     local response
-    response=$(curl -sf -X POST "$BASE_URL/folders" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" \
         -H "Content-Type: application/json" \
         -d '{"name": "sanity_test", "description": "Sanity test folder"}' 2>&1) || {
         log_error "Failed to create top-level folder"
@@ -836,7 +941,7 @@ test_folder_creation_and_nesting() {
 
     # Test 2: Create deeply nested folder with auto-created parents
     log_info "Test: Create nested folder /sanity_test/level1/level2/level3 (auto-create parents)"
-    response=$(curl -sf -X POST "$BASE_URL/folders" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" \
         -H "Content-Type: application/json" \
         -d '{"name": "level3", "full_path": "/sanity_test/level1/level2/level3"}' 2>&1) || {
         log_error "Failed to create nested folder"
@@ -854,7 +959,7 @@ test_folder_creation_and_nesting() {
 
     # Test 3: Verify intermediate folders were auto-created
     log_info "Test: Verify /sanity_test/level1 was auto-created"
-    response=$(curl -sf "$BASE_URL/folders/sanity_test/level1" 2>&1) || {
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/folders/sanity_test/level1" 2>&1) || {
         log_error "/sanity_test/level1 not found"
         return
     }
@@ -867,7 +972,7 @@ test_folder_creation_and_nesting() {
 
     # Test 4: Create sibling folders
     log_info "Test: Create sibling folder /sanity_test/sibling"
-    curl -sf -X POST "$BASE_URL/folders" \
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" \
         -H "Content-Type: application/json" \
         -d '{"name": "sibling", "full_path": "/sanity_test/sibling"}' > /dev/null 2>&1 || {
         log_error "Failed to create sibling folder"
@@ -877,7 +982,7 @@ test_folder_creation_and_nesting() {
 
     # Test 5: Folder lookup by path
     log_info "Test: Lookup folder by nested path"
-    response=$(curl -sf "$BASE_URL/folders/sanity_test/level1/level2" 2>&1) || {
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/folders/sanity_test/level1/level2" 2>&1) || {
         log_error "Folder lookup by path failed"
         return
     }
@@ -920,7 +1025,7 @@ EOF
         log_info "Ingesting $filename into $folder"
 
         local response doc_id
-        response=$(curl -sf -X POST "$BASE_URL/ingest/file" \
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/file" \
             -F "file=@$TEST_DIR/$filename" \
             -F "metadata=$metadata" \
             -F "folder_name=$folder" 2>&1) || {
@@ -953,7 +1058,7 @@ wait_for_folder_docs_processing() {
         fi
 
         local response
-        response=$(curl -sf -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=-1" \
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=-1" \
             -H "Content-Type: application/json" \
             -d "{\"document_filters\": {\"test_run_id\": \"$FOLDER_TEST_RUN_ID\"}}" 2>&1) || {
             log_warn "Failed to fetch folder document status"
@@ -992,7 +1097,7 @@ test_folder_depth_filtering() {
     # Test 1: folder_depth=0 (exact match only - just /sanity_test)
     log_info "Test: folder_depth=0 (exact folder match)"
     local response count
-    response=$(curl -sf -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=0" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=0" \
         -H "Content-Type: application/json" \
         -d "{\"document_filters\": {\"test_run_id\": \"$FOLDER_TEST_RUN_ID\"}}" 2>&1) || {
         log_error "folder_depth=0 request failed"
@@ -1008,7 +1113,7 @@ test_folder_depth_filtering() {
 
     # Test 2: folder_depth=1 (folder + direct children)
     log_info "Test: folder_depth=1 (folder + direct children)"
-    response=$(curl -sf -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=1" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=1" \
         -H "Content-Type: application/json" \
         -d "{\"document_filters\": {\"test_run_id\": \"$FOLDER_TEST_RUN_ID\"}}" 2>&1) || {
         log_error "folder_depth=1 request failed"
@@ -1025,7 +1130,7 @@ test_folder_depth_filtering() {
 
     # Test 3: folder_depth=-1 (all descendants)
     log_info "Test: folder_depth=-1 (all descendants)"
-    response=$(curl -sf -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=-1" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=-1" \
         -H "Content-Type: application/json" \
         -d "{\"document_filters\": {\"test_run_id\": \"$FOLDER_TEST_RUN_ID\"}}" 2>&1) || {
         log_error "folder_depth=-1 request failed"
@@ -1042,7 +1147,7 @@ test_folder_depth_filtering() {
 
     # Test 4: folder_depth=2 (up to grandchildren)
     log_info "Test: folder_depth=2 (up to 2 levels deep)"
-    response=$(curl -sf -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=2" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents?folder_name=$encoded_folder&folder_depth=2" \
         -H "Content-Type: application/json" \
         -d "{\"document_filters\": {\"test_run_id\": \"$FOLDER_TEST_RUN_ID\"}}" 2>&1) || {
         log_error "folder_depth=2 request failed"
@@ -1067,7 +1172,7 @@ test_folder_retrieval_scoping() {
     # Test 1: retrieve/chunks with folder_depth=0
     log_info "Test: /retrieve/chunks with folder_depth=0"
     local response count
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{
             \"query\": \"folder hierarchy nesting\",
@@ -1089,7 +1194,7 @@ test_folder_retrieval_scoping() {
 
     # Test 2: retrieve/chunks with folder_depth=-1 (all descendants)
     log_info "Test: /retrieve/chunks with folder_depth=-1"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{
             \"query\": \"folder hierarchy nesting\",
@@ -1111,7 +1216,7 @@ test_folder_retrieval_scoping() {
 
     # Test 3: retrieve/docs with folder_depth scoping
     log_info "Test: /retrieve/docs with folder_depth=-1"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/docs" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/docs" \
         -H "Content-Type: application/json" \
         -d "{
             \"query\": \"folder test\",
@@ -1138,7 +1243,7 @@ test_folder_path_normalization() {
     # Test 1: Trailing slash normalization
     log_info "Test: Path with trailing slash"
     local response full_path
-    response=$(curl -sf -X POST "$BASE_URL/folders" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" \
         -H "Content-Type: application/json" \
         -d '{"name": "trailing_slash_test", "full_path": "/sanity_test/trailing/"}' 2>&1)
     full_path=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('full_path',''))" 2>/dev/null)
@@ -1150,7 +1255,7 @@ test_folder_path_normalization() {
 
     # Test 2: Double slashes normalization
     log_info "Test: Path with double slashes"
-    response=$(curl -sf -X POST "$BASE_URL/folders" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" \
         -H "Content-Type: application/json" \
         -d '{"name": "double_slash_test", "full_path": "/sanity_test//double"}' 2>&1)
     full_path=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('full_path',''))" 2>/dev/null)
@@ -1163,7 +1268,7 @@ test_folder_path_normalization() {
     # Test 3: Path with '..' should be rejected
     log_info "Test: Path with '..' (should fail)"
     local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/folders" \
+    http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/folders" \
         -H "Content-Type: application/json" \
         -d '{"name": "bad", "full_path": "/sanity_test/../sneaky"}')
     if [[ "$http_code" == "400" ]]; then
@@ -1182,12 +1287,12 @@ test_folder_move_integrity() {
     local dst_path="/$dst_folder"
 
     # Create source and destination folders
-    curl -sf -X POST "$BASE_URL/folders" -H "Content-Type: application/json" \
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" -H "Content-Type: application/json" \
         -d "{\"name\": \"$src_folder\", \"full_path\": \"$src_path\"}" > /dev/null 2>&1 || {
         log_error "Failed to create source folder $src_path"
         return
     }
-    curl -sf -X POST "$BASE_URL/folders" -H "Content-Type: application/json" \
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" -H "Content-Type: application/json" \
         -d "{\"name\": \"$dst_folder\", \"full_path\": \"$dst_path\"}" > /dev/null 2>&1 || {
         log_error "Failed to create destination folder $dst_path"
         return
@@ -1195,8 +1300,8 @@ test_folder_move_integrity() {
 
     # Resolve folder IDs
     local src_id dst_id
-    src_id=$(curl -sf "$BASE_URL/folders$src_path" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
-    dst_id=$(curl -sf "$BASE_URL/folders$dst_path" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+    src_id=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/folders$src_path" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+    dst_id=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/folders$dst_path" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
 
     if [[ -z "$src_id" || -z "$dst_id" ]]; then
         log_error "Failed to resolve folder IDs (src=$src_id, dst=$dst_id)"
@@ -1210,7 +1315,7 @@ test_folder_move_integrity() {
 EOF
 )
     local ingest_response doc_id
-    ingest_response=$(curl -sf -X POST "$BASE_URL/ingest/text" -H "Content-Type: application/json" -d "$ingest_payload" 2>&1) || {
+    ingest_response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/text" -H "Content-Type: application/json" -d "$ingest_payload" 2>&1) || {
         log_error "Failed to ingest move test document"
         return
     }
@@ -1266,7 +1371,7 @@ else:
 
     # Validate initial folder assignment
     local doc_query_response
-    doc_query_response=$(curl -sf -X POST "$BASE_URL/documents" \
+    doc_query_response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents" \
         -H "Content-Type: application/json" \
         -d "{\"document_filters\": {\"external_id\": \"$doc_id\"}}") || {
         log_error "Failed to fetch document for initial folder validation"
@@ -1275,13 +1380,13 @@ else:
     validate_doc_state "$src_id" "$src_path" "after ingest" "$doc_query_response"
 
     # Move the document to the destination folder using ID to avoid encoding issues
-    curl -sf -X POST "$BASE_URL/folders/$dst_id/documents/$doc_id" > /dev/null 2>&1 || {
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders/$dst_id/documents/$doc_id" > /dev/null 2>&1 || {
         log_error "Failed to move document to destination folder"
         return
     }
 
     # Validate folder assignment after move
-    doc_query_response=$(curl -sf -X POST "$BASE_URL/documents" \
+    doc_query_response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents" \
         -H "Content-Type: application/json" \
         -d "{\"document_filters\": {\"external_id\": \"$doc_id\"}}") || {
         log_error "Failed to fetch document after move"
@@ -1291,7 +1396,7 @@ else:
 
     # Verify folder summary counts reflect the move
     local summary_response
-    summary_response=$(curl -sf "$BASE_URL/folders/summary" 2>/dev/null) || {
+    summary_response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/folders/summary" 2>/dev/null) || {
         log_error "Failed to fetch folder summaries"
         return
     }
@@ -1317,14 +1422,14 @@ print(f"{count(src_id)},{count(dst_id)}")
     fi
 
     # Cleanup move test folders (ignore errors)
-    curl -sf -X DELETE "$BASE_URL/folders/$src_id?recursive=true" > /dev/null 2>&1 || true
-    curl -sf -X DELETE "$BASE_URL/folders/$dst_id?recursive=true" > /dev/null 2>&1 || true
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X DELETE "$BASE_URL/folders/$src_id?recursive=true" > /dev/null 2>&1 || true
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X DELETE "$BASE_URL/folders/$dst_id?recursive=true" > /dev/null 2>&1 || true
 }
 
 cleanup_folder_test() {
     log_info "Cleaning up folder test resources..."
     # Delete the test folder hierarchy recursively
-    curl -sf -X DELETE "$BASE_URL/folders/sanity_test?recursive=true" > /dev/null 2>&1 || true
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X DELETE "$BASE_URL/folders/sanity_test?recursive=true" > /dev/null 2>&1 || true
     log_info "Folder test cleanup completed"
 }
 
@@ -1334,7 +1439,7 @@ test_result_validation() {
     # Test 1: Verify specific content is retrievable
     log_info "Test: Search for 'vector embeddings' returns txt file content"
     local response
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"vector embeddings semantic search\", \"k\": 3, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"file_type\": \"txt\"}}" 2>&1) || {
         log_error "Content validation request failed"
@@ -1357,7 +1462,7 @@ print('yes' if found else 'no')
 
     # Test 2: Verify code block content in markdown
     log_info "Test: Search for 'retrieve_chunks' returns md file with code"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"retrieve_chunks function def\", \"k\": 3, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"file_type\": \"md\"}}" 2>&1) || {
         log_error "Code content request failed"
@@ -1379,7 +1484,7 @@ print('yes' if found else 'no')
 
     # Test 3: Verify CSV tabular content
     log_info "Test: Search for 'Widget Electronics' returns csv data"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"Widget Electronics product\", \"k\": 3, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"file_type\": \"csv\"}}" 2>&1) || {
         log_error "CSV content request failed"
@@ -1401,7 +1506,7 @@ print('yes' if found else 'no')
 
     # Test 4: Verify PDF content (if PDF was ingested)
     log_info "Test: Search for 'IQ imbalance' returns PDF content"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"IQ imbalance compensation frequency\", \"k\": 3, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\", \"file_type\": \"pdf\"}}" 2>&1) || {
         log_error "PDF content request failed"
@@ -1419,7 +1524,7 @@ print('yes' if found else 'no')
 
     # Test 5: Verify relevance scores are reasonable
     log_info "Test: Verify retrieval scores are in valid range"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik test document\", \"k\": 5, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "Score validation request failed"
@@ -1460,7 +1565,7 @@ test_additional_ingestion_variants() {
     local metadata='{"test_run_id":"'"$TEST_RUN_ID"'","value_num":7,"value_decimal":"3.14","created_ts":"2024-01-02T10:00:00Z","tags":["alpha","beta"],"status":"active"}'
     local metadata_types='{"value_num":"number","value_decimal":"decimal","created_ts":"datetime"}'
     local response
-    response=$(curl -sf -X POST "$BASE_URL/ingest/text" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/text" \
         -H "Content-Type: application/json" \
         -d "{\"content\": \"Typed metadata sanity text\", \"filename\": \"typed_metadata.txt\", \"metadata\": $metadata, \"metadata_types\": $metadata_types, \"use_colpali\": false, \"folder_name\": \"/sanity_test/typed\", \"end_user_id\": \"end_user_typed\"}" 2>&1) || {
         log_error "ingest_text request failed"
@@ -1477,7 +1582,7 @@ test_additional_ingestion_variants() {
     log_info "Test: /ingest/files batch upload"
     local batch_metadata='[{"batch":"one","test_run_id":"'"$TEST_RUN_ID"'","value":1},{"batch":"two","test_run_id":"'"$TEST_RUN_ID"'","value":2}]'
     local batch_metadata_types='[{"value":"number"},{"value":"number"}]'
-    response=$(curl -sf -X POST "$BASE_URL/ingest/files" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/files" \
         -F "files=@$TEST_DIR/batch_file1.txt" \
         -F "files=@$TEST_DIR/batch_file2.txt" \
         -F "metadata=$batch_metadata" \
@@ -1512,7 +1617,7 @@ for d in docs:
     if [[ ${#BATCH_DOC_IDS[@]} -gt 0 ]]; then
         local target="${BATCH_DOC_IDS[0]}"
         log_info "Test: /ingest/requeue for $target"
-        response=$(curl -sf -X POST "$BASE_URL/ingest/requeue" \
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/requeue" \
             -H "Content-Type: application/json" \
             -d "{\"jobs\": [{\"external_id\": \"$target\", \"use_colpali\": true}], \"include_all\": false}" 2>&1) || {
             log_error "Requeue request failed"
@@ -1534,7 +1639,7 @@ print(res[0].get('status','') if res else '')
 
     # Morphik On-the-Fly document query with optional ingest
     log_info "Test: /ingest/document/query with schema + ingest"
-    response=$(curl -sf -X POST "$BASE_URL/ingest/document/query" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/document/query" \
         -F "file=@$TEST_DIR/test_document.txt" \
         -F "prompt=Extract title and keywords" \
         -F "schema={\"title\":\"string\",\"keywords\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}" \
@@ -1573,7 +1678,7 @@ test_typed_metadata_filters() {
     # $type filters on number/decimal/datetime
     log_info "Test: \$type filters for typed metadata"
     local response
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"typed metadata\", \"k\": 5, \"filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"value_num\": {\"\$type\": \"number\"}}, {\"value_decimal\": {\"\$type\": \"decimal\"}}, {\"created_ts\": {\"\$type\": \"datetime\"}}]}}" 2>&1) || {
         log_error "Typed \$type filter request failed"
@@ -1589,7 +1694,7 @@ test_typed_metadata_filters() {
 
     # Regex / contains / exists operators
     log_info "Test: \$regex, \$contains, \$exists, \$in/\$nin operators"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"alpha\", \"k\": 5, \"filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"tags\": {\"\$contains\": \"alpha\"}}, {\"status\": {\"\$regex\": \"active\"}}, {\"missing_field\": {\"\$exists\": false}}, {\"tags\": {\"\$in\": [\"alpha\", \"gamma\"]}}, {\"status\": {\"\$nin\": [\"inactive\"]}}]}}" 2>&1) || {
         log_error "Regex/contains filter request failed"
@@ -1604,7 +1709,7 @@ test_typed_metadata_filters() {
 
     # /retrieve/docs with typed filters
     log_info "Test: /retrieve/docs respects typed filters"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/docs" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/docs" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"Typed\", \"k\": 3, \"filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"value_num\": {\"\$gte\": 5}}, {\"value_decimal\": {\"\$lte\": 5}}]}}" 2>&1) || {
         log_error "retrieve/docs typed filter request failed"
@@ -1619,7 +1724,7 @@ test_typed_metadata_filters() {
 
     # /documents list with typed filters
     log_info "Test: /documents list with typed filters"
-    response=$(curl -sf -X POST "$BASE_URL/documents" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents" \
         -H "Content-Type: application/json" \
         -d "{\"skip\":0,\"limit\":5,\"document_filters\":{\"test_run_id\":\"$TEST_RUN_ID\",\"value_decimal\":{\"\$gte\":2}}}" 2>&1) || {
         log_error "/documents typed list request failed"
@@ -1635,7 +1740,7 @@ test_typed_metadata_filters() {
     # Invalid type coercion should return 400
     log_info "Test: Invalid type comparison returns 400"
     local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/retrieve/chunks" \
+    http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"typed\", \"k\": 1, \"filters\": {\"value_num\": {\"\$gt\": \"not_a_number\"}}}")
     if [[ "$http_code" == "400" || "$http_code" == "422" ]]; then
@@ -1660,7 +1765,7 @@ test_document_management_and_updates() {
     # Document status
     log_info "Test: /documents/{id}/status"
     local response
-    response=$(curl -sf "$BASE_URL/documents/$target_doc/status" 2>&1) || {
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/documents/$target_doc/status" 2>&1) || {
         log_error "Document status request failed"
         return
     }
@@ -1673,7 +1778,7 @@ test_document_management_and_updates() {
         local fname="${BATCH_FILENAMES[0]}"
         log_info "Test: /documents/filename/$fname"
         local http_code
-        http_code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/documents/filename/$fname")
+        http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" "$BASE_URL/documents/filename/$fname")
         if [[ "$http_code" == "200" ]]; then
             log_success "Filename lookup returned 200 for $fname"
         else
@@ -1683,7 +1788,7 @@ test_document_management_and_updates() {
 
     # download_url and direct download
     log_info "Test: /documents/{id}/download_url"
-    response=$(curl -sf "$BASE_URL/documents/$target_doc/download_url" 2>&1) || {
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/documents/$target_doc/download_url" 2>&1) || {
         log_error "Download URL request failed"
         return
     }
@@ -1697,7 +1802,7 @@ test_document_management_and_updates() {
 
     log_info "Test: /documents/{id}/file streaming"
     local file_content
-    file_content=$(curl -sf "$BASE_URL/documents/$target_doc/file" 2>/dev/null | head -c 50) || {
+    file_content=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/documents/$target_doc/file" 2>/dev/null | head -c 50) || {
         log_error "Document file download failed"
         return
     }
@@ -1710,7 +1815,7 @@ test_document_management_and_updates() {
     # update_text on typed doc (creates additive content)
     if [[ -n "$TYPED_DOC_ID" ]]; then
         log_info "Test: /documents/{id}/update_text"
-        response=$(curl -sf -X POST "$BASE_URL/documents/$TYPED_DOC_ID/update_text" \
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents/$TYPED_DOC_ID/update_text" \
             -H "Content-Type: application/json" \
             -d "{\"content\": \"Updated text content for sanity test\", \"filename\": \"typed_metadata.txt\", \"metadata\": {\"update_pass\": true}, \"use_colpali\": false}" 2>&1) || {
             log_error "update_text request failed"
@@ -1723,7 +1828,7 @@ test_document_management_and_updates() {
     # update_file with replace strategy
     log_info "Test: /documents/{id}/update_file"
     echo "Updated file content" > "$TEST_DIR/updated_content.txt"
-    response=$(curl -sf -X POST "$BASE_URL/documents/$target_doc/update_file" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents/$target_doc/update_file" \
         -F "file=@$TEST_DIR/updated_content.txt" \
         -F "metadata={\"updated_via_api\":true}" \
         -F "metadata_types={}" \
@@ -1737,7 +1842,7 @@ test_document_management_and_updates() {
 
     # update_metadata add-only
     log_info "Test: /documents/{id}/update_metadata"
-    response=$(curl -sf -X POST "$BASE_URL/documents/$target_doc/update_metadata" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents/$target_doc/update_metadata" \
         -H "Content-Type: application/json" \
         -d "{\"metadata\": {\"reviewed\": true}, \"metadata_types\": {}}" 2>&1) || {
         log_error "update_metadata request failed"
@@ -1748,7 +1853,7 @@ test_document_management_and_updates() {
 
     # list_docs aggregates with pagination
     log_info "Test: /documents/list_docs aggregates"
-    response=$(curl -sf -X POST "$BASE_URL/documents/list_docs" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents/list_docs" \
         -H "Content-Type: application/json" \
         -d "{\"document_filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}, \"skip\": 0, \"limit\": 2, \"include_total_count\": true, \"include_status_counts\": true, \"include_folder_counts\": true, \"return_documents\": false}" 2>&1) || {
         log_error "/documents/list_docs request failed"
@@ -1772,7 +1877,7 @@ test_document_management_and_updates() {
     fi
 
     log_info "Test: /documents/list_docs filename filters"
-    response=$(curl -sf -X POST "$BASE_URL/documents/list_docs" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents/list_docs" \
         -H "Content-Type: application/json" \
         -d "{\"document_filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"filename\": {\"\$eq\": \"$filename_target\"}}]}, \"skip\": 0, \"limit\": 5, \"include_total_count\": true}" 2>&1) || {
         log_error "/documents/list_docs filename filter request failed"
@@ -1787,7 +1892,7 @@ test_document_management_and_updates() {
 
     # list_docs filename regex with OR conditions
     log_info "Test: /documents/list_docs filename regex with OR"
-    response=$(curl -sf -X POST "$BASE_URL/documents/list_docs" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents/list_docs" \
         -H "Content-Type: application/json" \
         -d "{\"document_filters\": {\"\$and\": [{\"test_run_id\": \"$TEST_RUN_ID\"}, {\"\$or\": [{\"filename\": {\"\$regex\": {\"pattern\": \"^test_document\\\\.(txt|md)$\", \"flags\": \"i\"}}}, {\"file_type\": \"csv\"}]}]}, \"skip\": 0, \"limit\": 5, \"include_total_count\": true}" 2>&1) || {
         log_error "/documents/list_docs filename regex/or request failed"
@@ -1802,7 +1907,7 @@ test_document_management_and_updates() {
 
     # search/documents by filename
     log_info "Test: /search/documents name search"
-    response=$(curl -sf -X POST "$BASE_URL/search/documents" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/search/documents" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"batch_file\", \"limit\": 5, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "search/documents request failed"
@@ -1817,7 +1922,7 @@ test_document_management_and_updates() {
     # documents/pages extraction (PDF)
     if [[ -n "$PDF_DOC_ID" ]]; then
         log_info "Test: /documents/pages for PDF"
-        response=$(curl -sf -X POST "$BASE_URL/documents/pages" \
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/documents/pages" \
             -H "Content-Type: application/json" \
             -d "{\"document_id\": \"$PDF_DOC_ID\", \"start_page\": 1, \"end_page\": 1}" 2>&1) || {
             log_error "documents/pages request failed"
@@ -1838,10 +1943,10 @@ test_document_management_and_updates() {
         local delete_id="${BATCH_DOC_IDS[1]}"
         log_info "Test: DELETE /documents/$delete_id"
         local http_code
-        http_code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE_URL/documents/$delete_id")
+        http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X DELETE "$BASE_URL/documents/$delete_id")
         if [[ "$http_code" == "200" ]]; then
             log_success "Deleted document $delete_id"
-            http_code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/documents/$delete_id/status")
+            http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" "$BASE_URL/documents/$delete_id/status")
             if [[ "$http_code" == "404" ]]; then
                 log_success "Deleted document no longer retrievable (404)"
             else
@@ -1858,7 +1963,7 @@ test_retrieval_variants_and_batches() {
 
     # Capture a chunk reference for batch/chunks
     local response
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik\", \"k\": 1, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "Initial chunk fetch failed"
@@ -1876,7 +1981,7 @@ if chunks:
 
     # Grouped retrieval with padding
     log_info "Test: /retrieve/chunks/grouped with padding"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks/grouped" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks/grouped" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik\", \"k\": 5, \"padding\": 1, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "Grouped retrieval request failed"
@@ -1891,7 +1996,7 @@ if chunks:
 
     # Image query retrieval
     log_info "Test: /retrieve/chunks with query_image"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query_image\": \"$QUERY_IMAGE_B64\", \"k\": 2, \"use_colpali\": true, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "query_image retrieval failed"
@@ -1903,7 +2008,7 @@ if chunks:
     # /retrieve/docs must reject image queries
     log_info "Test: /retrieve/docs rejects query_image"
     local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/retrieve/docs" \
+    http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/retrieve/docs" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik\", \"query_image\": \"$QUERY_IMAGE_B64\", \"k\": 1, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}")
     if [[ "$http_code" == "400" || "$http_code" == "422" ]]; then
@@ -1914,7 +2019,7 @@ if chunks:
 
     # min_score + reranking
     log_info "Test: min_score with use_reranking"
-    response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"morphik\", \"k\": 3, \"min_score\": 0.99, \"use_reranking\": true, \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "min_score retrieval failed"
@@ -1925,7 +2030,7 @@ if chunks:
     # Output formats on image doc
     if [[ -n "$IMAGE_COLPALI_DOC_ID" ]]; then
         log_info "Test: output_format URL for image doc"
-        response=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
             -H "Content-Type: application/json" \
             -d "{\"query\": \"image\", \"k\": 2, \"use_colpali\": true, \"output_format\": \"url\", \"filters\": {\"external_id\": \"$IMAGE_COLPALI_DOC_ID\"}}" 2>&1) || {
             log_error "output_format url retrieval failed"
@@ -1961,7 +2066,7 @@ print('yes' if has_url else 'no')
     else
         local doc_payload
         doc_payload=$(IFS=,; echo "[${doc_list[*]}]")
-        response=$(curl -sf -X POST "$BASE_URL/batch/documents" \
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/batch/documents" \
             -H "Content-Type: application/json" \
             -d "{\"document_ids\": $doc_payload}" 2>&1) || {
             log_error "/batch/documents request failed"
@@ -1973,7 +2078,7 @@ print('yes' if has_url else 'no')
     # Batch chunks
     if [[ -n "$LAST_CHUNK_DOC_ID" && -n "$LAST_CHUNK_NUMBER" ]]; then
         log_info "Test: /batch/chunks"
-        response=$(curl -sf -X POST "$BASE_URL/batch/chunks" \
+        response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/batch/chunks" \
             -H "Content-Type: application/json" \
             -d "{\"sources\": [{\"document_id\": \"$LAST_CHUNK_DOC_ID\", \"chunk_number\": $LAST_CHUNK_NUMBER}], \"output_format\": \"text\"}" 2>&1) || {
             log_error "/batch/chunks request failed"
@@ -1990,7 +2095,7 @@ print('yes' if has_url else 'no')
 
     # search/documents already covered, but exercise filename search again (0/1/many)
     log_info "Test: /search/documents no-match case"
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/search/documents" \
+    http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/search/documents" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"nonexistent_filename_$TEST_RUN_ID\", \"limit\": 3}")
     if [[ "$http_code" == "200" ]]; then
@@ -2006,7 +2111,7 @@ test_query_and_chat_flows() {
     # Missing text should error
     log_info "Test: /query rejects missing text"
     local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/query" \
+    http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/query" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"\", \"k\": 1}")
     if [[ "$http_code" == "400" || "$http_code" == "422" ]]; then
@@ -2023,7 +2128,7 @@ test_query_and_chat_flows() {
     cat > "$tmp_body" << EOF
 {"query": "Summarize Morphik sanity docs", "k": 2, "inline_citations": true, "padding": 1, "response_schema": {"type": "object", "properties": {"summary": {"type": "string"}}}, "llm_config": {"temperature": 0}, "chat_id": "$chat_id", "stream_response": false}
 EOF
-    http_code=$(curl -s -o /tmp/query_non_stream.out -w "%{http_code}" -X POST "$BASE_URL/query" \
+    http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /tmp/query_non_stream.out -w "%{http_code}" -X POST "$BASE_URL/query" \
         -H "Content-Type: application/json" \
         -d @"$tmp_body")
     if [[ "$http_code" == "200" ]]; then
@@ -2035,7 +2140,7 @@ EOF
     # Streaming query (SSE)
     log_info "Test: /query stream_response=true"
     local stream_file="$TEST_DIR/query_stream.out"
-    http_code=$(curl -sN --max-time 20 -o "$stream_file" -w "%{http_code}" -X POST "$BASE_URL/query" \
+    http_code=$(curl -sN ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} --max-time 20 -o "$stream_file" -w "%{http_code}" -X POST "$BASE_URL/query" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"Stream a short response\", \"k\": 1, \"chat_id\": \"$chat_id\", \"stream_response\": true}")
     if [[ "$http_code" == "200" ]]; then
@@ -2051,18 +2156,18 @@ EOF
     # Chat history 0/1 cases
     log_info "Test: /chat/{chat_id} history retrieval"
     local chat_response
-    chat_response=$(curl -sf "$BASE_URL/chat/$chat_id" 2>&1) || chat_response="[]"
+    chat_response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/chat/$chat_id" 2>&1) || chat_response="[]"
     local chat_count
     chat_count=$(echo "$chat_response" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || chat_count=0
     log_success "/chat/$chat_id returned $chat_count message(s)"
 
     log_info "Test: /chats listing"
-    chat_response=$(curl -sf "$BASE_URL/chats" 2>&1) || chat_response="[]"
+    chat_response=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/chats" 2>&1) || chat_response="[]"
     chat_count=$(echo "$chat_response" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || chat_count=0
     log_success "/chats returned $chat_count chat(s)"
 
     log_info "Test: /chats/{chat_id}/title update"
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH "$BASE_URL/chats/$chat_id/title?title=Sanity%20Chat" 2>/dev/null)
+    http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X PATCH "$BASE_URL/chats/$chat_id/title?title=Sanity%20Chat" 2>/dev/null)
     if [[ "$http_code" == "200" || "$http_code" == "404" ]]; then
         log_success "/chats/{chat_id}/title responded with $http_code"
     else
@@ -2079,34 +2184,34 @@ test_folder_scoping_and_summary() {
 
     local root="/scope_suite_$TEST_RUN_ID"
     log_info "Test: Create scoped folders"
-    curl -sf -X POST "$BASE_URL/folders" \
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" \
         -H "Content-Type: application/json" \
         -d "{\"name\": \"scope_suite_$TEST_RUN_ID\", \"full_path\": \"$root\"}" > /dev/null 2>&1 || true
-    curl -sf -X POST "$BASE_URL/folders" \
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" \
         -H "Content-Type: application/json" \
         -d "{\"name\": \"a\", \"full_path\": \"$root/a\"}" > /dev/null 2>&1 || true
-    curl -sf -X POST "$BASE_URL/folders" \
+    curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders" \
         -H "Content-Type: application/json" \
         -d "{\"name\": \"b\", \"full_path\": \"$root/b\"}" > /dev/null 2>&1 || true
 
     # Ingest scoped docs with end_user_id variants
     log_info "Test: Ingest scoped docs with end_user_id"
     local resp
-    resp=$(curl -sf -X POST "$BASE_URL/ingest/text" \
+    resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/text" \
         -H "Content-Type: application/json" \
         -d "{\"content\": \"Scoped root doc\", \"filename\": \"scope_root.txt\", \"metadata\": {\"test_run_id\": \"$TEST_RUN_ID\", \"scope\": \"root\"}, \"folder_name\": \"$root\", \"end_user_id\": \"user_a\"}" 2>&1) || {
         log_warn "Scoped root ingest failed"
     }
     SCOPE_DOC_IDS+=($(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('external_id',''))" 2>/dev/null))
 
-    resp=$(curl -sf -X POST "$BASE_URL/ingest/text" \
+    resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/text" \
         -H "Content-Type: application/json" \
         -d "{\"content\": \"Scoped child A\", \"filename\": \"scope_a.txt\", \"metadata\": {\"test_run_id\": \"$TEST_RUN_ID\", \"scope\": \"a\"}, \"folder_name\": \"$root/a\", \"end_user_id\": \"user_a\"}" 2>&1) || {
         log_warn "Scoped a ingest failed"
     }
     SCOPE_DOC_IDS+=($(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('external_id',''))" 2>/dev/null))
 
-    resp=$(curl -sf -X POST "$BASE_URL/ingest/text" \
+    resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/ingest/text" \
         -H "Content-Type: application/json" \
         -d "{\"content\": \"Scoped child B\", \"filename\": \"scope_b.txt\", \"metadata\": {\"test_run_id\": \"$TEST_RUN_ID\", \"scope\": \"b\"}, \"folder_name\": \"$root/b\", \"end_user_id\": \"user_b\"}" 2>&1) || {
         log_warn "Scoped b ingest failed"
@@ -2115,14 +2220,14 @@ test_folder_scoping_and_summary() {
 
     # List folders (covers >0 case)
     log_info "Test: /folders list"
-    resp=$(curl -sf "$BASE_URL/folders" 2>&1) || resp="[]"
+    resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/folders" 2>&1) || resp="[]"
     local folder_count
     folder_count=$(echo "$resp" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null) || folder_count=0
     log_success "/folders returned $folder_count folder(s)"
 
     # Folder details with document counts
     log_info "Test: /folders/details with counts"
-    resp=$(curl -sf -X POST "$BASE_URL/folders/details" \
+    resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/folders/details" \
         -H "Content-Type: application/json" \
         -d "{\"identifiers\": [\"$root\", \"$root/a\"], \"include_document_count\": true, \"include_status_counts\": true}" 2>&1) || {
         log_error "/folders/details request failed"
@@ -2133,7 +2238,7 @@ test_folder_scoping_and_summary() {
 
     # Summary endpoint
     log_info "Test: /folders/summary"
-    resp=$(curl -sf "$BASE_URL/folders/summary" 2>&1) || resp="[]"
+    resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/folders/summary" 2>&1) || resp="[]"
     local root_count_before
     root_count_before=$(echo "$resp" | python3 -c "
 import sys,json
@@ -2149,13 +2254,13 @@ for entry in json.load(sys.stdin):
         log_info "Test: add/remove document to folder via /folders/{path}/documents/{id}"
         local encoded_folder
         encoded_folder=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$root'))")
-        http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/folders/${encoded_folder}/documents/$TYPED_DOC_ID")
+        http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/folders/${encoded_folder}/documents/$TYPED_DOC_ID")
         if [[ "$http_code" == "200" ]]; then
             log_success "Added document to $root"
         else
             log_warn "Add document returned $http_code"
         fi
-        http_code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE_URL/folders/${encoded_folder}/documents/$TYPED_DOC_ID")
+        http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X DELETE "$BASE_URL/folders/${encoded_folder}/documents/$TYPED_DOC_ID")
         if [[ "$http_code" == "200" ]]; then
             log_success "Removed document from $root"
         else
@@ -2165,7 +2270,7 @@ for entry in json.load(sys.stdin):
 
     # folder_name list selector in retrieval
     log_info "Test: folder_name list scoping in /retrieve/chunks"
-    resp=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"Scoped\", \"k\": 10, \"folder_name\": [\"$root/a\", \"$root/b\"], \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "folder_name list retrieval failed"
@@ -2180,7 +2285,7 @@ for entry in json.load(sys.stdin):
 
     # end_user_id scoping
     log_info "Test: end_user_id scoping"
-    resp=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"Scoped\", \"k\": 5, \"end_user_id\": \"user_b\", \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "end_user_id scoped retrieval failed"
@@ -2191,7 +2296,7 @@ for entry in json.load(sys.stdin):
 
     # 0-case: nonexistent folder
     log_info "Test: folder_name nonexistent should return 0"
-    resp=$(curl -sf -X POST "$BASE_URL/retrieve/chunks" \
+    resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -X POST "$BASE_URL/retrieve/chunks" \
         -H "Content-Type: application/json" \
         -d "{\"query\": \"Scoped\", \"k\": 5, \"folder_name\": [\"$root/doesnotexist\"], \"filters\": {\"test_run_id\": \"$TEST_RUN_ID\"}}" 2>&1) || {
         log_error "Nonexistent folder retrieval failed"
@@ -2207,9 +2312,9 @@ for entry in json.load(sys.stdin):
     if [[ ${#SCOPE_DOC_IDS[@]} -gt 0 ]]; then
         local delete_id="${SCOPE_DOC_IDS[0]}"
         log_info "Test: Delete scoped document $delete_id and verify summary"
-        http_code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE_URL/documents/$delete_id")
+        http_code=$(curl -s ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} -o /dev/null -w "%{http_code}" -X DELETE "$BASE_URL/documents/$delete_id")
         if [[ "$http_code" == "200" ]]; then
-            resp=$(curl -sf "$BASE_URL/folders/summary" 2>&1) || resp="[]"
+            resp=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/folders/summary" 2>&1) || resp="[]"
             local root_count_after
             root_count_after=$(echo "$resp" | python3 -c "
 import sys,json
@@ -2274,6 +2379,7 @@ main() {
     echo -e "${NC}"
 
     check_server
+    setup_auth
     create_test_files
     test_protected_field_guards
     run_ingestion_tests
@@ -2292,7 +2398,7 @@ main() {
         log_info "Waiting for typed metadata document to be processed..."
         for i in {1..10}; do
             local status
-            status=$(curl -sf "$BASE_URL/documents/$TYPED_DOC_ID" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('system_metadata',{}).get('status',''))" 2>/dev/null) || status=""
+            status=$(curl -sf ${AUTH_CURL_OPTS[@]+"${AUTH_CURL_OPTS[@]}"} "$BASE_URL/documents/$TYPED_DOC_ID" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('system_metadata',{}).get('status',''))" 2>/dev/null) || status=""
             if [[ "$status" == "completed" ]]; then
                 log_success "Typed metadata document processed"
                 break
@@ -2303,6 +2409,7 @@ main() {
 
     test_typed_metadata_filters
     test_document_management_and_updates
+    run_uri_tests
     test_retrieval_variants_and_batches
     test_query_and_chat_flows
     test_folder_scoping_and_summary
@@ -2318,6 +2425,7 @@ main() {
     cleanup_folder_test
 
     cleanup_test_files "${1:-}"
+    cleanup_auth_app
 
     print_summary
 }
