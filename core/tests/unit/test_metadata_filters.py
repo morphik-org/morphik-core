@@ -74,6 +74,26 @@ class TestBasicFilters:
         assert "NOT" in sql
         assert "status" in sql
 
+    def test_filename_column_eq(self):
+        """Filename filters should target the filename column."""
+        builder = MetadataFilterBuilder()
+        filters = {"filename": {"$eq": "report.pdf"}}
+        sql = builder.build(filters)
+
+        assert "filename" in sql
+        assert "report.pdf" in sql
+        assert "doc_metadata" not in sql
+
+    def test_filename_or_metadata(self):
+        """Filename filters should compose with metadata filters."""
+        builder = MetadataFilterBuilder()
+        filters = {"$or": [{"filename": {"$regex": "report"}}, {"status": "active"}]}
+        sql = builder.build(filters)
+
+        assert "OR" in sql
+        assert "filename" in sql
+        assert "doc_metadata" in sql
+
 
 class TestComparisonOperators:
     """Test new comparison operators for typed metadata."""

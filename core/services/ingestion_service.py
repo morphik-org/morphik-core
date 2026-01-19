@@ -77,6 +77,7 @@ class IngestionService:
         "folder_id",
         "folder_path",
         "external_id",
+        "filename",
         "app_id",
         "owner_id",
         "end_user_id",
