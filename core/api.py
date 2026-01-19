@@ -3,7 +3,7 @@ import logging
 import secrets
 import time  # Add time import for profiling
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import arq
@@ -17,10 +17,16 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from starlette.middleware.sessions import SessionMiddleware
 
 from core.app_factory import lifespan
-from core.auth_utils import verify_token
+from core.auth_utils import (
+    clear_app_active_cache,
+    ensure_app_is_active,
+    mark_app_active,
+    mark_app_revoked,
+    verify_token,
+)
 from core.config import get_settings
 from core.database.postgres_database import InvalidMetadataFilterError
-from core.dependencies import get_redis_pool
+from core.dependencies import get_optional_redis_pool, get_redis_pool
 from core.limits_utils import check_and_increment_limits
 from core.logging_config import setup_logging
 from core.middleware.profiling import ProfilingMiddleware
@@ -987,7 +993,8 @@ async def get_available_models_for_selection(auth: AuthContext = Depends(verify_
 #             "user_id": name,
 #             "entity_id": name,  # backward compat
 #             "app_id": str(uuid.uuid4()),
-#             "exp": datetime.now(UTC) + timedelta(days=expiry_days),
+#             "token_version": 0,
+#            "exp": datetime.now(UTC) + timedelta(days=expiry_days),
 #         }
 
 #         # Generate token
@@ -1030,8 +1037,9 @@ async def get_available_models_for_selection(auth: AuthContext = Depends(verify_
 @app.post("/cloud/generate_uri", include_in_schema=True)
 async def generate_cloud_uri(
     request: GenerateUriRequest,
-    authorization: str = Header(None),
+    authorization: Optional[str] = Header(default=None),
     admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
+    redis_pool: Optional[arq.ArqRedis] = Depends(get_optional_redis_pool),
 ) -> Dict[str, str]:
     """Generate an authenticated URI for a cloud-hosted Morphik application."""
     try:
@@ -1069,6 +1077,12 @@ async def generate_cloud_uri(
 
                 if not token_user_id:
                     raise HTTPException(status_code=401, detail="Token is missing user_id")
+
+                await ensure_app_is_active(
+                    token_app_id,
+                    token_version=payload.get("token_version"),
+                    redis_pool=redis_pool,
+                )
 
                 if token_app_id:
                     # Token has app_id - this is a user with an existing token creating a new app
@@ -1158,6 +1172,20 @@ async def generate_cloud_uri(
             )
             raise HTTPException(status_code=403, detail="Application limit reached for this account tier")
 
+        token_version = None
+        try:
+            token_value = uri.split("morphik://", 1)[1].split("@", 1)[0].split(":", 1)[1]
+            token_payload = jwt.decode(token_value, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            token_version = int(token_payload.get("token_version", 0) or 0)
+        except Exception:
+            token_version = None
+
+        if token_version is not None:
+            await mark_app_active(
+                app_id,
+                token_version,
+                redis_pool=redis_pool,
+            )
         return {"uri": uri, "app_id": app_id}
     except ValueError as e:
         # Handle duplicate name or validation errors
@@ -1178,6 +1206,7 @@ async def list_cloud_apps(
     offset: int = Query(default=0, ge=0),
     authorization: Optional[str] = Header(default=None),
     admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
+    redis_pool: Optional[arq.ArqRedis] = Depends(get_optional_redis_pool),
 ):
     """List provisioned apps for the specified organization/user."""
 
@@ -1206,6 +1235,12 @@ async def list_cloud_apps(
             payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         except jwt.InvalidTokenError as exc:  # pragma: no cover - propagated error
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+        await ensure_app_is_active(
+            payload.get("app_id"),
+            token_version=payload.get("token_version"),
+            redis_pool=redis_pool,
+        )
 
         token_user_id = payload.get("user_id")
         token_permissions = payload.get("permissions", []) or []
@@ -1246,6 +1281,7 @@ async def delete_cloud_app(
     app_name: str = Query(..., description="Name of the application to delete"),
     authorization: Optional[str] = Header(default=None),
     admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
+    redis_pool: Optional[arq.ArqRedis] = Depends(get_optional_redis_pool),
 ) -> Dict[str, Any]:
     """Delete all resources associated with a given cloud application."""
 
@@ -1274,6 +1310,11 @@ async def delete_cloud_app(
         try:
             payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
             user_id = payload.get("user_id")
+            await ensure_app_is_active(
+                payload.get("app_id"),
+                token_version=payload.get("token_version"),
+                redis_pool=redis_pool,
+            )
         except jwt.InvalidTokenError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
@@ -1365,6 +1406,9 @@ async def delete_cloud_app(
         await session.execute(sa_delete(AppModel).where(AppModel.app_id == app_id))
         await session.commit()
 
+    await clear_app_active_cache(app_id, redis_pool=redis_pool)
+    await mark_app_revoked(app_id, redis_pool=redis_pool)
+
     # 5) Update user_limits --------------------------------------------
     user_service = UserService()
     await user_service.initialize()
@@ -1375,6 +1419,120 @@ async def delete_cloud_app(
         "status": "deleted",
         "documents_deleted": deleted,
         "folders_deleted": folder_ids_deleted,
+    }
+
+
+@app.post("/apps/rotate_token")
+async def rotate_app_token(
+    app_id: Optional[str] = Query(default=None, description="Application ID to rotate"),
+    app_name: Optional[str] = Query(default=None, description="Application name to rotate"),
+    expiry_days: int = Query(default=5475, ge=1, description="Number of days until the new token expires"),
+    authorization: Optional[str] = Header(default=None),
+    admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
+    redis_pool: Optional[arq.ArqRedis] = Depends(get_optional_redis_pool),
+) -> Dict[str, Any]:
+    """Rotate the token for an existing application."""
+    if not app_id and not app_name:
+        raise HTTPException(status_code=400, detail="app_id or app_name is required")
+
+    try:
+        is_admin_call = _validate_admin_secret(admin_secret)
+    except HTTPException:
+        raise
+
+    user_id: Optional[str] = None
+    if not is_admin_call:
+        if not authorization:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+        token = authorization[7:]
+        try:
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            user_id = payload.get("user_id")
+            await ensure_app_is_active(
+                payload.get("app_id"),
+                token_version=payload.get("token_version"),
+                redis_pool=redis_pool,
+            )
+        except jwt.InvalidTokenError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    from sqlalchemy import select
+
+    from core.models.apps import AppModel
+    from core.services.user_service import UserService
+
+    async with document_service.db.async_session() as session:
+        if app_id:
+            stmt = select(AppModel).where(AppModel.app_id == app_id)
+        else:
+            stmt = select(AppModel).where(AppModel.name == app_name)
+
+        if not is_admin_call:
+            stmt = stmt.where(AppModel.user_id == user_id)
+
+        res = await session.execute(stmt)
+        app_row = res.scalar_one_or_none()
+
+        if app_row is None:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        effective_user_id = user_id
+        if not effective_user_id:
+            effective_user_id = str(app_row.user_id) if app_row.user_id else app_row.created_by_user_id
+
+        if not effective_user_id:
+            raise HTTPException(status_code=500, detail="Cannot determine user_id for token rotation")
+
+        current_version = getattr(app_row, "token_version", 0) or 0
+        new_version = current_version + 1
+
+        await clear_app_active_cache(app_row.app_id, redis_pool=redis_pool)
+
+        payload = {
+            "user_id": effective_user_id,
+            "entity_id": effective_user_id,
+            "app_id": app_row.app_id,
+            "name": app_row.name,
+            "token_version": new_version,
+            "exp": int((datetime.now(UTC) + timedelta(days=expiry_days)).timestamp()),
+        }
+        token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+        api_domain = getattr(settings, "API_DOMAIN", "api.morphik.ai")
+        uri = f"morphik://{app_row.name}:{token}@{api_domain}"
+
+        app_row.token_version = new_version
+        app_row.uri = uri
+        await session.commit()
+
+        app_id_value = app_row.app_id
+        app_name_value = app_row.name
+        org_id_value = app_row.org_id
+        created_by_user_id_value = app_row.created_by_user_id
+
+    user_service = UserService()
+    await user_service._sync_app_to_control_plane(
+        app_id=app_id_value,
+        user_id=effective_user_id,
+        org_id=org_id_value,
+        created_by_user_id=created_by_user_id_value,
+        name=app_name_value,
+        uri=uri,
+    )
+
+    await mark_app_active(app_id_value, new_version, redis_pool=redis_pool)
+
+    return {
+        "app_id": app_id_value,
+        "app_name": app_name_value,
+        "token_version": new_version,
+        "uri": uri,
     }
 
 

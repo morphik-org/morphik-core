@@ -162,6 +162,11 @@ class PostgresDatabase:
                 await conn.run_sync(lambda conn: Base.metadata.create_all(conn, checkfirst=True))
                 logger.info("Created database tables and indexes successfully")
 
+                # Ensure apps.token_version exists for legacy databases.
+                await conn.execute(
+                    text("ALTER TABLE apps " "ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0")
+                )
+
             logger.info("PostgreSQL initialization complete")
             self._initialized = True
             return True
@@ -2892,4 +2897,5 @@ class PostgresDatabase:
                 "created_by_user_id": app_record.created_by_user_id,
                 "name": app_record.name,
                 "uri": app_record.uri,
+                "token_version": getattr(app_record, "token_version", 0) or 0,
             }

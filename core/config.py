@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     bypass_auth_mode: bool = False
     dev_user_id: str = "dev_user"
     ADMIN_SERVICE_SECRET: Optional[str] = None
+    APP_AUTH_ACTIVE_TTL_SECONDS: int = 600
+    APP_AUTH_REVOKED_TTL_SECONDS: int = 86400
 
     # Control plane sync (for dedicated clusters to sync apps back to cloud-ui)
     CONTROL_PLANE_URL: Optional[str] = None  # e.g., https://morphik.ai
