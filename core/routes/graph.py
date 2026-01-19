@@ -134,7 +134,7 @@ async def create_graph(
 async def get_graph(
     name: str,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_name: Optional[Union[str, List[str]]] = Query(None, openapi_extra={"style": "form", "explode": True}),
     folder_depth: Optional[int] = Query(
         None,
         description="Folder scope depth: 0/None exact, -1 all descendants, n>0 include descendants up to n levels.",
@@ -174,7 +174,7 @@ async def get_graph(
 @telemetry.track(operation_type="list_graphs", metadata_resolver=telemetry.list_graphs_metadata)
 async def list_graphs(
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_name: Optional[Union[str, List[str]]] = Query(None, openapi_extra={"style": "form", "explode": True}),
     folder_depth: Optional[int] = Query(
         None,
         description="Folder scope depth: 0/None exact, -1 all descendants, n>0 include descendants up to n levels.",
@@ -213,7 +213,7 @@ async def list_graphs(
 async def get_graph_visualization(
     name: str,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_name: Optional[Union[str, List[str]]] = Query(None, openapi_extra={"style": "form", "explode": True}),
     folder_depth: Optional[int] = Query(
         None,
         description="Folder scope depth: 0/None exact, -1 all descendants, n>0 include descendants up to n levels.",
@@ -343,7 +343,7 @@ async def delete_graph(
 async def get_graph_status(
     name: str,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_name: Optional[Union[str, List[str]]] = Query(None, openapi_extra={"style": "form", "explode": True}),
     folder_depth: Optional[int] = Query(
         None,
         description="Folder scope depth: 0/None exact, -1 all descendants, n>0 include descendants up to n levels.",

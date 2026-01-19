@@ -776,3 +776,14 @@ class FolderDetailsResponse(BaseModel):
     """Response wrapping folder detail entries"""
 
     folders: List[FolderDetails] = Field(..., description="List of folder details")
+
+
+class AppStorageUsageResponse(BaseModel):
+    """Storage usage metrics for the authenticated app"""
+
+    app_id: str = Field(..., description="Application ID")
+    doc_raw_bytes_mb: float = Field(..., description="Raw document storage size in MB")
+    chunk_raw_bytes_mb: float = Field(..., description="Chunk storage size in MB")
+    multivector_mb: float = Field(..., description="Multivector storage size in MB")
+    total_mb: float = Field(..., description="Total storage size in MB")
+    document_count: int = Field(..., description="Total number of documents for the app")

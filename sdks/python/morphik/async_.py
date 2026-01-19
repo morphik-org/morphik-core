@@ -3,6 +3,7 @@ import logging
 from io import BytesIO
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, List, Literal, Optional, Type, Union
+from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel
@@ -11,6 +12,7 @@ from ._internal import FinalChunkResult, RuleOrDict, _MorphikClientLogic
 from ._scoped_ops import _ScopedOperationsMixin
 from .models import CompletionResponse  # Prompt override models
 from .models import (
+    AppStorageUsageResponse,
     ChunkSource,
     Document,
     DocumentPagesResponse,
@@ -509,7 +511,7 @@ class AsyncFolder:
         Args:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
-            filters: Optional filters
+            filters: Optional filters (use key "filename" to filter the filename column via $and/$or)
             additional_folders: Optional list of additional folder names to further scope operations
             folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             include_total_count: Include total count of matching documents
@@ -518,7 +520,6 @@ class AsyncFolder:
             completed_only: Only return completed documents
             sort_by: Field to sort by (created_at, updated_at, filename, external_id)
             sort_direction: Sort direction (asc, desc)
-
         Returns:
             ListDocsResponse: Response with documents and metadata
         """
@@ -614,8 +615,8 @@ class AsyncFolder:
             name, filters, documents, prompt_overrides, self.full_path, None
         )
         response = await self._client._request("POST", "graph/create", data=request)
-        graph = self._logic._parse_graph_response(response)
-        graph._client = self  # Attach AsyncMorphik client for polling helpers
+        graph = self._client._logic._parse_graph_response(response)
+        graph._client = self._client
         return graph
 
     async def update_graph(
@@ -644,9 +645,21 @@ class AsyncFolder:
             name, additional_filters, additional_documents, prompt_overrides, self.full_path, None
         )
         response = await self._client._request("POST", f"graph/{name}/update", data=request)
-        graph = self._logic._parse_graph_response(response)
-        graph._client = self
+        graph = self._client._logic._parse_graph_response(response)
+        graph._client = self._client
         return graph
+
+    async def get_document_by_filename(self, filename: str) -> Document:
+        """
+        Get document metadata by filename within this folder.
+
+        Args:
+            filename: Filename of the document to retrieve
+
+        Returns:
+            Document: Document metadata
+        """
+        return await self._client.get_document_by_filename(filename, folder_name=self.full_path)
 
     async def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
@@ -658,13 +671,7 @@ class AsyncFolder:
         Returns:
             Dict[str, str]: Deletion status
         """
-        # First get the document ID
-        response = await self._client._request(
-            "GET", f"documents/filename/{filename}", params={"folder_name": self.full_path}
-        )
-        doc = self._client._logic._parse_document_response(response)
-
-        # Then delete by ID
+        doc = await self.get_document_by_filename(filename)
         return await self._client.delete_document(doc.external_id)
 
     # Helper --------------------------------------------------------------
@@ -1054,7 +1061,7 @@ class AsyncUserScope:
         Args:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
-            filters: Optional filters
+            filters: Optional filters (use key "filename" to filter the filename column via $and/$or)
             additional_folders: Optional list of extra folders to include in the scope
             folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             include_total_count: Include total count of matching documents
@@ -1063,7 +1070,6 @@ class AsyncUserScope:
             completed_only: Only return completed documents
             sort_by: Field to sort by (created_at, updated_at, filename, external_id)
             sort_direction: Sort direction (asc, desc)
-
         Returns:
             ListDocsResponse: Response with documents and metadata
         """
@@ -1160,8 +1166,8 @@ class AsyncUserScope:
             name, filters, documents, prompt_overrides, self._folder_name, self._end_user_id
         )
         response = await self._client._request("POST", "graph/create", data=request)
-        graph = self._logic._parse_graph_response(response)
-        graph._client = self
+        graph = self._client._logic._parse_graph_response(response)
+        graph._client = self._client
         return graph
 
     async def update_graph(
@@ -1192,9 +1198,25 @@ class AsyncUserScope:
             self._end_user_id,
         )
         response = await self._client._request("POST", f"graph/{name}/update", data=request)
-        graph = self._logic._parse_graph_response(response)
-        graph._client = self
+        graph = self._client._logic._parse_graph_response(response)
+        graph._client = self._client
         return graph
+
+    async def get_document_by_filename(self, filename: str) -> Document:
+        """
+        Get document metadata by filename for this end user (and optional folder).
+
+        Args:
+            filename: Filename of the document to retrieve
+
+        Returns:
+            Document: Document metadata
+        """
+        return await self._client.get_document_by_filename(
+            filename,
+            folder_name=self._folder_name,
+            end_user_id=self._end_user_id,
+        )
 
     async def delete_document_by_filename(self, filename: str) -> Dict[str, str]:
         """
@@ -1206,18 +1228,7 @@ class AsyncUserScope:
         Returns:
             Dict[str, str]: Deletion status
         """
-        # Build parameters for the filename lookup
-        params = {"end_user_id": self._end_user_id}
-
-        # Add folder name if scoped to a folder
-        if self._folder_name:
-            params["folder_name"] = self._folder_name
-
-        # First get the document ID
-        response = await self._client._request("GET", f"documents/filename/{filename}", params=params)
-        doc = self._client._logic._parse_document_response(response)
-
-        # Then delete by ID
+        doc = await self.get_document_by_filename(filename)
         return await self._client.delete_document(doc.external_id)
 
     # Helper --------------------------------------------------------------
@@ -1240,6 +1251,8 @@ class AsyncMorphik(_ScopedOperationsMixin):
             If not provided, connects to http://localhost:8000 without authentication.
         timeout (int, optional): Request timeout in seconds. Defaults to 30.
         is_local (bool, optional): Whether to connect to a local server. Defaults to False.
+        http2 (bool, optional): Whether to enable HTTP/2. Defaults to False.
+        http2_fallback (bool, optional): Whether to fall back to HTTP/1.1 on HTTP/2 errors. Defaults to True.
 
     Examples:
         ```python
@@ -1253,13 +1266,43 @@ class AsyncMorphik(_ScopedOperationsMixin):
         ```
     """
 
-    def __init__(self, uri: Optional[str] = None, timeout: int = 30, is_local: bool = False):
+    def __init__(
+        self,
+        uri: Optional[str] = None,
+        timeout: int = 30,
+        is_local: bool = False,
+        http2: Optional[bool] = None,
+        http2_fallback: bool = True,
+    ):
         self._logic = _MorphikClientLogic(uri, timeout, is_local)
-        self._client = httpx.AsyncClient(
+        http2_enabled = False if http2 is None else http2
+        if self._logic._is_local:
+            http2_enabled = False
+        self._http2 = http2_enabled
+        self._http2_fallback = http2_fallback
+        self._client = self._create_http_client(http2_enabled)
+
+    def _create_http_client(self, http2_enabled: bool) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
             timeout=self._logic._timeout,
             verify=not self._logic._is_local,
-            http2=False if self._logic._is_local else True,
+            http2=http2_enabled,
         )
+
+    @staticmethod
+    def _rewind_files(files: Optional[Any]) -> None:
+        if not files:
+            return
+        if isinstance(files, dict):
+            entries = files.values()
+        else:
+            entries = [entry[1] for entry in files if isinstance(entry, tuple) and len(entry) >= 2]
+        for entry in entries:
+            file_obj = entry[1] if isinstance(entry, tuple) and len(entry) >= 2 else entry
+            try:
+                file_obj.seek(0)
+            except Exception:
+                continue
 
     async def _request(
         self,
@@ -1291,13 +1334,29 @@ class AsyncMorphik(_ScopedOperationsMixin):
             headers["Content-Type"] = "application/json"
             request_data = {"json": data}
 
-        response = await self._client.request(
-            method,
-            url,
-            headers=headers,
-            params=params,
-            **request_data,
-        )
+        try:
+            response = await self._client.request(
+                method,
+                url,
+                headers=headers,
+                params=params,
+                **request_data,
+            )
+        except httpx.RemoteProtocolError:
+            if not self._http2 or not self._http2_fallback:
+                raise
+            await self._client.aclose()
+            if files:
+                self._rewind_files(files)
+            self._client = self._create_http_client(http2_enabled=False)
+            self._http2 = False
+            response = await self._client.request(
+                method,
+                url,
+                headers=headers,
+                params=params,
+                **request_data,
+            )
         response.raise_for_status()
         return response.json()
 
@@ -1850,7 +1909,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         Args:
             skip: Number of documents to skip
             limit: Maximum number of documents to return
-            filters: Optional filters
+            filters: Optional filters (use key "filename" to filter the filename column via $and/$or)
             folder_name: Optional folder name (or list of names) to scope the request
             folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
             include_total_count: Include total count of matching documents
@@ -1859,7 +1918,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
             completed_only: Only return completed documents
             sort_by: Field to sort by (created_at, updated_at, filename, external_id)
             sort_direction: Sort direction (asc, desc)
-
         Returns:
             ListDocsResponse: Response with documents and metadata
 
@@ -1987,19 +2045,41 @@ class AsyncMorphik(_ScopedOperationsMixin):
 
         raise TimeoutError(f"Document processing did not complete within {timeout_seconds} seconds")
 
-    async def get_document_by_filename(self, filename: str) -> Document:
+    async def get_document_by_filename(
+        self,
+        filename: str,
+        *,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
+        end_user_id: Optional[str] = None,
+    ) -> Document:
         """
         Get document metadata by filename.
         If multiple documents have the same filename, returns the most recently updated one.
 
         Args:
             filename: Filename of the document to retrieve
+            folder_name: Optional folder name (or list of names) to scope the request
+            folder_depth: Optional folder depth when scoping by folder
+            end_user_id: Optional end user ID to scope the request
 
         Returns:
             Document: Document metadata
 
         """
-        response = await self._request("GET", f"documents/filename/{filename}")
+        params: Dict[str, Any] = {}
+        if folder_name is not None:
+            params["folder_name"] = folder_name
+        if folder_depth is not None:
+            params["folder_depth"] = folder_depth
+        if end_user_id is not None:
+            params["end_user_id"] = end_user_id
+
+        response = await self._request(
+            "GET",
+            f"documents/filename/{quote(filename, safe='')}",
+            params=params or None,
+        )
         doc = self._logic._parse_document_response(response)
         doc._client = self
         return doc
@@ -2760,6 +2840,11 @@ class AsyncMorphik(_ScopedOperationsMixin):
     async def ping(self) -> Dict[str, Any]:
         """Simple health-check call to ``/ping`` endpoint."""
         return await self._request("GET", "ping")
+
+    async def get_app_storage_usage(self) -> AppStorageUsageResponse:
+        """Return storage usage metrics for the authenticated app."""
+        response = await self._request("GET", "usage/app-storage")
+        return AppStorageUsageResponse(**response)
 
     # ------------------------------------------------------------------
     # Scoped helper execution shared with sync client

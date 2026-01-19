@@ -11,13 +11,7 @@ from core.database.postgres_database import InvalidMetadataFilterError
 from core.dependencies import get_redis_pool
 from core.models.auth import AuthContext
 from core.models.documents import Document
-from core.models.request import (
-    DocumentPagesRequest,
-    IngestTextRequest,
-    ListDocsRequest,
-    ListDocumentsRequest,
-    MetadataUpdateRequest,
-)
+from core.models.request import DocumentPagesRequest, IngestTextRequest, ListDocsRequest, MetadataUpdateRequest
 from core.models.responses import (
     DocumentDeleteResponse,
     DocumentDownloadUrlResponse,
@@ -52,60 +46,12 @@ telemetry = TelemetryService()
 # ---------------------------------------------------------------------------
 
 
-@router.post("", response_model=List[Document])
-async def list_documents(
-    request: ListDocumentsRequest,
-    auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None),
-    folder_depth: Optional[int] = Query(
-        None,
-        description="Folder scope depth: 0/None = exact, -1 = all descendants, n > 0 = include descendants up to n levels.",
-    ),
-    end_user_id: Optional[str] = Query(None),
-):
-    """
-    List accessible documents with metadata filtering.
-
-    **Supported operators**: `$and`, `$or`, `$nor`, `$not`, `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`,
-    `$in`, `$nin`, `$exists`, `$type`, `$regex`, `$contains`.
-
-    **Implicit equality** (backwards compatible):
-    ```json
-    {"status": "active"}
-    ```
-    Uses JSONB containment, matches scalars inside arrays, JSON-serializable types only.
-
-    **Explicit operators** (typed comparisons):
-    ```json
-    {"priority": {"$eq": 42}, "created_date": {"$gte": "2024-01-01T00:00:00Z"}}
-    ```
-    Supports typed metadata (number, decimal, datetime, date) with safe casting.
-    """
-    # Create system filters for folder and user scoping
-    system_filters = {}
-
-    if folder_name is not None:
-        try:
-            system_filters.update(document_service._build_folder_scope_filters(folder_name, folder_depth))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-    if end_user_id:
-        system_filters["end_user_id"] = end_user_id
-    # Note: auth.app_id is already handled in _build_access_filter_optimized
-
-    try:
-        return await document_service.db.get_documents(
-            auth, request.skip, request.limit, filters=request.document_filters, system_filters=system_filters
-        )
-    except InvalidMetadataFilterError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
+@router.post("", response_model=ListDocsResponse)
 @router.post("/list_docs", response_model=ListDocsResponse)
 async def list_docs(
     request: ListDocsRequest,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_name: Optional[Union[str, List[str]]] = Query(None, openapi_extra={"style": "form", "explode": True}),
     folder_depth: Optional[int] = Query(
         None,
         description="Folder scope depth: 0/None = exact, -1 = all descendants, n > 0 = include descendants up to n levels.",
@@ -114,6 +60,8 @@ async def list_docs(
 ) -> ListDocsResponse:
     """
     Flexible document listing with aggregates, projections, and advanced pagination.
+
+    Alias: `/documents` and `/documents/list_docs` share this handler.
 
     **Supported operators**: `$and`, `$or`, `$nor`, `$not`, `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`,
     `$in`, `$nin`, `$exists`, `$type`, `$regex`, `$contains`.
@@ -126,6 +74,11 @@ async def list_docs(
     **Explicit operators** (typed comparisons for number, decimal, datetime, date):
     ```json
     {"priority": {"$gte": 40}, "end_date": {"$lt": "2025-01-01"}}
+    ```
+
+    Use `document_filters` with a `filename` key to filter the filename column:
+    ```json
+    {"filename": {"$regex": {"pattern": "^report_.*\\.pdf$", "flags": "i"}}}
     ```
 
     Use `folder_name` and `end_user_id` query parameters to scope system metadata.
@@ -308,7 +261,7 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
 async def get_document_by_filename(
     filename: str,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None),
+    folder_name: Optional[Union[str, List[str]]] = Query(None, openapi_extra={"style": "form", "explode": True}),
     folder_depth: Optional[int] = Query(
         None,
         description="Folder scope depth: 0/None = exact, -1 = all descendants, n > 0 = include descendants up to n levels.",

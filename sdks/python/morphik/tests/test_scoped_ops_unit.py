@@ -1,6 +1,29 @@
+import httpx
 import pytest
 from morphik.async_ import AsyncMorphik
 from morphik.sync import Folder, Morphik
+
+
+def _mock_document_response(filename="sample.txt"):
+    return {
+        "external_id": "doc-123",
+        "content_type": "text/plain",
+        "filename": filename,
+    }
+
+
+def _mock_graph_response(name="graph"):
+    return {
+        "id": "graph-123",
+        "name": name,
+        "created_at": "2024-01-01T00:00:00+00:00",
+        "updated_at": "2024-01-01T00:00:00+00:00",
+        "entities": [],
+        "relationships": [],
+        "metadata": {},
+        "system_metadata": {},
+        "document_ids": [],
+    }
 
 
 def _make_sync_client():
@@ -18,6 +41,12 @@ def _make_sync_client():
         )
         if isinstance(endpoint, str) and endpoint.startswith("retrieve/chunks"):
             return []
+        if isinstance(endpoint, str) and endpoint.startswith("documents/filename/"):
+            return _mock_document_response()
+        if endpoint == "graph/create" or (
+            isinstance(endpoint, str) and endpoint.startswith("graph/") and endpoint.endswith("/update")
+        ):
+            return _mock_graph_response(data.get("name", "graph") if isinstance(data, dict) else "graph")
         # Return mock ListDocsResponse format
         return {
             "documents": [],
@@ -46,6 +75,12 @@ async def _make_async_client():
         )
         if isinstance(endpoint, str) and endpoint.startswith("retrieve/chunks"):
             return []
+        if isinstance(endpoint, str) and endpoint.startswith("documents/filename/"):
+            return _mock_document_response()
+        if endpoint == "graph/create" or (
+            isinstance(endpoint, str) and endpoint.startswith("graph/") and endpoint.endswith("/update")
+        ):
+            return _mock_graph_response(data.get("name", "graph") if isinstance(data, dict) else "graph")
         # Return mock ListDocsResponse format
         return {
             "documents": [],
@@ -95,6 +130,192 @@ def test_sync_list_documents_payloads_across_scopes():
         client.close()
 
 
+def test_async_client_http2_toggle(monkeypatch):
+    captured = []
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            captured.append(kwargs.get("http2"))
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr("morphik.async_.httpx.AsyncClient", DummyAsyncClient)
+
+    AsyncMorphik()
+    assert captured[-1] is False
+
+    AsyncMorphik(http2=True)
+    assert captured[-1] is True
+
+    AsyncMorphik(http2=True, is_local=True)
+    assert captured[-1] is False
+
+
+def test_sync_client_http2_toggle(monkeypatch):
+    captured = []
+
+    class DummyClient:
+        def __init__(self, *args, **kwargs):
+            captured.append(kwargs.get("http2"))
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("morphik.sync.httpx.Client", DummyClient)
+
+    Morphik()
+    assert captured[-1] is False
+
+    Morphik(http2=True)
+    assert captured[-1] is True
+
+    Morphik(http2=True, is_local=True)
+    assert captured[-1] is False
+
+
+@pytest.mark.asyncio
+async def test_async_http2_fallback_on_remote_protocol_error(monkeypatch):
+    created_http2 = []
+
+    class DummyResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class DummyAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self.http2 = kwargs.get("http2")
+            created_http2.append(self.http2)
+
+        async def request(self, method, url, headers=None, params=None, **kwargs):
+            if self.http2:
+                raise httpx.RemoteProtocolError("http2 failed")
+            return DummyResponse({"ok": True})
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr("morphik.async_.httpx.AsyncClient", DummyAsyncClient)
+
+    client = AsyncMorphik(http2=True)
+    try:
+        response = await client._request("GET", "ping")
+        assert response == {"ok": True}
+        assert created_http2 == [True, False]
+        assert client._http2 is False
+    finally:
+        await client.close()
+
+
+def test_sync_http2_fallback_on_remote_protocol_error(monkeypatch):
+    created_http2 = []
+
+    class DummyResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class DummyClient:
+        def __init__(self, *args, **kwargs):
+            self.http2 = kwargs.get("http2")
+            created_http2.append(self.http2)
+
+        def request(self, method, url, headers=None, params=None, **kwargs):
+            if self.http2:
+                raise httpx.RemoteProtocolError("http2 failed")
+            return DummyResponse({"ok": True})
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("morphik.sync.httpx.Client", DummyClient)
+
+    client = Morphik(http2=True)
+    try:
+        response = client._request("GET", "ping")
+        assert response == {"ok": True}
+        assert created_http2 == [True, False]
+        assert client._http2 is False
+    finally:
+        client.close()
+
+
+def test_sync_get_document_by_filename_scoped_params_and_encoding():
+    client, calls = _make_sync_client()
+    try:
+        doc = client.get_document_by_filename(
+            "folder/file name.txt",
+            folder_name="/team/docs",
+            folder_depth=2,
+            end_user_id="user-1",
+        )
+        call = calls.pop()
+        assert call["endpoint"] == "documents/filename/folder%2Ffile%20name.txt"
+        assert call["params"] == {"folder_name": "/team/docs", "folder_depth": 2, "end_user_id": "user-1"}
+        assert doc.external_id == "doc-123"
+    finally:
+        client.close()
+
+
+def test_sync_folder_get_document_by_filename_scoped():
+    client, calls = _make_sync_client()
+    try:
+        folder = Folder(client, "docs", full_path="/projects/docs")
+        folder.get_document_by_filename("report.pdf")
+        call = calls.pop()
+        assert call["endpoint"] == "documents/filename/report.pdf"
+        assert call["params"] == {"folder_name": "/projects/docs"}
+    finally:
+        client.close()
+
+
+def test_sync_user_scope_get_document_by_filename_scoped():
+    client, calls = _make_sync_client()
+    try:
+        user = client.signin("user-99")
+        user.get_document_by_filename("note.txt")
+        call = calls.pop()
+        assert call["params"] == {"end_user_id": "user-99"}
+
+        folder = Folder(client, "docs", full_path="/projects/docs")
+        folder_user = folder.signin("user-42")
+        folder_user.get_document_by_filename("plan.md")
+        call = calls.pop()
+        assert call["params"] == {"folder_name": "/projects/docs", "end_user_id": "user-42"}
+    finally:
+        client.close()
+
+
+def test_sync_folder_graph_operations_attach_client():
+    client, calls = _make_sync_client()
+    try:
+        folder = Folder(client, "specs", full_path="/projects/alpha/specs")
+        graph = folder.create_graph("g1")
+        call = calls.pop()
+        assert call["endpoint"] == "graph/create"
+        assert call["data"]["folder_name"] == "/projects/alpha/specs"
+        assert graph._client is client
+
+        graph = folder.update_graph("g1", additional_filters={"tag": "x"})
+        call = calls.pop()
+        assert call["endpoint"] == "graph/g1/update"
+        assert call["data"]["folder_name"] == "/projects/alpha/specs"
+        assert graph._client is client
+    finally:
+        client.close()
+
+
 @pytest.mark.asyncio
 async def test_async_list_documents_payloads_across_scopes():
     client, calls = await _make_async_client()
@@ -124,6 +345,106 @@ async def test_async_list_documents_payloads_across_scopes():
         assert folder_user_call["params"]["folder_name"] == ["ops", "shared"]
         assert folder_user_call["params"]["end_user_id"] == "usr-7"
         assert folder_user_call["data"]["document_filters"] is None
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_get_document_by_filename_scoped_params_and_encoding():
+    client, calls = await _make_async_client()
+    try:
+        doc = await client.get_document_by_filename(
+            "folder/file name.txt",
+            folder_name="/team/docs",
+            folder_depth=2,
+            end_user_id="user-1",
+        )
+        call = calls.pop()
+        assert call["endpoint"] == "documents/filename/folder%2Ffile%20name.txt"
+        assert call["params"] == {"folder_name": "/team/docs", "folder_depth": 2, "end_user_id": "user-1"}
+        assert doc.external_id == "doc-123"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_get_document_by_filename_scoped():
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "docs", full_path="/projects/docs")
+        await folder.get_document_by_filename("report.pdf")
+        call = calls.pop()
+        assert call["endpoint"] == "documents/filename/report.pdf"
+        assert call["params"] == {"folder_name": "/projects/docs"}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_user_scope_get_document_by_filename_scoped():
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        user = client.signin("user-99")
+        await user.get_document_by_filename("note.txt")
+        call = calls.pop()
+        assert call["params"] == {"end_user_id": "user-99"}
+
+        folder = AsyncFolder(client, "docs", full_path="/projects/docs")
+        folder_user = folder.signin("user-42")
+        await folder_user.get_document_by_filename("plan.md")
+        call = calls.pop()
+        assert call["params"] == {"folder_name": "/projects/docs", "end_user_id": "user-42"}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_graph_operations_attach_client():
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "specs", full_path="/projects/alpha/specs")
+        graph = await folder.create_graph("g1")
+        call = calls.pop()
+        assert call["endpoint"] == "graph/create"
+        assert call["data"]["folder_name"] == "/projects/alpha/specs"
+        assert graph._client is client
+
+        graph = await folder.update_graph("g1", additional_filters={"tag": "x"})
+        call = calls.pop()
+        assert call["endpoint"] == "graph/g1/update"
+        assert call["data"]["folder_name"] == "/projects/alpha/specs"
+        assert graph._client is client
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_user_scope_graph_operations_attach_client():
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "reports", full_path="/finance/reports")
+        user = folder.signin("user-7")
+        graph = await user.create_graph("g2")
+        call = calls.pop()
+        assert call["endpoint"] == "graph/create"
+        assert call["data"]["folder_name"] == "/finance/reports"
+        assert call["data"]["end_user_id"] == "user-7"
+        assert graph._client is client
+
+        graph = await user.update_graph("g2", additional_filters={"team": "beta"})
+        call = calls.pop()
+        assert call["endpoint"] == "graph/g2/update"
+        assert call["data"]["folder_name"] == "/finance/reports"
+        assert call["data"]["end_user_id"] == "user-7"
+        assert graph._client is client
     finally:
         await client.close()
 
