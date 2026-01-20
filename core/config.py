@@ -93,15 +93,6 @@ class Settings(BaseSettings):
     USE_CONTEXTUAL_CHUNKING: bool = False
     PARSER_XML: ParserXMLSettings = ParserXMLSettings()
 
-    # Graph configuration
-    GRAPH_MODE: Literal["local", "api"] = "local"
-    GRAPH_PROVIDER: Literal["litellm"] = "litellm"
-    GRAPH_MODEL: Optional[str] = None
-    ENABLE_ENTITY_RESOLUTION: Optional[bool] = None
-    # Graph API configuration
-    MORPHIK_GRAPH_API_KEY: Optional[str] = None
-    MORPHIK_GRAPH_BASE_URL: Optional[str] = None
-
     # Reranker configuration
     USE_RERANKING: bool
     RERANKER_PROVIDER: Optional[Literal["flag"]] = None
@@ -404,28 +395,6 @@ def get_settings() -> Settings:
         settings_dict["PDF_VIEWER_FRONTEND_URL"] = config["pdf_viewer"].get(
             "frontend_url", "https://morphik.ai/api/pdf"
         )
-
-    # Load graph config
-    if config["graph"].get("mode", "local") == "local":
-        settings_dict.update(
-            {
-                "GRAPH_MODE": "local",
-                "GRAPH_PROVIDER": "litellm",
-                "ENABLE_ENTITY_RESOLUTION": config["graph"].get("enable_entity_resolution", True),
-            }
-        )
-    else:
-        settings_dict.update(
-            {
-                "GRAPH_MODE": "api",
-                "MORPHIK_GRAPH_BASE_URL": config["graph"].get("base_url", "https://graph-api.morphik.ai"),
-                "MORPHIK_GRAPH_API_KEY": os.environ.get("MORPHIK_GRAPH_API_KEY", None),
-            }
-        )
-
-    if "model" not in config["graph"]:
-        raise ValueError("'model' is required in the graph configuration")
-    settings_dict["GRAPH_MODEL"] = config["graph"]["model"]
 
     # Load document analysis config
     if "document_analysis" in config:

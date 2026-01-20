@@ -163,18 +163,6 @@ parser_mode = "api" # "local" or "api" - "api" offloads parsing to GPU servers
 [pdf_viewer]
 frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
 
-[workflows]
-model = "gemini_flash"  # Model for workflow extraction tasks
-
-# [graph]
-# model = "openai_gpt4-1-mini"
-# enable_entity_resolution = true
-
-[graph]
-mode="api"
-model = "openai_gpt4-1-mini"
-base_url="https://graph-api.morphik.ai"
-
 [telemetry]
 service_name = "databridge-core"
 project_name = ""

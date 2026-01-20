@@ -36,7 +36,6 @@ def check_toml_configuration():
             ("storage", "provider"): "aws-s3",
             ("storage", "bucket_name"): "morphik-storage",
             ("morphik", "mode"): "cloud",
-            ("graph", "model"): "openai_gpt4o",
             ("telemetry", "service_name"): "databridge-core-hosted",
         }
 

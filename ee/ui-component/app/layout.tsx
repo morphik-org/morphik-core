@@ -24,7 +24,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: "Morphik Dashboard",
-  description: "Morphik - Knowledge Graph and RAG Platform",
+  description: "Morphik - Multimodal RAG Platform",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -12,20 +12,6 @@ def _mock_document_response(filename="sample.txt"):
     }
 
 
-def _mock_graph_response(name="graph"):
-    return {
-        "id": "graph-123",
-        "name": name,
-        "created_at": "2024-01-01T00:00:00+00:00",
-        "updated_at": "2024-01-01T00:00:00+00:00",
-        "entities": [],
-        "relationships": [],
-        "metadata": {},
-        "system_metadata": {},
-        "document_ids": [],
-    }
-
-
 def _make_sync_client():
     client = Morphik()
     calls = []
@@ -43,10 +29,6 @@ def _make_sync_client():
             return []
         if isinstance(endpoint, str) and endpoint.startswith("documents/filename/"):
             return _mock_document_response()
-        if endpoint == "graph/create" or (
-            isinstance(endpoint, str) and endpoint.startswith("graph/") and endpoint.endswith("/update")
-        ):
-            return _mock_graph_response(data.get("name", "graph") if isinstance(data, dict) else "graph")
         # Return mock ListDocsResponse format
         return {
             "documents": [],
@@ -77,10 +59,6 @@ async def _make_async_client():
             return []
         if isinstance(endpoint, str) and endpoint.startswith("documents/filename/"):
             return _mock_document_response()
-        if endpoint == "graph/create" or (
-            isinstance(endpoint, str) and endpoint.startswith("graph/") and endpoint.endswith("/update")
-        ):
-            return _mock_graph_response(data.get("name", "graph") if isinstance(data, dict) else "graph")
         # Return mock ListDocsResponse format
         return {
             "documents": [],
@@ -297,25 +275,6 @@ def test_sync_user_scope_get_document_by_filename_scoped():
         client.close()
 
 
-def test_sync_folder_graph_operations_attach_client():
-    client, calls = _make_sync_client()
-    try:
-        folder = Folder(client, "specs", full_path="/projects/alpha/specs")
-        graph = folder.create_graph("g1")
-        call = calls.pop()
-        assert call["endpoint"] == "graph/create"
-        assert call["data"]["folder_name"] == "/projects/alpha/specs"
-        assert graph._client is client
-
-        graph = folder.update_graph("g1", additional_filters={"tag": "x"})
-        call = calls.pop()
-        assert call["endpoint"] == "graph/g1/update"
-        assert call["data"]["folder_name"] == "/projects/alpha/specs"
-        assert graph._client is client
-    finally:
-        client.close()
-
-
 @pytest.mark.asyncio
 async def test_async_list_documents_payloads_across_scopes():
     client, calls = await _make_async_client()
@@ -398,53 +357,6 @@ async def test_async_user_scope_get_document_by_filename_scoped():
         await folder_user.get_document_by_filename("plan.md")
         call = calls.pop()
         assert call["params"] == {"folder_name": "/projects/docs", "end_user_id": "user-42"}
-    finally:
-        await client.close()
-
-
-@pytest.mark.asyncio
-async def test_async_folder_graph_operations_attach_client():
-    from morphik.async_ import AsyncFolder
-
-    client, calls = await _make_async_client()
-    try:
-        folder = AsyncFolder(client, "specs", full_path="/projects/alpha/specs")
-        graph = await folder.create_graph("g1")
-        call = calls.pop()
-        assert call["endpoint"] == "graph/create"
-        assert call["data"]["folder_name"] == "/projects/alpha/specs"
-        assert graph._client is client
-
-        graph = await folder.update_graph("g1", additional_filters={"tag": "x"})
-        call = calls.pop()
-        assert call["endpoint"] == "graph/g1/update"
-        assert call["data"]["folder_name"] == "/projects/alpha/specs"
-        assert graph._client is client
-    finally:
-        await client.close()
-
-
-@pytest.mark.asyncio
-async def test_async_user_scope_graph_operations_attach_client():
-    from morphik.async_ import AsyncFolder
-
-    client, calls = await _make_async_client()
-    try:
-        folder = AsyncFolder(client, "reports", full_path="/finance/reports")
-        user = folder.signin("user-7")
-        graph = await user.create_graph("g2")
-        call = calls.pop()
-        assert call["endpoint"] == "graph/create"
-        assert call["data"]["folder_name"] == "/finance/reports"
-        assert call["data"]["end_user_id"] == "user-7"
-        assert graph._client is client
-
-        graph = await user.update_graph("g2", additional_filters={"team": "beta"})
-        call = calls.pop()
-        assert call["endpoint"] == "graph/g2/update"
-        assert call["data"]["folder_name"] == "/finance/reports"
-        assert call["data"]["end_user_id"] == "user-7"
-        assert graph._client is client
     finally:
         await client.close()
 

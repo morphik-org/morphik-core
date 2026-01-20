@@ -38,7 +38,7 @@ if [[ ! -f .env && -f .env.example ]]; then
   cp .env.example .env
 fi
 
-# Install ColPali engine (knowledge-graph generation)
+# Install ColPali engine (multimodal retrieval)
 printf "\n📦 Installing ColPali engine...\n"
 uv pip install \
   colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3

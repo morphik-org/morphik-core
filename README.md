@@ -39,7 +39,6 @@ The result is AI applications that confidently return wrong answers because they
 [Morphik](https://morphik.ai) provides developers the tools to ingest, search (deep and shallow), transform, and manage unstructured and multimodal documents. Some of our features include:
 
 - [Multimodal Search](https://morphik.ai/docs/concepts/colpali): We employ techniques such as ColPali to build search that actually *understands* the visual content of documents you provide. Search over images, PDFs, videos, and more with a single endpoint.
-- [Knowledge Graphs](https://morphik.ai/docs/concepts/knowledge-graphs): Build knowledge graphs for domain-specific use cases in a single line of code. Use our battle-tested system prompts, or use your own.
 - [Fast and Scalable Metadata Extraction](https://morphik.ai/docs/concepts/rules-processing): Extract metadata from documents - including bounding boxes, labeling, classification, and more.
 - [Integrations](https://morphik.ai/docs/integrations): Integrate with existing tools and workflows. Including (but not limited to) Google Suite, Slack, and Confluence.
 

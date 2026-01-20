@@ -80,46 +80,6 @@ class AppStorageUsageModel(Base):
     )
 
 
-class GraphModel(Base):
-    """SQLAlchemy model for graph data."""
-
-    __tablename__ = "graphs"
-
-    id = Column(String, primary_key=True)
-    name = Column(String)  # Not unique globally anymore
-    entities = Column(JSONB, default=list)
-    relationships = Column(JSONB, default=list)
-    graph_metadata = Column(JSONB, default=dict)  # Renamed from 'metadata' to avoid conflict
-    system_metadata = Column(JSONB, default=dict)  # For folder_name and end_user_id
-    document_ids = Column(JSONB, default=list)
-    filters = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
-    updated_at = Column(
-        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP")
-    )
-
-    # Flattened auth columns for performance
-    owner_id = Column(String)
-    app_id = Column(String)
-    folder_name = Column(String)
-    folder_path = Column(String)
-    end_user_id = Column(String)
-
-    __table_args__ = (
-        Index("idx_graph_system_metadata", "system_metadata", postgresql_using="gin"),
-        # Unique constraint on name scoped by owner_id (also serves as index for name lookups)
-        Index("idx_graph_owner_name", "name", "owner_id", unique=True),
-        # Primary access control indexes
-        Index("idx_graph_app_id", "app_id"),
-        Index("idx_graph_owner_id", "owner_id"),
-        # Composite indexes for scoped queries
-        Index("idx_graphs_owner_app", "owner_id", "app_id"),
-        Index("idx_graphs_app_folder", "app_id", "folder_name"),
-        Index("idx_graphs_app_folder_path", "app_id", "folder_path"),
-        Index("idx_graphs_app_end_user", "app_id", "end_user_id"),
-    )
-
-
 class FolderModel(Base):
     """SQLAlchemy model for folder data."""
 

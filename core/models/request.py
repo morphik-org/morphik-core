@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.models.completion import ChunkSource
 from core.models.documents import Document
-from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
+from core.models.prompts import QueryPromptOverrides
 
 
 class OutputFormat(str, Enum):
@@ -156,11 +156,6 @@ class RetrieveRequest(BaseModel):
         ge=0,
         description="Number of additional chunks/pages to retrieve before and after matched chunks (ColPali only)",
     )
-    graph_name: Optional[str] = Field(
-        None, description="Name of the graph to use for knowledge graph-enhanced retrieval"
-    )
-    hop_depth: Optional[int] = Field(1, description="Number of relationship hops to traverse in the graph", ge=1, le=3)
-    include_paths: Optional[bool] = Field(False, description="Whether to include relationship paths in the response")
     folder_name: Optional[Union[str, List[str]]] = Field(
         None,
         description="Optional folder scope. Accepts a folder PATH (e.g., '/Company/Reports') or list of paths.",
@@ -269,53 +264,6 @@ class MetadataUpdateRequest(BaseModel):
         if isinstance(value, dict) and "metadata" not in value:
             return {"metadata": value}
         return value
-
-
-class CreateGraphRequest(BaseModel):
-    """Request model for creating a graph"""
-
-    name: str = Field(..., description="Name of the graph to create")
-    filters: Optional[Dict[str, Any]] = Field(
-        None, description="Optional metadata filters to determine which documents to include"
-    )
-    documents: Optional[List[str]] = Field(None, description="Optional list of specific document IDs to include")
-    prompt_overrides: Optional[GraphPromptOverrides] = Field(
-        None,
-        description="Optional customizations for entity extraction and resolution prompts",
-        json_schema_extra={
-            "example": {
-                "entity_extraction": {
-                    "prompt_template": "Extract entities from the following text: {content}\n{examples}",
-                    "examples": [{"label": "Example", "type": "ENTITY"}],
-                }
-            }
-        },
-    )
-    folder_name: Optional[Union[str, List[str]]] = Field(
-        None,
-        description="Optional folder scope. Accepts a folder PATH (e.g., '/Company/Reports') or list of paths.",
-    )
-    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
-
-
-class UpdateGraphRequest(BaseModel):
-    """Request model for updating a graph"""
-
-    additional_filters: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Optional additional metadata filters to determine which new documents to include",
-    )
-    additional_documents: Optional[List[str]] = Field(
-        None, description="Optional list of additional document IDs to include"
-    )
-    prompt_overrides: Optional[GraphPromptOverrides] = Field(
-        None, description="Optional customizations for entity extraction and resolution prompts"
-    )
-    folder_name: Optional[Union[str, List[str]]] = Field(
-        None,
-        description="Optional folder scope. Accepts a folder PATH (e.g., '/Company/Reports') or list of paths.",
-    )
-    end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
 
 
 class BatchIngestResponse(BaseModel):
