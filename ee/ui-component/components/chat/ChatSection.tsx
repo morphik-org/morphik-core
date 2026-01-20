@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DocumentSelector } from "@/components/ui/document-selector";
 import { PreviewMessage } from "./ChatMessages";
 import { Textarea } from "@/components/ui/textarea";
@@ -142,8 +141,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
 
   // State for settings visibility
   const [showSettings, setShowSettings] = useState(false);
-  const [availableGraphs, setAvailableGraphs] = useState<string[]>([]);
-  const [loadingGraphs, setLoadingGraphs] = useState(false);
   const [loadingFolders, setLoadingFolders] = useState(false);
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
@@ -169,38 +166,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
       refreshServerModels,
       safeUpdateOption,
     });
-
-  // Fetch available graphs for dropdown
-  const fetchGraphs = useCallback(async () => {
-    if (!apiBaseUrl) return;
-
-    setLoadingGraphs(true);
-    try {
-      console.log(`Fetching graphs from: ${apiBaseUrl}/graph`);
-      const response = await fetch(`${apiBaseUrl}/graph`, {
-        headers: {
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch graphs: ${response.status} ${response.statusText}`);
-      }
-
-      const graphsData = await response.json();
-      console.log("Graphs data received:", graphsData);
-
-      if (Array.isArray(graphsData)) {
-        setAvailableGraphs(graphsData.map((graph: { name: string }) => graph.name));
-      } else {
-        console.error("Expected array for graphs data but received:", typeof graphsData);
-      }
-    } catch (err) {
-      console.error("Error fetching available graphs:", err);
-    } finally {
-      setLoadingGraphs(false);
-    }
-  }, [apiBaseUrl, authToken]);
 
   // Fetch folders
   const fetchFolders = useCallback(async () => {
@@ -345,20 +310,19 @@ const ChatSection: React.FC<ChatSectionProps> = ({
     }
   }, [apiBaseUrl, authToken]);
 
-  // Fetch graphs and folders when component mounts
+  // Fetch folders and documents when component mounts
   useEffect(() => {
     // Define a function to handle data fetching
     const fetchData = async () => {
       if (authToken || apiBaseUrl.includes("localhost")) {
         console.log("ChatSection: Fetching data with auth token:", !!authToken);
-        await fetchGraphs();
         await fetchFolders();
         await fetchDocuments();
       }
     };
 
     fetchData();
-  }, [authToken, apiBaseUrl, fetchGraphs, fetchFolders, fetchDocuments]);
+  }, [authToken, apiBaseUrl, fetchFolders, fetchDocuments]);
 
   // Text area ref and adjustment functions
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -673,7 +637,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                           onClick={() => {
                             setShowSettings(!showSettings);
                             if (!showSettings && authToken) {
-                              fetchGraphs();
                               fetchFolders();
                               fetchDocuments();
                             }
@@ -753,30 +716,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                               }}
                             />
                           </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="graph_name" className="block text-sm font-medium">
-                            Knowledge Graph
-                          </Label>
-                          <Select
-                            value={safeQueryOptions.graph_name || "__none__"}
-                            onValueChange={value =>
-                              safeUpdateOption("graph_name", value === "__none__" ? undefined : value)
-                            }
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select a graph..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">No Graph</SelectItem>
-                              {availableGraphs.map(graph => (
-                                <SelectItem key={graph} value={graph}>
-                                  {graph}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
                         </div>
                       </div>
 
@@ -941,7 +880,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                           onClick={() => {
                             setShowSettings(!showSettings);
                             if (!showSettings && authToken) {
-                              fetchGraphs();
                               fetchFolders();
                               fetchDocuments();
                             }
@@ -1022,43 +960,6 @@ const ChatSection: React.FC<ChatSectionProps> = ({
                               }}
                             />
                           </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="graph_name" className="block text-sm font-medium">
-                            Knowledge Graph
-                          </Label>
-                          <Select
-                            value={safeQueryOptions.graph_name || "__none__"}
-                            onValueChange={value =>
-                              safeUpdateOption("graph_name", value === "__none__" ? undefined : value)
-                            }
-                          >
-                            <SelectTrigger
-                              className="w-full border-border/50 bg-background/50 shadow-sm transition-colors hover:border-primary/50"
-                              id="graph_name"
-                            >
-                              <SelectValue placeholder="Select a knowledge graph" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">None (Standard RAG)</SelectItem>
-                              {loadingGraphs ? (
-                                <SelectItem value="loading" disabled>
-                                  Loading graphs...
-                                </SelectItem>
-                              ) : availableGraphs.length > 0 ? (
-                                availableGraphs.map(graphName => (
-                                  <SelectItem key={graphName} value={graphName}>
-                                    {graphName}
-                                  </SelectItem>
-                                ))
-                              ) : (
-                                <SelectItem value="none_available" disabled>
-                                  No graphs available
-                                </SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
                         </div>
                       </div>
 

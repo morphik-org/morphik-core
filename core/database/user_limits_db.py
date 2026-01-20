@@ -162,7 +162,6 @@ class UserLimitsDatabase:
                         "monthly_query_count": 0,
                         "monthly_query_reset": now,
                         "ingest_count": 0,
-                        "graph_count": 0,
                     }
                 )
                 app_ids_json = json.dumps([])  # Empty array but as JSON string
@@ -459,9 +458,6 @@ class UserLimitsDatabase:
 
                 elif usage_type == "storage_size":
                     usage["storage_size_bytes"] = usage.get("storage_size_bytes", 0) + increment
-
-                elif usage_type == "graph":
-                    usage["graph_count"] = usage.get("graph_count", 0) + increment
 
                 # Force SQLAlchemy to recognize the change by assigning a new dict
                 user_limits.usage = usage

@@ -21,8 +21,6 @@ from .models import (
     FolderDetailsResponse,
     FolderInfo,
     FolderSummary,
-    Graph,
-    GraphPromptOverrides,
     GroupedChunkResponse,
     IngestTextRequest,
     ListDocsResponse,
@@ -433,9 +431,6 @@ class AsyncFolder:
         temperature: Optional[float] = None,
         use_colpali: bool = True,
         use_reranking: Optional[bool] = None,  # Add missing parameter
-        graph_name: Optional[str] = None,
-        hop_depth: int = 1,
-        include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
         additional_folders: Optional[List[str]] = None,
         folder_depth: Optional[int] = None,
@@ -456,9 +451,6 @@ class AsyncFolder:
             temperature: Model temperature
             use_colpali: Whether to use ColPali-style embedding model
             use_reranking: Whether to use reranking
-            graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
-            hop_depth: Number of relationship hops to traverse in the graph (1-3)
-            include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             schema: Optional schema for structured output
             additional_folders: Optional list of additional folder names to further scope operations
@@ -477,9 +469,6 @@ class AsyncFolder:
             max_tokens=max_tokens,
             temperature=temperature,
             use_colpali=use_colpali,
-            graph_name=graph_name,
-            hop_depth=hop_depth,
-            include_paths=include_paths,
             prompt_overrides=prompt_overrides,
             folder_name=effective_folder,
             folder_depth=folder_depth,
@@ -589,65 +578,6 @@ class AsyncFolder:
         )
         response = await self._client._request("POST", "batch/chunks", data=request)
         return self._client._logic._parse_chunk_result_list_response(response)
-
-    async def create_graph(
-        self,
-        name: str,
-        filters: Optional[Dict[str, Any]] = None,
-        documents: Optional[List[str]] = None,
-        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Graph:
-        """
-        Create a graph from documents within this folder.
-
-        Args:
-            name: Name of the graph to create
-            filters: Optional metadata filters to determine which documents to include
-            documents: Optional list of specific document IDs to include
-            prompt_overrides: Optional customizations for entity extraction and resolution prompts
-
-        Returns:
-            Graph: The created graph object
-        """
-        request = self._client._logic._prepare_create_graph_request(
-            name, filters, documents, prompt_overrides, self.full_path, None
-        )
-        response = await self._client._request("POST", "graph/create", data=request)
-        graph = self._client._logic._parse_graph_response(response)
-        graph._client = self._client
-        return graph
-
-    async def update_graph(
-        self,
-        name: str,
-        additional_filters: Optional[Dict[str, Any]] = None,
-        additional_documents: Optional[List[str]] = None,
-        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        folder_depth: Optional[int] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Graph:
-        """
-        Update an existing graph with new documents from this folder.
-
-        Args:
-            name: Name of the graph to update
-            additional_filters: Optional additional metadata filters to determine which new documents to include
-            additional_documents: Optional list of additional document IDs to include
-            prompt_overrides: Optional customizations for entity extraction and resolution prompts
-
-        Returns:
-            Graph: The updated graph
-        """
-        request = self._client._logic._prepare_update_graph_request(
-            name, additional_filters, additional_documents, prompt_overrides, self.full_path, None
-        )
-        response = await self._client._request("POST", f"graph/{name}/update", data=request)
-        graph = self._client._logic._parse_graph_response(response)
-        graph._client = self._client
-        return graph
 
     async def get_document_by_filename(self, filename: str) -> Document:
         """
@@ -983,9 +913,6 @@ class AsyncUserScope:
         temperature: Optional[float] = None,
         use_colpali: bool = True,
         use_reranking: Optional[bool] = None,  # Add missing parameter
-        graph_name: Optional[str] = None,
-        hop_depth: int = 1,
-        include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
         additional_folders: Optional[List[str]] = None,
         folder_depth: Optional[int] = None,
@@ -1006,9 +933,6 @@ class AsyncUserScope:
             temperature: Model temperature
             use_colpali: Whether to use ColPali-style embedding model
             use_reranking: Whether to use reranking
-            graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
-            hop_depth: Number of relationship hops to traverse in the graph (1-3)
-            include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             schema: Optional schema for structured output
             additional_folders: Optional list of additional folder names to further scope operations
@@ -1027,9 +951,6 @@ class AsyncUserScope:
             max_tokens=max_tokens,
             temperature=temperature,
             use_colpali=use_colpali,
-            graph_name=graph_name,
-            hop_depth=hop_depth,
-            include_paths=include_paths,
             prompt_overrides=prompt_overrides,
             folder_name=effective_folder,
             folder_depth=folder_depth,
@@ -1142,65 +1063,6 @@ class AsyncUserScope:
         )
         response = await self._client._request("POST", "batch/chunks", data=request)
         return self._client._logic._parse_chunk_result_list_response(response)
-
-    async def create_graph(
-        self,
-        name: str,
-        filters: Optional[Dict[str, Any]] = None,
-        documents: Optional[List[str]] = None,
-        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
-    ) -> Graph:
-        """
-        Create a graph from documents for this end user.
-
-        Args:
-            name: Name of the graph to create
-            filters: Optional metadata filters to determine which documents to include
-            documents: Optional list of specific document IDs to include
-            prompt_overrides: Optional customizations for entity extraction and resolution prompts
-
-        Returns:
-            Graph: The created graph object
-        """
-        request = self._client._logic._prepare_create_graph_request(
-            name, filters, documents, prompt_overrides, self._folder_name, self._end_user_id
-        )
-        response = await self._client._request("POST", "graph/create", data=request)
-        graph = self._client._logic._parse_graph_response(response)
-        graph._client = self._client
-        return graph
-
-    async def update_graph(
-        self,
-        name: str,
-        additional_filters: Optional[Dict[str, Any]] = None,
-        additional_documents: Optional[List[str]] = None,
-        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
-    ) -> Graph:
-        """
-        Update an existing graph with new documents for this end user.
-
-        Args:
-            name: Name of the graph to update
-            additional_filters: Optional additional metadata filters to determine which new documents to include
-            additional_documents: Optional list of additional document IDs to include
-            prompt_overrides: Optional customizations for entity extraction and resolution prompts
-
-        Returns:
-            Graph: The updated graph
-        """
-        request = self._client._logic._prepare_update_graph_request(
-            name,
-            additional_filters,
-            additional_documents,
-            prompt_overrides,
-            self._folder_name,
-            self._end_user_id,
-        )
-        response = await self._client._request("POST", f"graph/{name}/update", data=request)
-        graph = self._client._logic._parse_graph_response(response)
-        graph._client = self._client
-        return graph
 
     async def get_document_by_filename(self, filename: str) -> Document:
         """
@@ -1828,9 +1690,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
         temperature: Optional[float] = None,
         use_colpali: bool = True,
         use_reranking: Optional[bool] = None,  # Add missing parameter
-        graph_name: Optional[str] = None,
-        hop_depth: int = 1,
-        include_paths: bool = False,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
         folder_depth: Optional[int] = None,
@@ -1852,9 +1711,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
             use_colpali: Whether to use ColPali-style embedding model to generate the completion
                 (only works for documents ingested with `use_colpali=True`)
             use_reranking: Whether to use reranking
-            graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
-            hop_depth: Number of relationship hops to traverse in the graph (1-3)
-            include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
                 Either a QueryPromptOverrides object or a dictionary with the same structure
             folder_name: Optional folder name to further scope operations
@@ -1875,9 +1731,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
             max_tokens=max_tokens,
             temperature=temperature,
             use_colpali=use_colpali,
-            graph_name=graph_name,
-            hop_depth=hop_depth,
-            include_paths=include_paths,
             prompt_overrides=prompt_overrides,
             folder_name=effective_folder,
             folder_depth=folder_depth,
@@ -2478,9 +2331,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
         end_user_id: Optional[str] = None,
         padding: int = 0,
         output_format: Optional[str] = None,
-        graph_name: Optional[str] = None,
-        hop_depth: int = 1,
-        include_paths: bool = False,
         query_image: Optional[str] = None,
     ) -> GroupedChunkResponse:
         """
@@ -2498,9 +2348,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
             end_user_id: Optional end-user scope
             padding: Number of additional chunks to retrieve around matches (default: 0)
             output_format: Controls how image chunks are returned ("base64", "url", or "text")
-            graph_name: Optional knowledge graph to enhance retrieval
-            hop_depth: Number of hops for graph traversal (default: 1)
-            include_paths: Whether to include entity paths in results (default: False)
             query_image: Base64-encoded image for visual search (mutually exclusive with query, requires use_colpali=True)
 
         Returns:
@@ -2519,8 +2366,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
             "min_score": min_score,
             "use_colpali": use_colpali,
             "padding": padding,
-            "hop_depth": hop_depth,
-            "include_paths": include_paths,
         }
         # Add either query or query_image (mutually exclusive)
         if query_image:
@@ -2539,9 +2384,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
             request["output_format"] = output_format
         if use_reranking is not None:
             request["use_reranking"] = use_reranking
-        if graph_name:
-            request["graph_name"] = graph_name
-
         response = await self._request("POST", "retrieve/chunks/grouped", data=request)
         return GroupedChunkResponse(**response)
 
@@ -2607,148 +2449,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
         response = await self._request("POST", "folders/details", data=request)
         return FolderDetailsResponse(**response)
 
-    async def create_graph(
-        self,
-        name: str,
-        filters: Optional[Dict[str, Any]] = None,
-        documents: Optional[List[str]] = None,
-        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Graph:
-        """
-        Create a graph from documents.
-
-        This method extracts entities and relationships from documents
-        matching the specified filters or document IDs and creates a graph.
-
-        Args:
-            name: Name of the graph to create
-            filters: Optional metadata filters to determine which documents to include
-            documents: Optional list of specific document IDs to include
-            prompt_overrides: Optional customizations for entity extraction and resolution prompts
-                Either a GraphPromptOverrides object or a dictionary with the same structure
-            folder_name: Optional folder scope (single name or list of names)
-            end_user_id: Optional end-user scope
-
-        Returns:
-            Graph: The created graph object
-
-        """
-        request = self._logic._prepare_create_graph_request(
-            name, filters, documents, prompt_overrides, folder_name, end_user_id
-        )
-        response = await self._request("POST", "graph/create", data=request)
-        graph = self._logic._parse_graph_response(response)
-        graph._client = self  # Attach AsyncMorphik client for polling helpers
-        return graph
-
-    async def get_graph(
-        self,
-        name: str,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        folder_depth: Optional[int] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Graph:
-        """
-        Get a graph by name.
-
-        Args:
-            name: Name of the graph to retrieve
-            folder_name: Optional folder scope (single name or list of names)
-            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
-            end_user_id: Optional end-user scope
-
-        Returns:
-            Graph: The requested graph object
-
-        """
-        params: Dict[str, Any] = {}
-        if folder_name:
-            params["folder_name"] = folder_name
-        if folder_depth is not None:
-            params["folder_depth"] = folder_depth
-        if end_user_id:
-            params["end_user_id"] = end_user_id
-
-        response = await self._request("GET", f"graph/{name}", params=params)
-        graph = self._logic._parse_graph_response(response)
-        graph._client = self
-        return graph
-
-    async def list_graphs(
-        self,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        folder_depth: Optional[int] = None,
-        end_user_id: Optional[str] = None,
-    ) -> List[Graph]:
-        """
-        List all graphs the user has access to.
-
-        Returns:
-            List[Graph]: List of graph objects
-
-        """
-        params: Dict[str, Any] = {}
-        if folder_name:
-            params["folder_name"] = folder_name
-        if folder_depth is not None:
-            params["folder_depth"] = folder_depth
-        if end_user_id:
-            params["end_user_id"] = end_user_id
-
-        response = await self._request("GET", "graph", params=params)
-        graphs = self._logic._parse_graph_list_response(response)
-        for g in graphs:
-            g._client = self
-        return graphs
-
-    async def update_graph(
-        self,
-        name: str,
-        additional_filters: Optional[Dict[str, Any]] = None,
-        additional_documents: Optional[List[str]] = None,
-        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]] = None,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        folder_depth: Optional[int] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Graph:
-        """
-        Update an existing graph with new documents.
-
-        This method processes additional documents matching the original or new filters,
-        extracts entities and relationships, and updates the graph with new information.
-
-        Args:
-            name: Name of the graph to update
-            additional_filters: Optional additional metadata filters to determine which new documents to include
-            additional_documents: Optional list of additional document IDs to include
-            prompt_overrides: Optional customizations for entity extraction and resolution prompts
-                Either a GraphPromptOverrides object or a dictionary with the same structure
-            folder_name: Optional folder scope (single name or list of names)
-            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
-            end_user_id: Optional end-user scope
-
-        Returns:
-            Graph: The updated graph
-
-        """
-        request = self._logic._prepare_update_graph_request(
-            name, additional_filters, additional_documents, prompt_overrides, folder_name, end_user_id
-        )
-        params: Dict[str, Any] = {}
-        if folder_name:
-            params["folder_name"] = folder_name
-        if folder_depth is not None:
-            params["folder_depth"] = folder_depth
-        if end_user_id:
-            params["end_user_id"] = end_user_id
-
-        response = await self._request("POST", f"graph/{name}/update", data=request, params=params)
-        graph = self._logic._parse_graph_response(response)
-        graph._client = self
-        return graph
-
     async def delete_document(self, document_id: str) -> Dict[str, str]:
         """
         Delete a document and all its associated data.
@@ -2798,45 +2498,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    async def wait_for_graph_completion(
-        self,
-        graph_name: str,
-        timeout_seconds: int = 300,
-        check_interval_seconds: int = 2,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        folder_depth: Optional[int] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Graph:
-        """Block until the specified graph finishes processing (async).
-
-        Args:
-            graph_name: Name of the graph to monitor.
-            timeout_seconds: Maximum seconds to wait.
-            check_interval_seconds: Seconds between status checks.
-            folder_name: Optional folder scope (single name or list of names)
-            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
-            end_user_id: Optional end-user scope
-
-        Returns:
-            Graph: The completed graph object.
-        """
-        import asyncio
-
-        start = asyncio.get_event_loop().time()
-        while (asyncio.get_event_loop().time() - start) < timeout_seconds:
-            graph = await self.get_graph(
-                graph_name,
-                folder_name=folder_name,
-                folder_depth=folder_depth,
-                end_user_id=end_user_id,
-            )
-            if graph.is_completed:
-                return graph
-            if graph.is_failed:
-                raise RuntimeError(graph.error or "Graph processing failed")
-            await asyncio.sleep(check_interval_seconds)
-        raise TimeoutError("Timed out waiting for graph completion")
-
     async def ping(self) -> Dict[str, Any]:
         """Simple health-check call to ``/ping`` endpoint."""
         return await self._request("GET", "ping")
@@ -2878,74 +2539,6 @@ class AsyncMorphik(_ScopedOperationsMixin):
         """List recent chat conversations for the current user (async)."""
         limit_capped = max(1, min(limit, 500))
         return await self._request("GET", "chats", params={"limit": limit_capped})
-
-    # ------------------------------------------------------------------
-    # Graph helpers -----------------------------------------------------
-    # ------------------------------------------------------------------
-    async def get_graph_visualization(
-        self,
-        name: str,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        folder_depth: Optional[int] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Fetch nodes & links for visualising *name* graph (async)."""
-        params: Dict[str, Any] = {}
-        if folder_name is not None:
-            params["folder_name"] = folder_name
-        if folder_depth is not None:
-            params["folder_depth"] = folder_depth
-        if end_user_id is not None:
-            params["end_user_id"] = end_user_id
-        return await self._request("GET", f"graph/{name}/visualization", params=params)
-
-    async def check_workflow_status(self, workflow_id: str, run_id: Optional[str] = None) -> Dict[str, Any]:
-        """Poll the status of an async graph build/update workflow."""
-
-        params = {"run_id": run_id} if run_id else None
-        return await self._request("GET", f"graph/workflow/{workflow_id}/status", params=params)
-
-    async def get_graph_status(
-        self,
-        graph_name: str,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        folder_depth: Optional[int] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Get the current status of a graph with pipeline stage information.
-
-        This is a lightweight endpoint that checks the current status information
-        stored locally for the graph and enriches it with remote metadata when available.
-
-        Args:
-            graph_name: Name of the graph to check
-            folder_name: Optional folder name for scoping
-            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
-            end_user_id: Optional end user ID for scoping
-
-        Returns:
-            Dict containing status, pipeline_stage (if processing), and other metadata
-        """
-        params = {}
-        if folder_name:
-            params["folder_name"] = folder_name
-        if folder_depth is not None:
-            params["folder_depth"] = folder_depth
-        if end_user_id:
-            params["end_user_id"] = end_user_id
-
-        return await self._request("GET", f"graph/{graph_name}/status", params=params if params else None)
-
-    async def delete_graph(self, graph_name: str) -> Dict[str, Any]:
-        """Delete a graph by name.
-
-        Args:
-            graph_name: Name of the graph to delete
-
-        Returns:
-            Dict with status and message confirming deletion
-        """
-        return await self._request("DELETE", f"graph/{graph_name}")
 
     # ------------------------------------------------------------------
     # Document download helpers ----------------------------------------

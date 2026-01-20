@@ -88,7 +88,7 @@ chunks = folder.retrieve_chunks(query="design notes", folder_depth=-1)
 docs = db.list_documents(folder_name="/projects/alpha", folder_depth=-1)
 ```
 
-`Folder.full_path` is exposed on folder objects, and `Document.folder_path` / `Graph.folder_path` mirror server responses for tracing scope.
+`Folder.full_path` is exposed on folder objects, and `Document.folder_path` mirrors server responses for tracing scope.
 
 ### Asynchronous Usage
 
@@ -132,7 +132,6 @@ asyncio.run(main())
 - Semantic search and retrieval
 - Retrieval-augmented generation (RAG)
 - Morphik On-the-Fly document querying with optional ingestion follow-up
-- Knowledge graph creation and querying
 - Multi-user and multi-folder scoping
 - Metadata filtering
 - Document management

@@ -23,10 +23,6 @@ TIER_LIMITS = {
         # Query limits
         "hourly_query_limit": 30,  # Maximum queries per hour
         "monthly_query_limit": 50,  # Maximum queries per month
-        # Graph limits
-        "graph_creation_limit": 1,  # Maximum number of graphs
-        "hourly_graph_query_limit": 1,  # Maximum graph queries per hour
-        "monthly_graph_query_limit": 1,  # Maximum graph queries per month
     },
     AccountTier.PRO: {
         # Application limits
@@ -38,10 +34,6 @@ TIER_LIMITS = {
         # Query limits
         "hourly_query_limit": 100,  # Maximum queries per hour
         "monthly_query_limit": 10000,  # Maximum queries per month
-        # Graph limits
-        "graph_creation_limit": 10,  # Maximum number of graphs
-        "hourly_graph_query_limit": 50,  # Maximum graph queries per hour
-        "monthly_graph_query_limit": 1000,  # Maximum graph queries per month
     },
     AccountTier.TEAMS: {
         # Teams tier – generous limits but still bounded
@@ -54,10 +46,6 @@ TIER_LIMITS = {
         # Query limits
         "hourly_query_limit": 500,  # Maximum queries per hour
         "monthly_query_limit": 50000,  # Maximum queries per month
-        # Graph limits
-        "graph_creation_limit": 50,  # Maximum number of graphs
-        "hourly_graph_query_limit": 200,  # Maximum graph queries per hour
-        "monthly_graph_query_limit": 10000,  # Maximum graph queries per month
     },
     AccountTier.SELF_HOSTED: {
         # Self-hosted has no limits
@@ -70,10 +58,6 @@ TIER_LIMITS = {
         # Query limits
         "hourly_query_limit": float("inf"),  # Maximum queries per hour
         "monthly_query_limit": float("inf"),  # Maximum queries per month
-        # Graph limits
-        "graph_creation_limit": float("inf"),  # Maximum number of graphs
-        "hourly_graph_query_limit": float("inf"),  # Maximum graph queries per hour
-        "monthly_graph_query_limit": float("inf"),  # Maximum graph queries per month
     },
 }
 

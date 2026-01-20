@@ -24,13 +24,6 @@ class UserUsage(BaseModel):
     # Ingest usage - lifetime (no reset)
     ingest_count: int = 0
 
-    # Graph usage
-    graph_count: int = 0
-    hourly_graph_query_count: int = 0
-    hourly_graph_query_reset: Optional[datetime] = None
-    monthly_graph_query_count: int = 0
-    monthly_graph_query_reset: Optional[datetime] = None
-
 
 class UserLimits(BaseModel):
     """Stores user tier and usage information."""

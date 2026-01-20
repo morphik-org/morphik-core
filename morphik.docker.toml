@@ -148,14 +148,6 @@ colpali_mode = "local" # "off", "local", or "api"
 [pdf_viewer]
 frontend_url = "http://localhost:3000/api/pdf"
 
-[graph]
-model = "openai_gpt4-1-mini"
-enable_entity_resolution = true
-
-# [graph]
-# mode="api"
-# base_url="https://graph-api.morphik.ai"
-
 [telemetry]
 service_name = "databridge-core"
 project_name = "oss_docker"
