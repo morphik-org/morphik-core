@@ -487,9 +487,6 @@ class TelemetryService:
             + [
                 MetadataField("max_tokens", "request"),
                 MetadataField("temperature", "request"),
-                MetadataField("graph_name", "request"),
-                MetadataField("hop_depth", "request"),
-                MetadataField("include_paths", "request"),
                 MetadataField("schema", "request"),
                 MetadataField("chat_id", "request"),
                 MetadataField("use_colpali", "request"),
@@ -560,60 +557,6 @@ class TelemetryService:
         self.document_update_metadata_resolver = MetadataExtractor(
             [
                 MetadataField("document_id", "kwargs"),
-            ]
-        )
-
-        self.create_graph_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "request"),
-                MetadataField("has_filters", "request", "filters", transform=is_not_none),
-                MetadataField(
-                    "document_count",
-                    "request",
-                    "documents",
-                    transform=lambda docs: len(docs) if docs else 0,
-                ),
-                MetadataField("has_prompt_overrides", "request", "prompt_overrides", transform=is_not_none),
-                MetadataField("folder_name", "request"),
-                MetadataField("end_user_id", "request"),
-            ]
-        )
-
-        self.get_graph_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-                MetadataField("folder_name", "kwargs"),
-                MetadataField("end_user_id", "kwargs"),
-            ]
-        )
-
-        self.list_graphs_metadata = MetadataExtractor(
-            [
-                MetadataField("folder_name", "kwargs"),
-                MetadataField("end_user_id", "kwargs"),
-            ]
-        )
-
-        self.update_graph_metadata = MetadataExtractor(
-            [
-                MetadataField("name", "kwargs"),
-                MetadataField("has_additional_filters", "request", "additional_filters", transform=is_not_none),
-                MetadataField(
-                    "additional_document_count",
-                    "request",
-                    "additional_documents",
-                    transform=lambda docs: len(docs) if docs else 0,
-                ),
-                MetadataField("has_prompt_overrides", "request", "prompt_overrides", transform=is_not_none),
-                MetadataField("folder_name", "request"),
-                MetadataField("end_user_id", "request"),
-            ]
-        )
-
-        self.workflow_status_metadata = MetadataExtractor(
-            [
-                MetadataField("workflow_id", "kwargs"),
-                MetadataField("run_id", "kwargs"),
             ]
         )
 

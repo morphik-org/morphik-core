@@ -154,16 +154,7 @@ colpali_mode = "local" # "off", "local", or "api"
 parser_mode = "local" # "local" or "api" - "api" offloads parsing to GPU servers
 
 [pdf_viewer]
-frontend_url = "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
-
-# [graph]
-# model = "openai_gpt4-1-mini"
-# enable_entity_resolution = true
-
-[graph]
-mode="api"
-model = "openai_gpt4-1-mini"
-base_url="https://graph-api.morphik.ai"
+frontend_url = "https://morphik.ai/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
 
 [telemetry]
 service_name = "databridge-core-hosted"

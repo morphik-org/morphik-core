@@ -2,7 +2,6 @@ import {
   IconFiles,
   IconSearch,
   IconMessage,
-  IconShare,
   IconPlugConnected,
   IconFileText,
   IconSettings,
@@ -56,10 +55,6 @@ export const baseMainNavItems: Omit<BaseNavItem, "type">[] = [
     isSpecial: true,
   },
   {
-    title: "Knowledge Graphs",
-    icon: IconShare,
-  },
-  {
     title: "Connectors",
     icon: IconPlugConnected,
   },
@@ -93,7 +88,7 @@ export const externalNavItems = [
 export const createUrlNavigation = (onChatClick: () => void, onSettingsClick?: () => void): NavigationStrategy => ({
   type: "url",
   mainItems: baseMainNavItems.map((item, index) => {
-    const urlMap = ["/documents", "/pdf", "/search", "/chat", "/graphs", "/connections"];
+    const urlMap = ["/documents", "/pdf", "/search", "/chat", "/connections"];
     return {
       ...item,
       type: "url" as const,
@@ -135,7 +130,7 @@ export const createSectionNavigation = (
 ): NavigationStrategy => ({
   type: "section",
   mainItems: baseMainNavItems.map((item, index) => {
-    const sectionMap = ["documents", "pdf", "search", "chat", "graphs", "connections"];
+    const sectionMap = ["documents", "pdf", "search", "chat", "connections"];
     return {
       ...item,
       type: "section" as const,

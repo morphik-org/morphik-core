@@ -22,18 +22,15 @@ from core.models.chat import ChatMessage
 from core.models.chunk import DocumentChunk
 from core.models.completion import ChunkSource, CompletionRequest, CompletionResponse
 from core.models.documents import ChunkResult, Document, DocumentContent, DocumentResult
-from core.models.prompts import GraphPromptOverrides, QueryPromptOverrides
+from core.models.prompts import QueryPromptOverrides
 from core.models.summary import SummaryResponse, SummaryUpsertRequest
 from core.parser.base_parser import BaseParser
 from core.reranker.base_reranker import BaseReranker
-from core.services.graph_service import GraphService
-from core.services.morphik_graph_service import MorphikGraphService
 from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
 from core.vector_store.utils import derive_repaired_image_key, is_storage_key, normalize_storage_key
 
 from ..models.auth import AuthContext
-from ..models.graph import Graph
 from ..utils.folder_utils import normalize_folder_selector
 
 logger = logging.getLogger(__name__)
@@ -79,27 +76,6 @@ class DocumentService:
         self.reranker = reranker
         self.colpali_embedding_model = colpali_embedding_model
         self.colpali_vector_store = colpali_vector_store
-
-        # Initialize the graph service only if completion_model is provided
-        # (e.g., not needed for ingestion worker)
-        if completion_model is not None:
-            self.graph_service = (
-                GraphService(
-                    db=database,
-                    embedding_model=embedding_model,
-                    completion_model=completion_model,
-                )
-                if settings.GRAPH_MODE == "local"
-                else MorphikGraphService(
-                    db=database,
-                    embedding_model=embedding_model,
-                    completion_model=completion_model,
-                    base_url=settings.MORPHIK_GRAPH_BASE_URL,
-                    graph_api_key=settings.MORPHIK_GRAPH_API_KEY,
-                )
-            )
-        else:
-            self.graph_service = None
 
         # MultiVectorStore initialization is now handled in the FastAPI startup event
         # so we don't need to initialize it here again
@@ -1066,9 +1042,6 @@ class DocumentService:
         temperature: Optional[float] = None,
         use_reranking: Optional[bool] = None,
         use_colpali: Optional[bool] = None,
-        graph_name: Optional[str] = None,
-        hop_depth: int = 1,
-        include_paths: bool = False,
         prompt_overrides: Optional["QueryPromptOverrides"] = None,
         folder_name: Optional[Union[str, List[str]]] = None,
         folder_depth: Optional[int] = None,
@@ -1083,9 +1056,6 @@ class DocumentService:
     ) -> Union[CompletionResponse, tuple[AsyncGenerator[str, None], List[ChunkSource]]]:
         """Generate completion using relevant chunks as context.
 
-        When graph_name is provided, the query will leverage the knowledge graph
-        to enhance retrieval by finding relevant entities and their connected documents.
-
         Args:
             query: The query text
             auth: Authentication context
@@ -1096,9 +1066,6 @@ class DocumentService:
             temperature: Temperature for completion
             use_reranking: Whether to use reranking
             use_colpali: Whether to use colpali embedding
-            graph_name: Optional name of the graph to use for knowledge graph-enhanced retrieval
-            hop_depth: Number of relationship hops to traverse in the graph (1-3)
-            include_paths: Whether to include relationship paths in the response
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             folder_name: Optional folder to scope the operation to
             end_user_id: Optional end-user ID to scope the operation to
@@ -1112,39 +1079,7 @@ class DocumentService:
             query_start_time = time.time()
             phase_times = {}
 
-        # Graph routing check
-        if perf_tracker:
-            perf_tracker.start_phase("graph_routing_check")
-        else:
-            graph_check_start = time.time()
-
-        if graph_name:
-            # Use knowledge graph enhanced retrieval via GraphService
-            return await self.graph_service.query_with_graph(
-                query=query,
-                graph_name=graph_name,
-                auth=auth,
-                document_service=self,
-                filters=filters,
-                k=k,
-                min_score=min_score,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                use_reranking=use_reranking,
-                use_colpali=use_colpali,
-                hop_depth=hop_depth,
-                include_paths=include_paths,
-                prompt_overrides=prompt_overrides,
-                folder_name=folder_name,
-                folder_depth=folder_depth,
-                end_user_id=end_user_id,
-                stream_response=stream_response,
-            )
-
-        if not perf_tracker:
-            phase_times["graph_routing_check"] = time.time() - graph_check_start
-
-        # Standard retrieval without graph
+        # Standard retrieval
         if perf_tracker:
             perf_tracker.start_phase("chunk_retrieval")
         else:
@@ -1802,81 +1737,6 @@ class DocumentService:
         logger.info(f"Created {len(results)} document results")
         return results
 
-    async def create_graph(
-        self,
-        name: str,
-        auth: AuthContext,
-        filters: Optional[Dict[str, Any]] = None,
-        documents: Optional[List[str]] = None,
-        prompt_overrides: Optional[GraphPromptOverrides] = None,
-        system_filters: Optional[Dict[str, Any]] = None,
-    ) -> Graph:
-        """Create a graph from documents.
-
-        This function processes documents matching filters or specific document IDs,
-        extracts entities and relationships from document chunks, and saves them as a graph.
-
-        Args:
-            name: Name of the graph to create
-            auth: Authentication context
-            filters: Optional metadata filters to determine which documents to include
-            documents: Optional list of specific document IDs to include
-            prompt_overrides: Optional customizations for entity extraction and resolution prompts
-            system_filters: Optional system filters like folder_name and end_user_id for scoping
-
-        Returns:
-            Graph: The created graph
-        """
-        # Delegate to the GraphService
-        return await self.graph_service.create_graph(
-            name=name,
-            auth=auth,
-            document_service=self,
-            filters=filters,
-            documents=documents,
-            prompt_overrides=prompt_overrides,
-            system_filters=system_filters,
-        )
-
-    async def update_graph(
-        self,
-        name: str,
-        auth: AuthContext,
-        additional_filters: Optional[Dict[str, Any]] = None,
-        additional_documents: Optional[List[str]] = None,
-        prompt_overrides: Optional[GraphPromptOverrides] = None,
-        system_filters: Optional[Dict[str, Any]] = None,
-        is_initial_build: bool = False,  # New parameter
-    ) -> Graph:
-        """Update an existing graph with new documents.
-
-        This function processes additional documents matching the original or new filters,
-        extracts entities and relationships, and updates the graph with new information.
-
-        Args:
-            name: Name of the graph to update
-            auth: Authentication context
-            additional_filters: Optional additional metadata filters to determine which new documents to include
-            additional_documents: Optional list of additional document IDs to include
-            prompt_overrides: Optional customizations for entity extraction and resolution prompts
-            system_filters: Optional system filters like folder_name and end_user_id for scoping
-            is_initial_build: Whether this is the initial build of the graph
-
-        Returns:
-            Graph: The updated graph
-        """
-        # Delegate to the GraphService
-        return await self.graph_service.update_graph(
-            name=name,
-            auth=auth,
-            document_service=self,
-            additional_filters=additional_filters,
-            additional_documents=additional_documents,
-            prompt_overrides=prompt_overrides,
-            system_filters=system_filters,
-            is_initial_build=is_initial_build,  # Pass through
-        )
-
     async def delete_document(self, document_id: str, auth: AuthContext) -> bool:
         """
         Delete a document and all its associated data.
@@ -2222,38 +2082,6 @@ class DocumentService:
     def close(self):
         """Close all resources."""
         pass
-
-    async def get_graph_visualization_data(
-        self,
-        name: str,
-        auth: AuthContext,
-        folder_name: Optional[Union[str, List[str]]] = None,
-        folder_depth: Optional[int] = None,
-        end_user_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Get graph visualization data.
-
-        Args:
-            name: Name of the graph to visualize
-            auth: Authentication context
-            folder_name: Optional folder name for scoping
-            end_user_id: Optional end user ID for scoping
-
-        Returns:
-            Dict containing nodes and links for visualization
-        """
-        # Create system filters for folder and user scoping
-        system_filters = {}
-        system_filters.update(self._build_folder_scope_filters(folder_name, folder_depth))
-        if end_user_id:
-            system_filters["end_user_id"] = end_user_id
-
-        # Delegate to the GraphService
-        return await self.graph_service.get_graph_visualization_data(
-            graph_name=name,
-            auth=auth,
-            system_filters=system_filters,
-        )
 
     async def search_documents_by_name(
         self,

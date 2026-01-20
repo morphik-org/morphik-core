@@ -46,7 +46,6 @@ from core.models.request import (
 from core.models.responses import ChatTitleResponse, ModelsResponse
 from core.routes.documents import router as documents_router
 from core.routes.folders import router as folders_router
-from core.routes.graph import router as graph_router
 from core.routes.health import router as health_router
 from core.routes.ingest import router as ingest_router
 from core.routes.logs import router as logs_router  # noqa: E402 – import after FastAPI app
@@ -331,9 +330,6 @@ app.include_router(logs_router)
 
 # Register usage router
 app.include_router(usage_router)
-
-# Register graph router
-app.include_router(graph_router)
 
 
 # Enterprise-only routes (optional)
@@ -644,12 +640,7 @@ async def query_completion(
     auth: AuthContext = Depends(verify_token),
     redis: arq.ArqRedis = Depends(get_redis_pool),
 ):
-    """
-    Generate completion using relevant chunks as context.
-
-    When graph_name is provided, the query will leverage the knowledge graph
-    to enhance retrieval by finding relevant entities and their connected documents.
-    """
+    """Generate completion using relevant chunks as context."""
     # Image queries not supported for completion
     if request.query_image:
         raise HTTPException(
@@ -725,9 +716,6 @@ async def query_completion(
                 request.temperature,
                 request.use_reranking,
                 request.use_colpali,
-                request.graph_name,
-                request.hop_depth,
-                request.include_paths,
                 request.prompt_overrides,
                 request.folder_name,
                 request.folder_depth,

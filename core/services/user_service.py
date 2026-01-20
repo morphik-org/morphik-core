@@ -90,7 +90,7 @@ class UserService:
 
         Args:
             user_id: The user ID to check
-            limit_type: Type of limit (query, ingest, graph, etc.)
+            limit_type: Type of limit (query, ingest, storage, etc.)
             value: Value to check (e.g., file size for storage)
 
         Returns:
@@ -156,12 +156,6 @@ class UserService:
             size_usage = usage.get("storage_size_bytes", 0)
 
             return size_usage + value <= size_limit_bytes
-
-        elif limit_type == "graph":
-            graph_limit = tier_limits.get("graph_creation_limit", 0)
-            graph_count = usage.get("graph_count", 0)
-
-            return graph_count + value <= graph_limit
 
         return True
 

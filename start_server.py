@@ -204,7 +204,7 @@ def get_ollama_usage_info():
                         ollama_models[model_key] = api_base
 
         # Check which components are using Ollama models
-        components_to_check = ["embedding", "completion", "graph", "parser.vision"]
+        components_to_check = ["embedding", "completion", "parser.vision"]
 
         for component in components_to_check:
             if component == "parser.vision":

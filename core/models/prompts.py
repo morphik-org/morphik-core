@@ -164,8 +164,8 @@ class PromptOverrides(BaseModel):
     Generic container for all prompt overrides.
 
     This is a base class that contains all possible override types.
-    For specific operations, use the more specialized GraphPromptOverrides
-    or QueryPromptOverrides classes, which enforce context-specific validation.
+    For specific operations, use the more specialized QueryPromptOverrides class,
+    which enforces context-specific validation.
     """
 
     entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
@@ -179,29 +179,6 @@ class PromptOverrides(BaseModel):
     query: Optional[QueryPromptOverride] = Field(
         None,
         description="Overrides for query prompts - controls response generation style and format",
-    )
-
-
-class GraphPromptOverrides(BaseModel):
-    """
-    Container for graph-related prompt overrides.
-
-    Use this class when customizing prompts for graph operations like
-    create_graph() and update_graph(), which only support entity extraction
-    and entity resolution customizations.
-
-    This class enforces that only graph-relevant override types are used.
-    """
-
-    model_config = {"extra": "forbid"}  # This will cause validation error for extra fields
-
-    entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
-        None,
-        description="Overrides for entity extraction prompts - controls how entities are identified in text during graph operations",
-    )
-    entity_resolution: Optional[EntityResolutionPromptOverride] = Field(
-        None,
-        description="Overrides for entity resolution prompts - controls how variant forms are grouped during graph operations",
     )
 
 
@@ -241,7 +218,7 @@ def validate_prompt_overrides(prompt_overrides):
     for incorrectly formatted prompt templates.
 
     Args:
-        prompt_overrides: The prompt overrides object (can be of type QueryPromptOverrides or GraphPromptOverrides)
+        prompt_overrides: The prompt overrides object (can be of type QueryPromptOverrides)
                          or a dictionary representation
 
     Raises:
@@ -253,22 +230,12 @@ def validate_prompt_overrides(prompt_overrides):
     # First, validate field names
     # This handles dictionary inputs that haven't been validated by Pydantic models yet
     if isinstance(prompt_overrides, dict):
-        # Determine allowed fields based on whether 'query' is one of expected fields
-        # If GraphPromptOverrides: only entity_extraction and entity_resolution are allowed
-        # If QueryPromptOverrides: entity_extraction, entity_resolution, and query are allowed
-        is_graph_context = "query" not in prompt_overrides and any(
-            key in {"entity_extraction", "entity_resolution"} for key in prompt_overrides
-        )
-
-        allowed_fields = {"entity_extraction", "entity_resolution"}
-        if not is_graph_context:
-            allowed_fields.add("query")
+        allowed_fields = {"entity_extraction", "entity_resolution", "query"}
 
         # Check for invalid fields
         for field in prompt_overrides:
             if field not in allowed_fields:
-                context_type = "graph" if is_graph_context else "query"
-                raise ValueError(f"Field '{field}' is not allowed in {context_type} prompt overrides")
+                raise ValueError(f"Field '{field}' is not allowed in prompt overrides")
 
         # Validate query prompt template if present
         if "query" in prompt_overrides and prompt_overrides["query"] and "prompt_template" in prompt_overrides["query"]:
@@ -369,7 +336,7 @@ def validate_prompt_overrides_with_http_exception(
 
     Args:
         prompt_overrides: The prompt overrides object to validate
-        operation_type: Type of operation (e.g., "query", "graph") to customize error messages
+        operation_type: Type of operation (e.g., "query") to customize error messages
         error: An existing ValueError to handle (used for exception handling blocks)
 
     Raises:
@@ -402,11 +369,6 @@ def validate_prompt_overrides_with_http_exception(
             detail = (
                 f"Invalid field in query prompt overrides: {str(e)}. "
                 f"For query operations, valid fields are 'entity_extraction', 'entity_resolution', and 'query'."
-            )
-        elif operation_type == "graph":
-            detail = (
-                f"Invalid field in graph prompt overrides: {str(e)}. "
-                f"For graph operations, only 'entity_extraction' and 'entity_resolution' overrides are supported."
             )
         else:
             detail = f"Invalid field in prompt overrides: {str(e)}."

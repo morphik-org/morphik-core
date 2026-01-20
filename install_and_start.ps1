@@ -132,7 +132,7 @@ if (-not (Test-Path $venvPython)) {
   throw ".venv not found"
 }
 
-# 5) Install ColPali engine (knowledge-graph/multimodal search)
+# 5) Install ColPali engine (multimodal search)
 Write-Step "Installing ColPali engine..."
 uv pip install --python $venvPython `
   colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3
