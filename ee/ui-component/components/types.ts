@@ -25,7 +25,6 @@ export interface SearchOptions {
 export interface QueryOptions extends SearchOptions {
   max_tokens?: number;
   temperature?: number;
-  graph_name?: string;
   folder_name?: string | string[]; // Support single folder or array of folders
   folder_depth?: number;
   // external_id removed - should be in filters object as external_id: string[]
@@ -51,7 +50,7 @@ export interface MorphikUIProps {
   onBackClick?: () => void; // Callback when back button is clicked
   appName?: string; // Name of the app to display in UI
   initialFolder?: string | null; // Initial folder to show
-  initialSection?: "documents" | "search" | "chat" | "graphs" | "connections" | "pdf" | "settings" | "logs"; // Initial section to show
+  initialSection?: "documents" | "search" | "chat" | "connections" | "pdf" | "settings" | "logs"; // Initial section to show
 
   // Custom breadcrumbs for organization context
   breadcrumbItems?: Breadcrumb[];
@@ -67,11 +66,6 @@ export interface MorphikUIProps {
   // Callbacks for Search and Chat tracking
   onSearchSubmit?: (query: string, options: SearchOptions) => void;
   onChatSubmit?: (query: string, options: QueryOptions, initialMessages?: UIMessage[]) => void; // Use UIMessage[]
-
-  // Callbacks for Graph tracking
-  onGraphClick?: (graphName: string | undefined) => void;
-  onGraphCreate?: (graphName: string, numDocuments: number) => void;
-  onGraphUpdate?: (graphName: string, numAdditionalDocuments: number) => void;
 
   // User profile and auth
   userProfile?: {

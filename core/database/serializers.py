@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict
 
-from .models import DocumentModel, GraphModel
+from .models import DocumentModel
 
 
 def _serialize_datetime(obj: Any) -> Any:
@@ -13,39 +13,6 @@ def _serialize_datetime(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_serialize_datetime(item) for item in obj]
     return obj
-
-
-def _parse_datetime_field(value: Any) -> Any:
-    """Parse datetime strings from PostgreSQL into datetime objects when possible."""
-    if isinstance(value, str):
-        try:
-            if value.endswith("+00") and not value.endswith("+00:00"):
-                value = value[:-3] + "+00:00"
-            elif value.endswith("-00") and not value.endswith("-00:00"):
-                value = value[:-3] + "-00:00"
-            return datetime.fromisoformat(value)
-        except ValueError:
-            return value
-    return value
-
-
-def _graph_model_to_dict(graph_model: GraphModel) -> Dict[str, Any]:
-    return {
-        "id": graph_model.id,
-        "name": graph_model.name,
-        "entities": graph_model.entities,
-        "relationships": graph_model.relationships,
-        "metadata": graph_model.graph_metadata,
-        "system_metadata": graph_model.system_metadata or {},
-        "document_ids": graph_model.document_ids,
-        "filters": graph_model.filters,
-        "created_at": graph_model.created_at,
-        "updated_at": graph_model.updated_at,
-        "folder_name": graph_model.folder_name,
-        "folder_path": graph_model.folder_path,
-        "app_id": graph_model.app_id,
-        "end_user_id": graph_model.end_user_id,
-    }
 
 
 def _document_model_to_dict(doc_model: DocumentModel) -> Dict[str, Any]:

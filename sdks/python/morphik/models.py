@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _reconstruct_metadata_types(metadata: Dict[str, Any], metadata_types: Dict[str, str]) -> Dict[str, Any]:
@@ -438,104 +438,6 @@ class IngestTextRequest(BaseModel):
     use_colpali: bool = Field(default=False)
 
 
-class Entity(BaseModel):
-    """Represents an entity in a knowledge graph"""
-
-    id: str = Field(..., description="Unique entity identifier")
-    label: str = Field(..., description="Display label for the entity")
-    type: str = Field(..., description="Entity type")
-    properties: Dict[str, Any] = Field(default_factory=dict, description="Entity properties")
-    document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
-    chunk_sources: Dict[str, List[int]] = Field(default_factory=dict, description="Source chunk numbers by document ID")
-
-    def __hash__(self):
-        return hash(self.id)
-
-    def __eq__(self, other):
-        if not isinstance(other, Entity):
-            return False
-        return self.id == other.id
-
-
-class Relationship(BaseModel):
-    """Represents a relationship between entities in a knowledge graph"""
-
-    id: str = Field(..., description="Unique relationship identifier")
-    source_id: str = Field(..., description="Source entity ID")
-    target_id: str = Field(..., description="Target entity ID")
-    type: str = Field(..., description="Relationship type")
-    document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
-    chunk_sources: Dict[str, List[int]] = Field(default_factory=dict, description="Source chunk numbers by document ID")
-
-    def __hash__(self):
-        return hash(self.id)
-
-    def __eq__(self, other):
-        if not isinstance(other, Relationship):
-            return False
-        return self.id == other.id
-
-
-class Graph(BaseModel):
-    """Represents a knowledge graph"""
-
-    id: str = Field(..., description="Unique graph identifier")
-    name: str = Field(..., description="Graph name")
-    entities: List[Entity] = Field(default_factory=list, description="Entities in the graph")
-    relationships: List[Relationship] = Field(default_factory=list, description="Relationships in the graph")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Graph metadata")
-    system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
-    document_ids: List[str] = Field(default_factory=list, description="Source document IDs")
-    filters: Optional[Dict[str, Any]] = Field(None, description="Document filters used to create the graph")
-    created_at: datetime = Field(..., description="Creation timestamp")
-    updated_at: datetime = Field(..., description="Last update timestamp")
-    folder_name: Optional[str] = Field(None, description="Folder scope for the graph")
-    folder_path: Optional[str] = Field(None, description="Canonical folder path for the graph")
-    end_user_id: Optional[str] = Field(None, description="End user scope for the graph")
-    app_id: Optional[str] = Field(None, description="Application ID associated with the graph")
-
-    _client: Any | None = PrivateAttr(default=None)
-
-    # ---------------- Convenience helpers ----------------
-    @property
-    def status(self) -> str | None:
-        """Return processing status if available."""
-        return self.system_metadata.get("status") if self.system_metadata else None
-
-    @property
-    def is_processing(self) -> bool:
-        return self.system_metadata.get("status") == "processing"
-
-    @property
-    def is_completed(self) -> bool:
-        return self.system_metadata.get("status") == "completed"
-
-    @property
-    def is_failed(self) -> bool:
-        return self.system_metadata.get("status") == "failed"
-
-    @property
-    def error(self) -> str | None:
-        return self.system_metadata.get("error") if self.system_metadata else None
-
-    def wait_for_completion(self, timeout_seconds: int = 300, check_interval_seconds: int = 2) -> "Graph":
-        """Poll the server until the graph processing is finished."""
-        import time
-
-        if not self._client:
-            raise RuntimeError("Graph object has no client reference for polling")
-
-        start = time.time()
-        while time.time() - start < timeout_seconds:
-            refreshed = self._client.get_graph(self.name)
-            if refreshed.is_completed:
-                return refreshed
-            if refreshed.is_failed:
-                raise RuntimeError(refreshed.error or "Graph creation failed")
-            time.sleep(check_interval_seconds)
-        raise TimeoutError("Timed out waiting for graph completion")
-
-
 class EntityExtractionExample(BaseModel):
     """
     Example entity for guiding entity extraction.
@@ -636,38 +538,6 @@ class QueryPromptOverride(BaseModel):
         None,
         description="Custom system prompt that replaces Morphik's default query agent instructions.",
     )
-
-
-class GraphPromptOverrides(BaseModel):
-    """
-    Container for graph-related prompt overrides.
-
-    Use this class when customizing prompts for graph operations like
-    create_graph() and update_graph(), which only support entity extraction
-    and entity resolution customizations.
-
-    This class enforces that only graph-relevant override types are used.
-    """
-
-    entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
-        None,
-        description="Overrides for entity extraction prompts - controls how entities are identified in text "
-        "during graph operations",
-    )
-    entity_resolution: Optional[EntityResolutionPromptOverride] = Field(
-        None,
-        description="Overrides for entity resolution prompts - controls how variant forms are grouped "
-        "during graph operations",
-    )
-
-    @model_validator(mode="after")
-    def validate_graph_fields(self) -> "GraphPromptOverrides":
-        """Ensure only graph-related fields are present."""
-        allowed_fields = {"entity_extraction", "entity_resolution"}
-        for field in self.model_fields:
-            if field not in allowed_fields and getattr(self, field, None) is not None:
-                raise ValueError(f"Field '{field}' is not allowed in graph prompt overrides")
-        return self
 
 
 class QueryPromptOverrides(BaseModel):

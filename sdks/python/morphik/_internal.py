@@ -21,8 +21,6 @@ from .models import (
     Document,
     DocumentQueryResponse,
     DocumentResult,
-    Graph,
-    GraphPromptOverrides,
     IngestTextRequest,
     QueryPromptOverrides,
 )
@@ -290,9 +288,6 @@ class _MorphikClientLogic:
         max_tokens: Optional[int],
         temperature: Optional[float],
         use_colpali: bool,
-        graph_name: Optional[str],
-        hop_depth: int,
-        include_paths: bool,
         prompt_overrides: Optional[Union[QueryPromptOverrides, Dict[str, Any]]],
         folder_name: Optional[Union[str, List[str]]],
         folder_depth: Optional[int],
@@ -317,9 +312,6 @@ class _MorphikClientLogic:
             "temperature": temperature,
             "use_colpali": use_colpali,
             "use_reranking": use_reranking,  # Add to payload
-            "graph_name": graph_name,
-            "hop_depth": hop_depth,
-            "include_paths": include_paths,
             "prompt_overrides": prompt_overrides,
         }
         if folder_name:
@@ -506,57 +498,6 @@ class _MorphikClientLogic:
             request["output_format"] = output_format
         return request
 
-    def _prepare_create_graph_request(
-        self,
-        name: str,
-        filters: Optional[Dict[str, Any]],
-        documents: Optional[List[str]],
-        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]],
-        folder_name: Optional[Union[str, List[str]]],
-        end_user_id: Optional[str],
-    ) -> Dict[str, Any]:
-        """Prepare request for create_graph endpoint"""
-        # Convert prompt_overrides to dict if it's a model
-        if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
-            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
-
-        request = {
-            "name": name,
-            "filters": filters,
-            "documents": documents,
-            "prompt_overrides": prompt_overrides,
-        }
-        if folder_name:
-            request["folder_name"] = folder_name
-        if end_user_id:
-            request["end_user_id"] = end_user_id
-        return request
-
-    def _prepare_update_graph_request(
-        self,
-        name: str,
-        additional_filters: Optional[Dict[str, Any]],
-        additional_documents: Optional[List[str]],
-        prompt_overrides: Optional[Union[GraphPromptOverrides, Dict[str, Any]]],
-        folder_name: Optional[Union[str, List[str]]],
-        end_user_id: Optional[str],
-    ) -> Dict[str, Any]:
-        """Prepare request for update_graph endpoint"""
-        # Convert prompt_overrides to dict if it's a model
-        if prompt_overrides and isinstance(prompt_overrides, GraphPromptOverrides):
-            prompt_overrides = prompt_overrides.model_dump(exclude_none=True)
-
-        request = {
-            "additional_filters": additional_filters,
-            "additional_documents": additional_documents,
-            "prompt_overrides": prompt_overrides,
-        }
-        if folder_name:
-            request["folder_name"] = folder_name
-        if end_user_id:
-            request["end_user_id"] = end_user_id
-        return request
-
     def _prepare_update_document_with_text_request(
         self,
         document_id: str,
@@ -720,14 +661,6 @@ class _MorphikClientLogic:
             )
 
         return final_chunks
-
-    def _parse_graph_response(self, response_json: Dict[str, Any]) -> Graph:
-        """Parse graph response"""
-        return Graph(**response_json)
-
-    def _parse_graph_list_response(self, response_json: List[Dict[str, Any]]) -> List[Graph]:
-        """Parse graph list response"""
-        return [Graph(**graph) for graph in response_json]
 
     def _parse_document_query_response(self, response_json: Dict[str, Any]) -> DocumentQueryResponse:
         """Parse document query response."""

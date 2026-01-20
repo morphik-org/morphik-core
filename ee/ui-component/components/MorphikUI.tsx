@@ -5,7 +5,6 @@ import { MorphikUIProps, Breadcrumb } from "./types";
 import DocumentsWithHeader from "@/components/documents/DocumentsWithHeader";
 import SearchSection from "@/components/search/SearchSection";
 import ChatSection from "@/components/chat/ChatSection";
-import GraphSection from "@/components/GraphSection";
 import LogsSection from "@/components/logs/LogsSection";
 import { ConnectorList } from "@/components/connectors/ConnectorList";
 import { PDFViewer } from "@/components/pdf/PDFViewer";
@@ -42,9 +41,6 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
     onFolderClick,
     onSearchSubmit,
     onChatSubmit,
-    onGraphClick,
-    onGraphCreate,
-    onGraphUpdate,
     userProfile,
     onLogout,
     onProfileNavigate,
@@ -99,11 +95,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
 
       // Add the current section as the last breadcrumb
       const sectionLabel =
-        currentSection === "graphs"
-          ? "Knowledge Graphs"
-          : currentSection === "documents"
-            ? "Documents"
-            : currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
+        currentSection === "documents" ? "Documents" : currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
 
       // Only add section breadcrumb if it's different from the last breadcrumb
       const lastBreadcrumb = baseBreadcrumbs[baseBreadcrumbs.length - 1];
@@ -122,10 +114,7 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
         return;
       }
 
-      const prettyLabel =
-        currentSection === "graphs"
-          ? "Knowledge Graphs"
-          : currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
+      const prettyLabel = currentSection.charAt(0).toUpperCase() + currentSection.slice(1);
 
       setLocalBreadcrumbs([
         {
@@ -193,16 +182,6 @@ const MorphikUI: React.FC<MorphikUIProps> = props => {
         return <SearchSection apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} onSearchSubmit={onSearchSubmit} />;
       case "chat":
         return <ChatSection apiBaseUrl={effectiveApiBaseUrl} authToken={authToken} onChatSubmit={onChatSubmit} />;
-      case "graphs":
-        return (
-          <GraphSection
-            apiBaseUrl={effectiveApiBaseUrl}
-            authToken={authToken}
-            onSelectGraph={onGraphClick}
-            onGraphCreate={onGraphCreate}
-            onGraphUpdate={onGraphUpdate}
-          />
-        );
       case "connections":
         return (
           <div className="h-full overflow-auto p-4 md:p-6">

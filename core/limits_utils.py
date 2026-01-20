@@ -202,7 +202,6 @@ async def check_and_increment_limits(
                 "Storage size limit exceeded for your free tier. "
                 "Please delete some files or upgrade to remove limits."
             ),
-            "graph": "Graph creation limit exceeded for your free tier. Please upgrade to remove limits.",
         }
 
         # Get message for the limit type or use default message

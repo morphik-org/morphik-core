@@ -291,7 +291,7 @@ class TestMorphik:
         content = (
             "Morphik is a platform for building AI applications. "
             "It provides tools for data ingestion, retrieval, and generation. "
-            "Key features include vector search and knowledge graphs."
+            "Key features include vector search and reranking."
         )
         doc = db.ingest_text(
             content=content,

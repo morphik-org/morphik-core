@@ -155,14 +155,6 @@ parser_mode = "local" # "local" or "api" - "api" offloads parsing to GPU servers
 [pdf_viewer]
 frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
 
-[graph]
-model = "ollama_qwen_vision"
-enable_entity_resolution = true
-
-# [graph]
-# mode="api"
-# base_url="https://graph-api.morphik.ai"
-
 [telemetry]
 service_name = "databridge-core"
 project_name = ""
