@@ -54,10 +54,6 @@ class Settings(BaseSettings):
     APP_AUTH_ACTIVE_TTL_SECONDS: int = 600
     APP_AUTH_REVOKED_TTL_SECONDS: int = 86400
 
-    # Control plane sync (for dedicated clusters to sync apps back to cloud-ui)
-    CONTROL_PLANE_URL: Optional[str] = None  # e.g., https://morphik.ai
-    CONTROL_PLANE_SECRET: Optional[str] = None  # Secret to authenticate with control plane
-
     # Registered models configuration
     REGISTERED_MODELS: Dict[str, Dict[str, Any]] = {}
 
@@ -385,8 +381,6 @@ def get_settings() -> Settings:
             "SECRET_MANAGER": secret_manager,
             "API_DOMAIN": api_domain,
             "MORPHIK_EMBEDDING_API_DOMAIN": embedding_api_endpoints,
-            "CONTROL_PLANE_URL": config["morphik"].get("control_plane_url", "https://www.morphik.ai"),
-            "CONTROL_PLANE_SECRET": os.environ.get("CONTROL_PLANE_SECRET"),
         }
     )
 

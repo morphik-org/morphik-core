@@ -3,7 +3,6 @@ import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-import httpx
 import jwt
 from sqlalchemy import func, or_, select, text
 
@@ -53,36 +52,6 @@ class UserService:
     async def update_user_tier(self, user_id: str, tier: str, custom_limits: Optional[Dict[str, Any]] = None) -> bool:
         """Update user tier and custom limits."""
         return await self.db.update_user_tier(user_id, tier, custom_limits)
-
-    async def register_app(self, user_id: str, app_id: str) -> bool:
-        """
-        Register an app for a user.
-
-        Creates user limits record if it doesn't exist.
-        """
-        # First check if user limits exist
-        user_limits = await self.db.get_user_limits(user_id)
-
-        # If user limits don't exist, create them first
-        if not user_limits:
-            logger.info(f"Creating user limits for user {user_id}")
-            success = await self.create_user(user_id)
-            if not success:
-                logger.error(f"Failed to create user limits for user {user_id}")
-                return False
-
-        # Now register the app
-        return await self.db.register_app(user_id, app_id)
-
-    async def unregister_app(self, user_id: str, app_id: str) -> bool:
-        """Remove *app_id* from the user's registered applications list."""
-        # If the user record does not yet exist, nothing to do.
-        user_limits = await self.db.get_user_limits(user_id)
-        if not user_limits:
-            logger.info("User %s not found while unregistering app – treating as no-op", user_id)
-            return True
-
-        return await self.db.unregister_app(user_id, app_id)
 
     async def check_limit(self, user_id: str, limit_type: str, value: int = 1) -> bool:
         """
@@ -338,16 +307,6 @@ class UserService:
             uri=uri,
         )
 
-        # Sync to control plane if configured (for dedicated clusters)
-        await self._sync_app_to_control_plane(
-            app_id=app_id,
-            user_id=user_id,
-            org_id=org_id,
-            created_by_user_id=created_by_user_id,
-            name=name,
-            uri=uri,
-        )
-
         return uri
 
     async def _count_apps_in_scope(
@@ -596,62 +555,3 @@ class UserService:
         except (ValueError, TypeError):
             logger.debug("Value %s is not a valid UUID – storing NULL in apps.user_id", value)
             return None
-
-    async def _sync_app_to_control_plane(
-        self,
-        *,
-        app_id: str,
-        user_id: Optional[str],
-        org_id: Optional[str],
-        created_by_user_id: Optional[str],
-        name: str,
-        uri: str,
-    ) -> None:
-        """
-        Sync app record to control plane (cloud-ui) for dashboard visibility.
-
-        Only needed when users create apps directly via API/SDK on dedicated clusters
-        (cloud-ui already writes to its own DB for UI-initiated flows).
-
-        If CONTROL_PLANE_URL is not configured, this is a no-op.
-
-        On failure, logs a warning but does NOT fail the request.
-        """
-        if not self.settings.CONTROL_PLANE_URL:
-            return  # Not configured - dedicated-only cluster
-
-        if not self.settings.CONTROL_PLANE_SECRET:
-            logger.warning("CONTROL_PLANE_URL is set but CONTROL_PLANE_SECRET is missing")
-            return
-
-        sync_url = f"{self.settings.CONTROL_PLANE_URL.rstrip('/')}/api/internal/sync-app"
-
-        payload = {
-            "app_id": app_id,
-            "user_id": user_id,
-            "org_id": org_id,
-            "created_by_user_id": created_by_user_id,
-            "name": name,
-            "uri": uri,
-        }
-
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    sync_url,
-                    json=payload,
-                    headers={"X-Control-Plane-Secret": self.settings.CONTROL_PLANE_SECRET},
-                )
-                if response.status_code == 200:
-                    logger.info("Synced app %s to control plane", app_id)
-                else:
-                    logger.warning(
-                        "Control plane sync returned %s for app %s: %s",
-                        response.status_code,
-                        app_id,
-                        response.text[:200],
-                    )
-        except httpx.TimeoutException:
-            logger.warning("Control plane sync timed out for app %s", app_id)
-        except Exception as e:
-            logger.warning("Control plane sync failed for app %s: %s", app_id, e)
