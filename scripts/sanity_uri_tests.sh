@@ -25,6 +25,12 @@ test_app_token_revocation() {
         log_error "Failed to generate user_id for token revocation test"
         return
     fi
+    local org_id
+    org_id=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
+    if [[ -z "$org_id" ]]; then
+        log_error "Failed to generate org_id for token revocation test"
+        return
+    fi
 
     local response
     if [[ -n "$ADMIN_SERVICE_SECRET" ]]; then
@@ -55,7 +61,7 @@ PYEOF
         response=$(curl -sf -X POST "$BASE_URL/cloud/generate_uri" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $bootstrap_token" \
-            -d "{\"name\":\"$app_name\",\"user_id\":\"$user_id\"}" 2>&1) || {
+            -d "{\"name\":\"$app_name\",\"user_id\":\"$user_id\",\"org_id\":\"$org_id\"}" 2>&1) || {
             log_error "App creation (bootstrap token) failed: $response"
             return
         }
@@ -170,6 +176,12 @@ test_app_token_rotation() {
         log_error "Failed to generate user_id for token rotation test"
         return
     fi
+    local org_id
+    org_id=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
+    if [[ -z "$org_id" ]]; then
+        log_error "Failed to generate org_id for token rotation test"
+        return
+    fi
 
     local response
     if [[ -n "$ADMIN_SERVICE_SECRET" ]]; then
@@ -200,7 +212,7 @@ PYEOF
         response=$(curl -sf -X POST "$BASE_URL/cloud/generate_uri" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $bootstrap_token" \
-            -d "{\"name\":\"$app_name\",\"user_id\":\"$user_id\"}" 2>&1) || {
+            -d "{\"name\":\"$app_name\",\"user_id\":\"$user_id\",\"org_id\":\"$org_id\"}" 2>&1) || {
             log_error "App creation (bootstrap token) failed: $response"
             return
         }
@@ -314,7 +326,220 @@ PYEOF
     fi
 }
 
+test_app_list_filters_and_rename() {
+    log_section "Testing App List Filters and Rename"
+
+    local auth_check_code
+    auth_check_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/documents" \
+        -H "Content-Type: application/json" \
+        -d "{\"skip\":0,\"limit\":1}" || echo "000")
+    if [[ "$auth_check_code" != "401" ]]; then
+        log_warn "Auth bypass detected (status $auth_check_code); skipping app list filter test"
+        return
+    fi
+
+    if [[ -z "$ADMIN_SERVICE_SECRET" && -z "$JWT_SECRET_KEY" ]]; then
+        log_warn "Skipping app list filter test (set ADMIN_SERVICE_SECRET or JWT_SECRET_KEY)"
+        return
+    fi
+
+    local app_name="sanity_list_${TEST_RUN_ID}"
+    local new_app_name="sanity_list_renamed_${TEST_RUN_ID}"
+    local user_id
+    user_id=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
+    if [[ -z "$user_id" ]]; then
+        log_error "Failed to generate user_id for list filter test"
+        return
+    fi
+    local org_id
+    org_id=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
+    if [[ -z "$org_id" ]]; then
+        log_error "Failed to generate org_id for list filter test"
+        return
+    fi
+
+    local response
+    if [[ -n "$ADMIN_SERVICE_SECRET" ]]; then
+        response=$(curl -sf -X POST "$BASE_URL/cloud/generate_uri" \
+            -H "Content-Type: application/json" \
+            -H "X-Morphik-Admin-Secret: $ADMIN_SERVICE_SECRET" \
+            -d "{\"name\":\"$app_name\",\"user_id\":\"$user_id\"}" 2>&1) || {
+            log_error "App creation (admin secret) failed: $response"
+            return
+        }
+    else
+        local bootstrap_token
+        bootstrap_token=$(python3 - <<PYEOF 2>/dev/null || true
+import jwt
+import time
+payload = {
+    "user_id": "$user_id",
+    "entity_id": "$user_id",
+    "exp": int(time.time()) + 3600,
+}
+print(jwt.encode(payload, "$JWT_SECRET_KEY", algorithm="HS256"))
+PYEOF
+        )
+        if [[ -z "$bootstrap_token" ]]; then
+            log_warn "Skipping app list filter test (failed to generate bootstrap token)"
+            return
+        fi
+        response=$(curl -sf -X POST "$BASE_URL/cloud/generate_uri" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $bootstrap_token" \
+            -d "{\"name\":\"$app_name\",\"user_id\":\"$user_id\",\"org_id\":\"$org_id\"}" 2>&1) || {
+            log_error "App creation (bootstrap token) failed: $response"
+            return
+        }
+    fi
+
+    local app_id
+    app_id=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('app_id',''))" 2>/dev/null)
+    local uri
+    uri=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('uri',''))" 2>/dev/null)
+    if [[ -z "$app_id" || -z "$uri" ]]; then
+        log_error "App creation response missing app_id or uri"
+        return
+    fi
+
+    local token
+    token=$(echo "$uri" | sed -n 's/morphik:\/\/[^:]*:\([^@]*\)@.*/\1/p')
+    if [[ -z "$token" ]]; then
+        log_error "Failed to extract token from uri"
+        return
+    fi
+
+    local -a list_headers=()
+    if [[ -n "$ADMIN_SERVICE_SECRET" ]]; then
+        list_headers=(-H "X-Morphik-Admin-Secret: $ADMIN_SERVICE_SECRET")
+    else
+        list_headers=(-H "Authorization: Bearer $token")
+    fi
+
+    local app_id_filter
+    app_id_filter=$(APP_ID="$app_id" python3 - <<'PYEOF'
+import json
+import os
+import urllib.parse
+payload = {"$eq": os.environ["APP_ID"]}
+print(urllib.parse.quote(json.dumps(payload)))
+PYEOF
+    )
+
+    response=$(curl -sf ${list_headers[@]+"${list_headers[@]}"} "$BASE_URL/apps?app_id_filter=$app_id_filter" 2>&1) || {
+        log_error "List apps (app_id_filter) failed: $response"
+        return
+    }
+    local app_id_match
+    app_id_match=$(echo "$response" | python3 -c "import sys,json; data=json.load(sys.stdin); app_id='$app_id'; print('1' if any(app.get('app_id')==app_id for app in data.get('apps',[])) else '0')" 2>/dev/null)
+    if [[ "$app_id_match" == "1" ]]; then
+        log_success "App ID filter returned created app"
+    else
+        log_error "App ID filter did not return created app"
+        return
+    fi
+
+    local app_name_filter
+    app_name_filter=$(APP_NAME="$app_name" python3 - <<'PYEOF'
+import json
+import os
+import urllib.parse
+pattern = f"^{os.environ['APP_NAME']}$"
+payload = {"$regex": {"pattern": pattern, "flags": "i"}}
+print(urllib.parse.quote(json.dumps(payload)))
+PYEOF
+    )
+
+    response=$(curl -sf ${list_headers[@]+"${list_headers[@]}"} "$BASE_URL/apps?app_name_filter=$app_name_filter" 2>&1) || {
+        log_error "List apps (app_name_filter) failed: $response"
+        return
+    }
+    local app_name_match
+    app_name_match=$(echo "$response" | python3 -c "import sys,json; data=json.load(sys.stdin); name='$app_name'; print('1' if any(app.get('name')==name for app in data.get('apps',[])) else '0')" 2>/dev/null)
+    if [[ "$app_name_match" == "1" ]]; then
+        log_success "App name filter returned created app"
+    else
+        log_error "App name filter did not return created app"
+        return
+    fi
+
+    local rename_response
+    rename_response=$(curl -sf -X PATCH ${list_headers[@]+"${list_headers[@]}"} \
+        "$BASE_URL/apps/rename?app_id=${app_id}&new_name=${new_app_name}" 2>&1) || {
+        log_error "Rename app failed: $rename_response"
+        return
+    }
+
+    local renamed_name
+    renamed_name=$(echo "$rename_response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('app_name',''))" 2>/dev/null)
+    if [[ "$renamed_name" == "$new_app_name" ]]; then
+        log_success "Renamed app to $renamed_name"
+    else
+        log_error "Rename response did not include expected app_name"
+        return
+    fi
+
+    local new_name_filter
+    new_name_filter=$(APP_NAME="$new_app_name" python3 - <<'PYEOF'
+import json
+import os
+import urllib.parse
+payload = {"$eq": os.environ["APP_NAME"]}
+print(urllib.parse.quote(json.dumps(payload)))
+PYEOF
+    )
+
+    response=$(curl -sf ${list_headers[@]+"${list_headers[@]}"} "$BASE_URL/apps?app_name_filter=$new_name_filter" 2>&1) || {
+        log_error "List apps after rename failed: $response"
+        return
+    }
+    app_name_match=$(echo "$response" | python3 -c "import sys,json; data=json.load(sys.stdin); name='$new_app_name'; print('1' if any(app.get('name')==name for app in data.get('apps',[])) else '0')" 2>/dev/null)
+    if [[ "$app_name_match" == "1" ]]; then
+        log_success "App name filter returned renamed app"
+    else
+        log_error "App name filter did not return renamed app"
+        return
+    fi
+
+    local old_name_filter
+    old_name_filter=$(APP_NAME="$app_name" python3 - <<'PYEOF'
+import json
+import os
+import urllib.parse
+payload = {"$eq": os.environ["APP_NAME"]}
+print(urllib.parse.quote(json.dumps(payload)))
+PYEOF
+    )
+
+    response=$(curl -sf ${list_headers[@]+"${list_headers[@]}"} "$BASE_URL/apps?app_name_filter=$old_name_filter" 2>&1) || {
+        log_error "List apps (old name) failed: $response"
+        return
+    }
+    app_name_match=$(echo "$response" | python3 -c "import sys,json; data=json.load(sys.stdin); name='$app_name'; print('1' if any(app.get('name')==name for app in data.get('apps',[])) else '0')" 2>/dev/null)
+    if [[ "$app_name_match" == "0" ]]; then
+        log_success "Old app name no longer returned after rename"
+    else
+        log_error "Old app name still returned after rename"
+        return
+    fi
+
+    local delete_code
+    if [[ -n "$ADMIN_SERVICE_SECRET" ]]; then
+        delete_code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE_URL/apps?app_name=${new_app_name}" \
+            -H "X-Morphik-Admin-Secret: $ADMIN_SERVICE_SECRET")
+    else
+        delete_code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$BASE_URL/apps?app_name=${new_app_name}" \
+            -H "Authorization: Bearer $token")
+    fi
+    if [[ "$delete_code" == "200" ]]; then
+        log_success "Deleted app after list/rename test"
+    else
+        log_error "Delete app expected 200, got $delete_code"
+    fi
+}
+
 run_uri_tests() {
     test_app_token_revocation
     test_app_token_rotation
+    test_app_list_filters_and_rename
 }
