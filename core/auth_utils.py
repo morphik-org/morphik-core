@@ -202,35 +202,4 @@ async def verify_token(
         app_id=app_id,
     )
 
-    # ------------------------------------------------------------------
-    # Enterprise enhancement – swap database & vector store based on app_id
-    # ------------------------------------------------------------------
-    try:
-        from core import api as core_api  # type: ignore
-        from ee.db_router import (  # noqa: WPS433 – runtime import
-            get_database_for_app,
-            get_multi_vector_store_for_app,
-            get_vector_store_for_app,
-        )
-
-        # Replace DB connection pool
-        core_api.document_service.db = await get_database_for_app(ctx.app_id)  # noqa: SLF001
-
-        # Replace vector store (if available)
-        vstore = await get_vector_store_for_app(ctx.app_id)
-        if vstore is not None:
-            core_api.vector_store = vstore  # noqa: SLF001 – monkey-patch
-            core_api.document_service.vector_store = vstore  # noqa: SLF001 – monkey-patch
-
-        # Route ColPali multi-vector store (if service uses one)
-        try:
-            mv_store = await get_multi_vector_store_for_app(ctx.app_id)
-            if mv_store is not None:
-                core_api.document_service.colpali_vector_store = mv_store  # noqa: SLF001 – monkey-patch
-        except Exception as mv_exc:  # pragma: no cover – log, but don't block request
-            logger.debug("MultiVector store routing skipped: %s", mv_exc)
-    except ModuleNotFoundError:
-        # Enterprise package not installed – nothing to do.
-        pass
-
     return ctx
