@@ -1518,7 +1518,6 @@ async def rotate_app_token(
     from sqlalchemy import select
 
     from core.models.apps import AppModel
-    from core.services.user_service import UserService
 
     async with document_service.db.async_session() as session:
         if is_admin_call:
@@ -1568,18 +1567,6 @@ async def rotate_app_token(
 
         app_id_value = app_row.app_id
         app_name_value = app_row.name
-        org_id_value = app_row.org_id
-        created_by_user_id_value = app_row.created_by_user_id
-
-    user_service = UserService()
-    await user_service._sync_app_to_control_plane(
-        app_id=app_id_value,
-        user_id=effective_user_id,
-        org_id=org_id_value,
-        created_by_user_id=created_by_user_id_value,
-        name=app_name_value,
-        uri=uri,
-    )
 
     await mark_app_active(app_id_value, new_version, redis_pool=redis_pool)
 
@@ -1652,7 +1639,6 @@ async def rename_cloud_app(
     from sqlalchemy.exc import MultipleResultsFound
 
     from core.models.apps import AppModel
-    from core.services.user_service import UserService
 
     def _rename_uri(existing_uri: str, name: str) -> str:
         if not existing_uri:
@@ -1709,21 +1695,6 @@ async def rename_cloud_app(
         app_id_value = app_row.app_id
         app_name_value = app_row.name
         app_uri_value = app_row.uri
-        org_id_value = app_row.org_id
-        created_by_user_id_value = app_row.created_by_user_id
-        app_user_id_value = str(app_row.user_id) if app_row.user_id else None
-
-    # Sync to control plane for dashboard visibility (user_id is optional)
-    effective_user_id = user_id or app_user_id_value or created_by_user_id_value
-    user_service = UserService()
-    await user_service._sync_app_to_control_plane(
-        app_id=app_id_value,
-        user_id=effective_user_id,
-        org_id=org_id_value,
-        created_by_user_id=created_by_user_id_value,
-        name=app_name_value,
-        uri=app_uri_value,
-    )
 
     return {
         "app_id": app_id_value,
