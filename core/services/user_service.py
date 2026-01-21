@@ -5,11 +5,12 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 import jwt
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select, text
 
 from utils.env_loader import load_local_env
 
 from ..config import get_settings
+from ..database.metadata_filters import InvalidMetadataFilterError, TextColumnFilterBuilder
 from ..database.user_limits_db import UserLimitsDatabase
 from ..models.tiers import AccountTier, get_tier_limits
 
@@ -277,35 +278,38 @@ class UserService:
             else:
                 logger.warning("Unable to promote user %s to SELF_HOSTED tier for admin provisioning", user_id)
 
+        user_uuid = self._safe_uuid(user_id)
+        existing_app = await self.get_app_by_id(app_id)
+        existing_in_scope = False
+        if existing_app:
+            if org_id and existing_app.get("org_id") == org_id:
+                existing_in_scope = True
+            elif not org_id:
+                existing_user_id = existing_app.get("user_id")
+                if user_uuid and existing_user_id == str(user_uuid):
+                    existing_in_scope = True
+                elif user_id and existing_app.get("created_by_user_id") == user_id:
+                    existing_in_scope = True
+
         # Get tier information
         if not is_admin_call:
             tier = user_limits.get("tier", AccountTier.FREE)
-            current_apps = user_limits.get("app_ids", [])
 
-            if app_id not in current_apps:
-                if tier == AccountTier.FREE:
-                    tier_limits = get_tier_limits(tier, user_limits.get("custom_limits"))
-                    app_limit = tier_limits.get("app_limit", 1)
+            if tier == AccountTier.FREE and not existing_in_scope:
+                tier_limits = get_tier_limits(tier, user_limits.get("custom_limits"))
+                app_limit = tier_limits.get("app_limit", 1)
+                app_count = await self._count_apps_in_scope(org_id=org_id, user_uuid=user_uuid, user_id=user_id)
 
-                    if len(current_apps) >= app_limit:
-                        logger.info("User %s has reached app limit (%s) for tier %s", user_id, app_limit, tier)
-                        return None
-
-        user_uuid = self._safe_uuid(user_id)
+                if app_count >= app_limit:
+                    logger.info("User %s has reached app limit (%s) for tier %s", user_id, app_limit, tier)
+                    return None
 
         # Enforce name uniqueness within the same owner/org scope
         if await self._app_name_exists(name=name, user_uuid=user_uuid, org_id=org_id):
             logger.warning("App with name '%s' already exists for scope user=%s org=%s", name, user_id, org_id)
             raise ValueError(f"App with name '{name}' already exists")
 
-        # Upfront register app_id in user limits
-        success = await self.register_app(user_id, app_id)
-        if not success:
-            logger.info("Failed to register app %s for user %s", app_id, user_id)
-            return None
-
         token_version = 0
-        existing_app = await self.get_app_by_id(app_id)
         if existing_app and "token_version" in existing_app:
             token_version = existing_app.get("token_version") or 0
 
@@ -346,6 +350,28 @@ class UserService:
 
         return uri
 
+    async def _count_apps_in_scope(
+        self,
+        *,
+        org_id: Optional[str],
+        user_uuid: Optional[_uuid.UUID],
+        user_id: Optional[str],
+    ) -> int:
+        """Count apps for the org or legacy user scope."""
+        from core.models.apps import AppModel  # Local import to avoid cycles
+
+        async with self.db.async_session() as session:
+            stmt = select(func.count(AppModel.app_id))
+            if org_id:
+                stmt = stmt.where(AppModel.org_id == org_id)
+            elif user_uuid:
+                stmt = stmt.where(AppModel.user_id == user_uuid)
+            elif user_id:
+                stmt = stmt.where(AppModel.created_by_user_id == user_id)
+
+            result = await session.execute(stmt)
+            return int(result.scalar() or 0)
+
     async def _app_name_exists(
         self,
         *,
@@ -359,18 +385,17 @@ class UserService:
 
         async with self.db.async_session() as session:
             stmt = select(AppModel).where(AppModel.name == name)
-            if user_uuid:
-                stmt = stmt.where(AppModel.user_id == user_uuid)
-            elif org_id:
+            if org_id:
                 stmt = stmt.where(AppModel.org_id == org_id)
+            elif user_uuid:
+                stmt = stmt.where(AppModel.user_id == user_uuid)
 
             result = await session.execute(stmt)
-            existing = result.scalar_one_or_none()
-
-            if existing is None:
+            existing = result.scalars().all()
+            if not existing:
                 return False
-            if exclude_app_id and existing.app_id == exclude_app_id:
-                return False
+            if exclude_app_id:
+                return any(app.app_id != exclude_app_id for app in existing)
             return True
 
     async def _upsert_app_record(
@@ -434,6 +459,8 @@ class UserService:
         *,
         org_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        app_id_filter: Optional[Any] = None,
+        name_filter: Optional[Any] = None,
         limit: int = 100,
         offset: int = 0,
         strict_org_scope: bool = True,
@@ -448,19 +475,38 @@ class UserService:
         async with self.db.async_session() as session:
             stmt = select(AppModel).order_by(AppModel.created_at.desc())
 
+            # Org-scoped: show all apps in the org (not filtered by user_id)
+            # This allows all org members to see all org apps
             if org_id:
                 if strict_org_scope:
                     stmt = stmt.where(AppModel.org_id == org_id)
                 else:
                     stmt = stmt.where(or_(AppModel.org_id == org_id, AppModel.org_id.is_(None)))
-
-            user_uuid: Optional[_uuid.UUID] = None
-            if user_id:
+            elif user_id:
+                # Only filter by user_id when no org_id is provided (personal apps)
                 user_uuid = self._safe_uuid(user_id)
                 if user_uuid:
                     stmt = stmt.where(AppModel.user_id == user_uuid)
                 else:
                     stmt = stmt.where(AppModel.created_by_user_id == user_id)
+
+            if app_id_filter:
+                app_id_clause = self._build_text_filter_clause(
+                    app_id_filter,
+                    field_name="app_id",
+                    column="apps.app_id",
+                    label="App ID",
+                )
+                stmt = stmt.where(text(app_id_clause))
+
+            if name_filter:
+                name_clause = self._build_text_filter_clause(
+                    name_filter,
+                    field_name="name",
+                    column="apps.name",
+                    label="App name",
+                )
+                stmt = stmt.where(text(name_clause))
 
             stmt = stmt.offset(normalized_offset).limit(normalized_limit)
             result = await session.execute(stmt)
@@ -479,6 +525,67 @@ class UserService:
             for app in apps
         ]
 
+    def _build_text_filter_clause(self, filter_expression: Any, *, field_name: str, column: str, label: str) -> str:
+        normalized = self._normalize_text_filter_expression(filter_expression, field_name, label)
+        builder = TextColumnFilterBuilder(column)
+        try:
+            return builder.build(normalized)
+        except InvalidMetadataFilterError as exc:
+            message = str(exc).replace("Filename", label).replace("filename", label.lower())
+            raise InvalidMetadataFilterError(message) from exc
+
+    @staticmethod
+    def _normalize_text_filter_expression(expression: Any, field_name: str, label: str) -> Dict[str, Any]:
+        if isinstance(expression, list):
+            if not expression:
+                raise InvalidMetadataFilterError(f"{label} filter list cannot be empty.")
+            return {
+                "$or": [UserService._normalize_text_filter_expression(item, field_name, label) for item in expression]
+            }
+
+        if not isinstance(expression, dict):
+            raise InvalidMetadataFilterError(f"{label} filter must be provided as a JSON object.")
+        if not expression:
+            raise InvalidMetadataFilterError(f"{label} filter cannot be empty.")
+
+        has_operator = any(key.startswith("$") for key in expression)
+        if has_operator:
+            normalized: Dict[str, Any] = {}
+            for key, value in expression.items():
+                if not key.startswith("$"):
+                    raise InvalidMetadataFilterError(f"{label} filters only support the '{field_name}' field.")
+                if key in {"$and", "$or", "$nor"}:
+                    if not isinstance(value, list) or not value:
+                        raise InvalidMetadataFilterError(f"{key} operator expects a non-empty list of conditions.")
+                    normalized[key] = [
+                        UserService._normalize_text_filter_expression(item, field_name, label) for item in value
+                    ]
+                elif key == "$not":
+                    normalized[key] = UserService._normalize_text_filter_expression(value, field_name, label)
+                else:
+                    normalized[key] = value
+            return normalized
+
+        if field_name not in expression or len(expression) != 1:
+            raise InvalidMetadataFilterError(f"{label} filters only support the '{field_name}' field.")
+        return UserService._normalize_text_filter_value(expression[field_name], field_name, label)
+
+    @staticmethod
+    def _normalize_text_filter_value(value: Any, field_name: str, label: str) -> Dict[str, Any]:
+        if isinstance(value, dict):
+            if not value:
+                raise InvalidMetadataFilterError(f"{label} filter cannot be empty.")
+            if any(key.startswith("$") for key in value):
+                return UserService._normalize_text_filter_expression(value, field_name, label)
+            raise InvalidMetadataFilterError(f"{label} filter objects must use operator keys.")
+
+        if isinstance(value, list):
+            if not value:
+                raise InvalidMetadataFilterError(f"{label} filter list must contain at least one value.")
+            return {"$in": value}
+
+        return {"$eq": value}
+
     @staticmethod
     def _safe_uuid(value: Optional[str]) -> Optional[_uuid.UUID]:
         """Convert string to UUID if possible; otherwise return None."""
@@ -494,7 +601,7 @@ class UserService:
         self,
         *,
         app_id: str,
-        user_id: str,
+        user_id: Optional[str],
         org_id: Optional[str],
         created_by_user_id: Optional[str],
         name: str,

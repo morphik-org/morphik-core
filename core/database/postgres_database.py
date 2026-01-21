@@ -159,6 +159,20 @@ class PostgresDatabase:
                 await conn.execute(
                     text("ALTER TABLE apps " "ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0")
                 )
+                await conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS apps_org_name_unique "
+                        "ON apps (org_id, name) "
+                        "WHERE org_id IS NOT NULL"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS apps_user_name_unique "
+                        "ON apps (user_id, name) "
+                        "WHERE org_id IS NULL AND user_id IS NOT NULL"
+                    )
+                )
 
             logger.info("PostgreSQL initialization complete")
             self._initialized = True

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String, text
+from sqlalchemy import Column, DateTime, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import UUID
 
 from core.database.postgres_database import Base
@@ -20,6 +20,22 @@ class AppModel(Base):
     """
 
     __tablename__ = "apps"
+    __table_args__ = (
+        Index(
+            "apps_org_name_unique",
+            "org_id",
+            "name",
+            unique=True,
+            postgresql_where=text("org_id IS NOT NULL"),
+        ),
+        Index(
+            "apps_user_name_unique",
+            "user_id",
+            "name",
+            unique=True,
+            postgresql_where=text("org_id IS NULL AND user_id IS NOT NULL"),
+        ),
+    )
 
     app_id = Column(String, primary_key=True)
     user_id = Column(UUID(as_uuid=True), index=True, nullable=True)  # Legacy field, kept for compatibility

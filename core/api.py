@@ -1092,6 +1092,11 @@ async def generate_cloud_uri(
                             status_code=403,
                             detail="You can only create apps for your own account unless you have admin permissions",
                         )
+                    if not request.org_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="org_id is required when creating apps without an existing app token",
+                        )
                     if not app_id:
                         app_id = str(uuid.uuid4())
             except jwt.InvalidTokenError as e:
@@ -1191,6 +1196,16 @@ async def generate_cloud_uri(
 async def list_cloud_apps(
     org_id: Optional[str] = Query(default=None, description="Filter apps by organization ID"),
     user_id: Optional[str] = Query(default=None, description="Filter apps by creator"),
+    app_id_filter: Optional[str] = Query(
+        default=None,
+        description="JSON filter expression for app IDs (supports $and/$or/$not/$nor and $eq/$ne/$gt/$gte/$lt/$lte/"
+        "$in/$nin/$exists/$regex/$contains).",
+    ),
+    app_name_filter: Optional[str] = Query(
+        default=None,
+        description="JSON filter expression for app name (supports $and/$or/$not/$nor and $eq/$ne/$gt/$gte/$lt/$lte/"
+        "$in/$nin/$exists/$regex/$contains).",
+    ),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     authorization: Optional[str] = Header(default=None),
@@ -1207,6 +1222,7 @@ async def list_cloud_apps(
 
     token_user_id: Optional[str] = None
     token_permissions: List[str] = []
+    token_app_id: Optional[str] = None
 
     if not is_admin_call:
         if not authorization:
@@ -1233,6 +1249,7 @@ async def list_cloud_apps(
 
         token_user_id = payload.get("user_id")
         token_permissions = payload.get("permissions", []) or []
+        token_app_id = payload.get("app_id")
 
     if not is_admin_call:
         if user_id and user_id != token_user_id and "admin" not in token_permissions:
@@ -1240,19 +1257,57 @@ async def list_cloud_apps(
         if not user_id:
             user_id = token_user_id
 
+    def _parse_filter_payload(value: Optional[str], field_name: str) -> Optional[Any]:
+        if not value:
+            return None
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"{field_name} must be valid JSON") from exc
+        if not isinstance(parsed, (dict, list)):
+            raise HTTPException(status_code=400, detail=f"{field_name} must be a JSON object or array")
+        return parsed
+
+    parsed_app_name_filter = _parse_filter_payload(app_name_filter, "app_name_filter")
+    parsed_app_id_filter = _parse_filter_payload(app_id_filter, "app_id_filter")
+
     try:
         from core.services.user_service import UserService
 
         user_service = UserService()
         await user_service.initialize()
+
+        resolved_org_id = org_id
+        if not is_admin_call:
+            token_org_id: Optional[str] = None
+            if token_app_id:
+                token_app = await user_service.get_app_by_id(token_app_id)
+                token_org_id = token_app.get("org_id") if token_app else None
+            else:
+                if not resolved_org_id:
+                    raise HTTPException(status_code=400, detail="org_id is required when listing apps without an app")
+
+            if token_org_id:
+                if resolved_org_id and resolved_org_id != token_org_id:
+                    raise HTTPException(status_code=403, detail="Cannot list apps for another organization")
+                resolved_org_id = token_org_id
+                user_id = None
+            elif token_app_id:
+                resolved_org_id = None
+            else:
+                user_id = None
         apps = await user_service.list_apps(
-            org_id=org_id,
+            org_id=resolved_org_id,
             user_id=user_id,
+            app_id_filter=parsed_app_id_filter,
+            name_filter=parsed_app_name_filter,
             limit=limit,
             offset=offset,
             strict_org_scope=not is_admin_call,
         )
         return {"apps": apps, "count": len(apps)}
+    except InvalidMetadataFilterError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:
         raise
     except Exception as exc:  # pragma: no cover - server failure
@@ -1283,6 +1338,7 @@ async def delete_cloud_app(
         raise
 
     user_id: Optional[str] = None
+    token_app_id: Optional[str] = None
 
     if not is_admin_call:
         # Require Bearer token if no admin secret
@@ -1299,13 +1355,16 @@ async def delete_cloud_app(
         try:
             payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
             user_id = payload.get("user_id")
+            token_app_id = payload.get("app_id")
             await ensure_app_is_active(
-                payload.get("app_id"),
+                token_app_id,
                 token_version=payload.get("token_version"),
                 redis_pool=redis_pool,
             )
         except jwt.InvalidTokenError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+        if not token_app_id:
+            raise HTTPException(status_code=403, detail="App-scoped token required to delete applications")
 
     logger.info(f"Deleting app {app_name} for user {user_id} (admin_call={is_admin_call})")
 
@@ -1313,7 +1372,6 @@ async def delete_cloud_app(
     from sqlalchemy import select
 
     from core.models.apps import AppModel
-    from core.services.user_service import UserService
 
     # 1) Resolve app_id from apps table ----------------------------------
     async with document_service.db.async_session() as session:
@@ -1321,13 +1379,16 @@ async def delete_cloud_app(
             # Admin call: look up by name only
             stmt = select(AppModel).where(AppModel.name == app_name)
         else:
-            # User call: look up by user_id and name
-            stmt = select(AppModel).where(AppModel.user_id == user_id, AppModel.name == app_name)
+            # App-scoped token call: look up by app_id only
+            stmt = select(AppModel).where(AppModel.app_id == token_app_id)
         res = await session.execute(stmt)
         app_row = res.scalar_one_or_none()
 
     if app_row is None:
         raise HTTPException(status_code=404, detail="Application not found")
+
+    if not is_admin_call and app_row.name != app_name:
+        raise HTTPException(status_code=400, detail="Application name does not match token")
 
     app_id = app_row.app_id
     # For admin calls, get user_id from the app record
@@ -1398,11 +1459,6 @@ async def delete_cloud_app(
     await clear_app_active_cache(app_id, redis_pool=redis_pool)
     await mark_app_revoked(app_id, redis_pool=redis_pool)
 
-    # 5) Update user_limits --------------------------------------------
-    user_service = UserService()
-    await user_service.initialize()
-    await user_service.unregister_app(effective_user_id, app_id)
-
     return {
         "app_name": app_name,
         "status": "deleted",
@@ -1430,6 +1486,7 @@ async def rotate_app_token(
         raise
 
     user_id: Optional[str] = None
+    token_app_id: Optional[str] = None
     if not is_admin_call:
         if not authorization:
             raise HTTPException(
@@ -1444,13 +1501,20 @@ async def rotate_app_token(
         try:
             payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
             user_id = payload.get("user_id")
+            token_app_id = payload.get("app_id")
             await ensure_app_is_active(
-                payload.get("app_id"),
+                token_app_id,
                 token_version=payload.get("token_version"),
                 redis_pool=redis_pool,
             )
         except jwt.InvalidTokenError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+        if not token_app_id:
+            raise HTTPException(status_code=403, detail="App-scoped token required to rotate tokens")
+
+        if app_id and app_id != token_app_id:
+            raise HTTPException(status_code=403, detail="Cannot rotate token for another app")
+        app_id = token_app_id
 
     from sqlalchemy import select
 
@@ -1458,19 +1522,22 @@ async def rotate_app_token(
     from core.services.user_service import UserService
 
     async with document_service.db.async_session() as session:
-        if app_id:
-            stmt = select(AppModel).where(AppModel.app_id == app_id)
+        if is_admin_call:
+            if app_id:
+                stmt = select(AppModel).where(AppModel.app_id == app_id)
+            else:
+                stmt = select(AppModel).where(AppModel.name == app_name)
         else:
-            stmt = select(AppModel).where(AppModel.name == app_name)
-
-        if not is_admin_call:
-            stmt = stmt.where(AppModel.user_id == user_id)
+            stmt = select(AppModel).where(AppModel.app_id == app_id)
 
         res = await session.execute(stmt)
         app_row = res.scalar_one_or_none()
 
         if app_row is None:
             raise HTTPException(status_code=404, detail="Application not found")
+
+        if app_name and app_row.name != app_name:
+            raise HTTPException(status_code=400, detail="Application name does not match token")
 
         effective_user_id = user_id
         if not effective_user_id:
@@ -1522,6 +1589,147 @@ async def rotate_app_token(
         "app_name": app_name_value,
         "token_version": new_version,
         "uri": uri,
+    }
+
+
+@app.patch("/apps/rename")
+async def rename_cloud_app(
+    app_id: Optional[str] = Query(default=None, description="Application ID to rename"),
+    app_name: Optional[str] = Query(default=None, description="Current application name to rename"),
+    new_name: str = Query(..., description="New application name"),
+    authorization: Optional[str] = Header(default=None),
+    admin_secret: Optional[str] = Header(default=None, alias="X-Morphik-Admin-Secret"),
+    redis_pool: Optional[arq.ArqRedis] = Depends(get_optional_redis_pool),
+) -> Dict[str, Any]:
+    """Rename an existing cloud application."""
+    if not app_id and not app_name:
+        raise HTTPException(status_code=400, detail="app_id or app_name is required")
+
+    cleaned_name = new_name.strip()
+    if not cleaned_name:
+        raise HTTPException(status_code=400, detail="new_name is required")
+    cleaned_name = cleaned_name.replace(" ", "_").lower()
+
+    try:
+        is_admin_call = _validate_admin_secret(admin_secret)
+    except HTTPException:
+        raise
+
+    user_id: Optional[str] = None
+    token_app_id: Optional[str] = None
+    if not is_admin_call:
+        if not authorization:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+        token = authorization[7:]
+        try:
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            user_id = payload.get("user_id")
+            token_app_id = payload.get("app_id")
+            await ensure_app_is_active(
+                token_app_id,
+                token_version=payload.get("token_version"),
+                redis_pool=redis_pool,
+            )
+        except jwt.InvalidTokenError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Token is missing user_id")
+        if not token_app_id:
+            raise HTTPException(status_code=403, detail="App-scoped token required to rename applications")
+
+        if app_id and app_id != token_app_id:
+            raise HTTPException(status_code=403, detail="Cannot rename another application")
+        app_id = token_app_id
+
+    from sqlalchemy import select
+    from sqlalchemy.exc import MultipleResultsFound
+
+    from core.models.apps import AppModel
+    from core.services.user_service import UserService
+
+    def _rename_uri(existing_uri: str, name: str) -> str:
+        if not existing_uri:
+            logger.warning("Missing app URI; leaving URI unchanged")
+            return existing_uri
+
+        try:
+            rest = existing_uri.split("morphik://", 1)[1]
+            _, rest = rest.split(":", 1)
+            token, domain = rest.split("@", 1)
+        except (IndexError, ValueError):
+            logger.warning("Unexpected app URI format; leaving URI unchanged: %s", existing_uri)
+            return existing_uri
+
+        return f"morphik://{name}:{token}@{domain}"
+
+    async with document_service.db.async_session() as session:
+        if is_admin_call:
+            if app_id:
+                stmt = select(AppModel).where(AppModel.app_id == app_id)
+            else:
+                stmt = select(AppModel).where(AppModel.name == app_name)
+        else:
+            stmt = select(AppModel).where(AppModel.app_id == app_id)
+
+        try:
+            res = await session.execute(stmt)
+            app_row = res.scalar_one_or_none()
+        except MultipleResultsFound as exc:
+            raise HTTPException(status_code=409, detail="Multiple apps matched; use app_id to rename") from exc
+
+        if app_row is None:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        if app_name and app_row.name != app_name:
+            raise HTTPException(status_code=400, detail="Application name does not match token")
+
+        if app_row.name != cleaned_name:
+            name_stmt = select(AppModel.app_id).where(AppModel.name == cleaned_name)
+            if app_row.org_id:
+                name_stmt = name_stmt.where(AppModel.org_id == app_row.org_id)
+            elif app_row.user_id:
+                name_stmt = name_stmt.where(AppModel.user_id == app_row.user_id)
+            name_stmt = name_stmt.where(AppModel.app_id != app_row.app_id)
+
+            res = await session.execute(name_stmt)
+            if res.scalar_one_or_none() is not None:
+                raise HTTPException(status_code=409, detail=f"App with name '{cleaned_name}' already exists")
+
+            app_row.name = cleaned_name
+            app_row.uri = _rename_uri(app_row.uri, cleaned_name)
+            await session.commit()
+
+        app_id_value = app_row.app_id
+        app_name_value = app_row.name
+        app_uri_value = app_row.uri
+        org_id_value = app_row.org_id
+        created_by_user_id_value = app_row.created_by_user_id
+        app_user_id_value = str(app_row.user_id) if app_row.user_id else None
+
+    # Sync to control plane for dashboard visibility (user_id is optional)
+    effective_user_id = user_id or app_user_id_value or created_by_user_id_value
+    user_service = UserService()
+    await user_service._sync_app_to_control_plane(
+        app_id=app_id_value,
+        user_id=effective_user_id,
+        org_id=org_id_value,
+        created_by_user_id=created_by_user_id_value,
+        name=app_name_value,
+        uri=app_uri_value,
+    )
+
+    return {
+        "app_id": app_id_value,
+        "app_name": app_name_value,
+        "uri": app_uri_value,
     }
 
 
