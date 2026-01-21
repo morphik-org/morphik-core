@@ -22,7 +22,6 @@ class UserLimitsModel(Base):
     tier = Column(String, nullable=False)  # free, developer, startup, custom
     custom_limits = Column(JSONB, nullable=True)
     usage = Column(JSONB, default=dict)  # Holds all usage counters
-    app_ids = Column(JSONB, default=list)  # List of app IDs registered by this user
     stripe_customer_id = Column(String, nullable=True)
     stripe_subscription_id = Column(String, nullable=True)
     stripe_product_id = Column(String, nullable=True)
@@ -117,7 +116,6 @@ class UserLimitsDatabase:
                 "tier": user_limits.tier,
                 "custom_limits": user_limits.custom_limits,
                 "usage": user_limits.usage,
-                "app_ids": user_limits.app_ids,
                 "stripe_customer_id": user_limits.stripe_customer_id,
                 "stripe_subscription_id": user_limits.stripe_subscription_id,
                 "stripe_product_id": user_limits.stripe_product_id,
@@ -164,15 +162,12 @@ class UserLimitsDatabase:
                         "ingest_count": 0,
                     }
                 )
-                app_ids_json = json.dumps([])  # Empty array but as JSON string
-
                 # Create the model with the JSON parsed
                 user_limits = UserLimitsModel(
                     org_id=limit_id,  # org_id is the primary key
                     user_id=user_id,
                     tier=tier,
                     usage=json.loads(usage_json),
-                    app_ids=json.loads(app_ids_json),
                     stripe_customer_id=None,
                     stripe_subscription_id=None,
                     stripe_product_id=None,
@@ -265,129 +260,6 @@ class UserLimitsDatabase:
                 return True
         except Exception as e:
             logger.error(f"Failed to update subscription info: {e}")
-            return False
-
-    async def register_app(self, limit_id: str, app_id: str) -> bool:
-        """
-        Register an app for a limit_id.
-
-        Args:
-            limit_id: The org_id or user_id
-            app_id: The app ID to register
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            now = datetime.now(UTC).isoformat()
-
-            async with self.async_session() as session:
-                # Try org_id first, then user_id
-                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.org_id == limit_id))
-                user_limits = result.scalars().first()
-
-                if not user_limits:
-                    result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == limit_id))
-                    user_limits = result.scalars().first()
-
-                if not user_limits:
-                    logger.error(f"Limit ID {limit_id} not found in register_app")
-                    return False
-
-                # Get the actual primary key value (org_id)
-                primary_key = user_limits.org_id
-
-                # Use raw SQL with jsonb_array_append to update the app_ids array
-                # This is the most reliable way to append to a JSONB array in PostgreSQL
-                query = text(
-                    """
-                    UPDATE user_limits
-                    SET
-                        app_ids = CASE
-                            WHEN NOT (app_ids ? :app_id)  -- Check if app_id is not in the array
-                            THEN app_ids || :app_id_json  -- Append it if not present
-                            ELSE app_ids                  -- Keep it unchanged if already present
-                        END,
-                        updated_at = :now
-                    WHERE org_id = :org_id
-                    RETURNING app_ids;
-                    """
-                )
-
-                # Execute the query
-                result = await session.execute(
-                    query,
-                    {
-                        "app_id": app_id,  # For the check
-                        "app_id_json": f'["{app_id}"]',  # JSON array format for appending
-                        "now": now,
-                        "org_id": primary_key,
-                    },
-                )
-
-                # Log the result for debugging
-                updated_app_ids = result.scalar()
-                logger.info(f"Updated app_ids for limit_id {limit_id} (org_id: {primary_key}): {updated_app_ids}")
-
-                await session.commit()
-                return True
-
-        except Exception as e:
-            logger.error(f"Failed to register app: {e}")
-            return False
-
-    async def unregister_app(self, limit_id: str, app_id: str) -> bool:
-        """Remove *app_id* from the limit_id's *app_ids* list.
-
-        Returns ``True`` on success (or if the app was already absent).
-        """
-        try:
-            now = datetime.now(UTC).isoformat()
-
-            async with self.async_session() as session:
-                # First find the record to get the org_id
-                result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.org_id == limit_id))
-                user_limits = result.scalars().first()
-
-                if not user_limits:
-                    result = await session.execute(select(UserLimitsModel).where(UserLimitsModel.user_id == limit_id))
-                    user_limits = result.scalars().first()
-
-                if not user_limits:
-                    logger.warning(f"Limit ID {limit_id} not found in unregister_app")
-                    return True  # Consider it success if doesn't exist
-
-                primary_key = user_limits.org_id
-                # Use the jsonb "-" operator which natively removes the first
-                # occurrence of a matching string element from a JSONB array.
-                # This avoids complex casts and the "polymorphic type unknown"
-                # errors we observed with to_jsonb().
-                query = text(
-                    """
-                    UPDATE user_limits
-                    SET app_ids = app_ids - :app_id,
-                        updated_at = :now
-                    WHERE org_id = :org_id
-                    RETURNING app_ids;
-                    """
-                )
-
-                result = await session.execute(query, {"app_id": app_id, "now": now, "org_id": primary_key})
-
-                updated_app_ids = result.scalar()
-                logger.info(
-                    "Unregistered app_id %s for limit_id %s (org_id: %s). Remaining apps: %s",
-                    app_id,
-                    limit_id,
-                    primary_key,
-                    updated_app_ids,
-                )
-
-                await session.commit()
-                return True
-
-        except Exception as e:
-            logger.error(f"Failed to unregister app: {e}")
             return False
 
     async def update_usage(self, limit_id: str, usage_type: str, increment: int = 1) -> bool:

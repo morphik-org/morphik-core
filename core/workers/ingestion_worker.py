@@ -38,9 +38,6 @@ from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
 
-# Enterprise routing helpers
-from ee.db_router import get_database_for_app, get_vector_store_for_app
-
 logger = logging.getLogger(__name__)
 for noisy_logger in ("httpx", "httpcore", "aiohttp", "turbopuffer"):
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
@@ -457,15 +454,9 @@ async def process_ingestion_job(
             )
             phase_times["deserialize_auth"] = time.time() - deserialize_start
 
-            # ------------------------------------------------------------------
-            # Per-app routing for database and vector store
-            # ------------------------------------------------------------------
-
-            # Resolve a dedicated database/vector-store using the JWT *app_id*.
-            # When app_id is None we fall back to the control-plane resources.
-
-            database = await get_database_for_app(auth.app_id)
-            vector_store = await get_vector_store_for_app(auth.app_id)
+            # Use the shared database/vector store from the worker context.
+            database = ctx["database"]
+            vector_store = ctx["vector_store"]
 
             # Initialise a per-app MultiVectorStore for ColPali when needed
             colpali_vector_store = None
@@ -1285,12 +1276,6 @@ async def process_ingestion_job(
         logger.error(traceback.format_exc())
         progress_logger.error("ingest failed doc_id=%s file=%s error=%s", document_id, original_filename, e)
 
-        # ------------------------------------------------------------------
-        # Ensure we update the *per-app* database where the document lives.
-        # Falling back to the control-plane DB (ctx["database"]) can silently
-        # fail because the row doesn't exist there.
-        # ------------------------------------------------------------------
-
         # Reconstruct auth from auth_dict in case exception occurred before auth was defined
         try:
             auth
@@ -1301,22 +1286,7 @@ async def process_ingestion_job(
             )
 
         try:
-            database: Optional[PostgresDatabase] = None
-
-            # Prefer the tenant-specific database
-            if auth.app_id is not None:
-                try:
-                    database = await get_database_for_app(auth.app_id)
-                    await database.initialize()
-                except Exception as db_err:
-                    logger.warning(
-                        "Failed to obtain per-app database in error handler: %s. Falling back to default.",
-                        db_err,
-                    )
-
-            # Fallback to the default database kept in the worker context
-            if database is None:
-                database = ctx.get("database")
+            database: Optional[PostgresDatabase] = ctx.get("database")
 
             # Proceed only if we have a database object
             if database:

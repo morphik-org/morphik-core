@@ -34,4 +34,3 @@ class UserLimits(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     usage: UserUsage = Field(default_factory=UserUsage)
     custom_limits: Optional[Dict[str, Any]] = None
-    app_ids: list[str] = Field(default_factory=list)
