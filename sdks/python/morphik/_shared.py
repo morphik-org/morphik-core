@@ -95,8 +95,27 @@ def build_rotate_app_params(
     return params
 
 
-def build_create_app_payload(*, name: str) -> Dict[str, Any]:
-    return {"name": name}
+def build_create_app_payload(
+    *,
+    name: str,
+    app_id: Optional[str],
+    user_id: Optional[str],
+    expiry_days: Optional[int],
+    org_id: Optional[str],
+    created_by_user_id: Optional[str],
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"name": name}
+    if app_id is not None:
+        payload["app_id"] = app_id
+    if user_id is not None:
+        payload["user_id"] = user_id
+    if expiry_days is not None:
+        payload["expiry_days"] = expiry_days
+    if org_id is not None:
+        payload["org_id"] = org_id
+    if created_by_user_id is not None:
+        payload["created_by_user_id"] = created_by_user_id
+    return payload
 
 
 def build_requeue_payload(

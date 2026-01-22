@@ -101,10 +101,10 @@ def test_sync_app_ops_payloads():
         assert call["endpoint"] == "apps/rotate_token"
         assert call["params"] == {"app_name": "demo", "expiry_days": 10}
 
-        client.create_app(name="demo")
+        client.create_app(name="demo", org_id="org")
         call = calls.pop()
         assert call["endpoint"] == "cloud/generate_uri"
-        assert call["data"] == {"name": "demo"}
+        assert call["data"] == {"name": "demo", "org_id": "org"}
 
         client.requeue_ingestion_jobs(jobs=[RequeueIngestionJob(external_id="doc-1")])
         call = calls.pop()
@@ -145,10 +145,10 @@ async def test_async_app_ops_payloads():
         assert call["endpoint"] == "apps/rotate_token"
         assert call["params"] == {"app_id": "app-1"}
 
-        await client.create_app(name="demo")
+        await client.create_app(name="demo", user_id="u1", expiry_days=30)
         call = calls.pop()
         assert call["endpoint"] == "cloud/generate_uri"
-        assert call["data"] == {"name": "demo"}
+        assert call["data"] == {"name": "demo", "user_id": "u1", "expiry_days": 30}
 
         await client.requeue_ingestion_jobs(include_all=True, statuses=["failed"])
         call = calls.pop()
