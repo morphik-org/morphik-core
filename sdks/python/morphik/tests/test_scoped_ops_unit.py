@@ -27,6 +27,10 @@ def _make_sync_client():
         )
         if isinstance(endpoint, str) and endpoint.startswith("retrieve/chunks"):
             return []
+        if endpoint == "batch/documents":
+            return []
+        if endpoint == "batch/chunks":
+            return []
         if isinstance(endpoint, str) and endpoint.startswith("documents/filename/"):
             return _mock_document_response()
         # Return mock ListDocsResponse format
@@ -56,6 +60,10 @@ async def _make_async_client():
             }
         )
         if isinstance(endpoint, str) and endpoint.startswith("retrieve/chunks"):
+            return []
+        if endpoint == "batch/documents":
+            return []
+        if endpoint == "batch/chunks":
             return []
         if isinstance(endpoint, str) and endpoint.startswith("documents/filename/"):
             return _mock_document_response()
@@ -374,6 +382,64 @@ def test_folder_depth_passthrough_sync():
         assert retrieve_call["data"]["folder_depth"] == 2
     finally:
         client.close()
+
+
+def test_batch_get_documents_folder_name_alias_sync():
+    client, calls = _make_sync_client()
+    try:
+        user = client.signin("user-7")
+        with pytest.warns(DeprecationWarning):
+            user.batch_get_documents(["doc-1"], folder_name="legacy")
+        call = calls.pop()
+        assert call["endpoint"] == "batch/documents"
+        assert call["data"]["folder_name"] == ["legacy"]
+        assert call["data"]["end_user_id"] == "user-7"
+    finally:
+        client.close()
+
+
+def test_batch_get_chunks_folder_name_alias_sync():
+    client, calls = _make_sync_client()
+    try:
+        folder = Folder(client, "alpha", full_path="/alpha")
+        with pytest.warns(DeprecationWarning):
+            folder.batch_get_chunks([{"document_id": "d1", "chunk_number": 1}], folder_name=["beta"])
+        call = calls.pop()
+        assert call["endpoint"] == "batch/chunks"
+        assert call["data"]["folder_name"] == ["/alpha", "beta"]
+    finally:
+        client.close()
+
+
+@pytest.mark.asyncio
+async def test_batch_get_documents_folder_name_alias_async():
+    client, calls = await _make_async_client()
+    try:
+        user = client.signin("user-7")
+        with pytest.warns(DeprecationWarning):
+            await user.batch_get_documents(["doc-1"], folder_name=["legacy"])
+        call = calls.pop()
+        assert call["endpoint"] == "batch/documents"
+        assert call["data"]["folder_name"] == ["legacy"]
+        assert call["data"]["end_user_id"] == "user-7"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_batch_get_chunks_folder_name_alias_async():
+    from morphik.async_ import AsyncFolder
+
+    client, calls = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "alpha", full_path="/alpha")
+        with pytest.warns(DeprecationWarning):
+            await folder.batch_get_chunks([{"document_id": "d1", "chunk_number": 1}], folder_name="beta")
+        call = calls.pop()
+        assert call["endpoint"] == "batch/chunks"
+        assert call["data"]["folder_name"] == ["/alpha", "beta"]
+    finally:
+        await client.close()
 
 
 # =============================================================================
