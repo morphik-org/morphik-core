@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel
 
-from ._internal import FinalChunkResult, RuleOrDict
+from ._internal import FinalChunkResult
 
 T = TypeVar("T")
 
@@ -39,7 +39,6 @@ class _ScopedOperationsMixin:
         content: str,
         filename: Optional[str],
         metadata: Optional[Dict[str, Any]],
-        rules: Optional[List[RuleOrDict]],
         use_colpali: bool,
         folder_name: Optional[str],
         end_user_id: Optional[str],
@@ -48,7 +47,6 @@ class _ScopedOperationsMixin:
             content,
             filename,
             metadata,
-            rules,
             use_colpali,
             folder_name,
             end_user_id,
@@ -67,7 +65,6 @@ class _ScopedOperationsMixin:
         file: Union[str, bytes, BytesIO, IOBase, Path],
         filename: Optional[str],
         metadata: Optional[Dict[str, Any]],
-        rules: Optional[List[RuleOrDict]],
         use_colpali: bool,
         folder_name: Optional[str],
         end_user_id: Optional[str],
@@ -80,7 +77,6 @@ class _ScopedOperationsMixin:
 
         form_data = self._logic._prepare_ingest_file_form_data(
             metadata,
-            rules,
             folder_name,
             end_user_id,
             use_colpali,
@@ -100,7 +96,6 @@ class _ScopedOperationsMixin:
         *,
         files: List[Union[str, bytes, BytesIO, IOBase, Path]],
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]],
-        rules: Optional[List[RuleOrDict]],
         use_colpali: bool,
         parallel: bool,
         folder_name: Optional[str],
@@ -115,7 +110,6 @@ class _ScopedOperationsMixin:
 
         form_data = self._logic._prepare_ingest_files_form_data(
             metadata,
-            rules,
             use_colpali,
             parallel,
             folder_name,
