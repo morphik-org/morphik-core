@@ -70,21 +70,8 @@ def test_build_rotate_app_params_validation():
 
 
 def test_build_create_app_payload():
-    payload = build_create_app_payload(
-        name="app",
-        app_id="id",
-        user_id=None,
-        expiry_days=7,
-        org_id="org",
-        created_by_user_id="creator",
-    )
-    assert payload == {
-        "name": "app",
-        "app_id": "id",
-        "expiry_days": 7,
-        "org_id": "org",
-        "created_by_user_id": "creator",
-    }
+    payload = build_create_app_payload(name="app")
+    assert payload == {"name": "app"}
 
 
 def test_build_requeue_payload_with_jobs():

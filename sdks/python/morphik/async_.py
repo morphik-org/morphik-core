@@ -1941,42 +1941,18 @@ class AsyncMorphik(_ScopedOperationsMixin):
         self,
         *,
         name: str,
-        app_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        expiry_days: Optional[int] = None,
-        org_id: Optional[str] = None,
-        created_by_user_id: Optional[str] = None,
     ) -> Dict[str, str]:
         """Create a cloud app and return its authenticated URI (async)."""
-        payload = build_create_app_payload(
-            name=name,
-            app_id=app_id,
-            user_id=user_id,
-            expiry_days=expiry_days,
-            org_id=org_id,
-            created_by_user_id=created_by_user_id,
-        )
+        payload = build_create_app_payload(name=name)
         return await self._request("POST", "cloud/generate_uri", data=payload)
 
     async def generate_cloud_uri(
         self,
         *,
         name: str,
-        app_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        expiry_days: Optional[int] = None,
-        org_id: Optional[str] = None,
-        created_by_user_id: Optional[str] = None,
     ) -> Dict[str, str]:
         """Deprecated alias for create_app (async)."""
-        return await self.create_app(
-            name=name,
-            app_id=app_id,
-            user_id=user_id,
-            expiry_days=expiry_days,
-            org_id=org_id,
-            created_by_user_id=created_by_user_id,
-        )
+        return await self.create_app(name=name)
 
     async def requeue_ingestion_jobs(
         self,
