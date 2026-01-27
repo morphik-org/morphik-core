@@ -146,7 +146,6 @@ class Document(BaseModel):
         content: str,
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List] = None,
         use_colpali: Optional[bool] = None,
     ) -> "Document":
         """
@@ -156,7 +155,6 @@ class Document(BaseModel):
             content: The new content (replaces existing)
             filename: Optional new filename for the document
             metadata: Additional metadata to merge (optional)
-            rules: Deprecated, ignored
             use_colpali: Whether to use multi-vector embedding
 
         Returns:
@@ -172,7 +170,6 @@ class Document(BaseModel):
             content=content,
             filename=filename,
             metadata=metadata,
-            rules=rules,
             use_colpali=use_colpali,
         )
 
@@ -181,7 +178,6 @@ class Document(BaseModel):
         file: "Union[str, bytes, BinaryIO, Path]",
         filename: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        rules: Optional[List] = None,
         use_colpali: Optional[bool] = None,
     ) -> "Document":
         """
@@ -191,7 +187,6 @@ class Document(BaseModel):
             file: File to use (path string, bytes, file object, or Path)
             filename: Name of the file
             metadata: Additional metadata to merge (optional)
-            rules: Deprecated, ignored
             use_colpali: Whether to use multi-vector embedding
 
         Returns:
@@ -207,7 +202,6 @@ class Document(BaseModel):
             file=file,
             filename=filename,
             metadata=metadata,
-            rules=rules,
             use_colpali=use_colpali,
         )
 
@@ -430,11 +424,6 @@ class IngestTextRequest(BaseModel):
     filename: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     metadata_types: Optional[Dict[str, str]] = Field(default=None)
-    rules: Optional[List[Dict[str, Any]]] = Field(
-        default=None,
-        exclude=True,
-        json_schema_extra={"deprecated": True},
-    )
     use_colpali: bool = Field(default=False)
 
 
@@ -578,7 +567,6 @@ class FolderInfo(BaseModel):
     description: Optional[str] = Field(None, description="Folder description")
     document_ids: Optional[List[str]] = Field(default_factory=list, description="IDs of documents in the folder")
     system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
-    rules: List[Dict[str, Any]] = Field(default_factory=list, description="Rules associated with the folder")
     app_id: Optional[str] = Field(None, description="Application ID associated with the folder")
     end_user_id: Optional[str] = Field(None, description="End user ID associated with the folder")
     summary_storage_key: Optional[str] = Field(None, description="Pointer to the stored summary blob")
@@ -657,3 +645,58 @@ class AppStorageUsageResponse(BaseModel):
     multivector_mb: float = Field(..., description="Multivector storage size in MB")
     total_mb: float = Field(..., description="Total storage size in MB")
     document_count: int = Field(..., description="Total number of documents for the app")
+
+
+class ServiceStatus(BaseModel):
+    """Status of an individual service"""
+
+    name: str = Field(..., description="Service name")
+    status: str = Field(..., description="Health status for the service")
+    message: Optional[str] = Field(None, description="Optional detail message")
+    response_time_ms: Optional[float] = Field(None, description="Service response time in ms")
+
+
+class DetailedHealthCheckResponse(BaseModel):
+    """Response payload for detailed health checks."""
+
+    status: str = Field(..., description="Overall health status")
+    services: List[ServiceStatus] = Field(..., description="Per-service status details")
+    timestamp: str = Field(..., description="Timestamp for the health check")
+
+
+class LogResponse(BaseModel):
+    """Public serialisable view of a telemetry event."""
+
+    timestamp: str = Field(..., description="Event timestamp")
+    user_id: str = Field(..., description="User identifier")
+    operation_type: str = Field(..., description="Operation type")
+    status: str = Field(..., description="Operation status")
+    tokens_used: int = Field(..., description="Tokens consumed")
+    duration_ms: float = Field(..., description="Operation duration in milliseconds")
+    app_id: Optional[str] = Field(None, description="Application ID")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Optional metadata payload")
+    error: Optional[str] = Field(None, description="Optional error message")
+
+
+class RequeueIngestionJob(BaseModel):
+    """Job descriptor for requeueing ingestion tasks."""
+
+    external_id: str = Field(..., description="External document identifier")
+    use_colpali: Optional[bool] = Field(
+        None,
+        description="Override ColPali usage for this document (True/False).",
+    )
+
+
+class RequeueIngestionResult(BaseModel):
+    """Result information for a requeued ingestion job."""
+
+    external_id: str = Field(..., description="External document identifier")
+    status: str = Field(..., description="Outcome status for this job")
+    message: Optional[str] = Field(None, description="Optional human-readable message")
+
+
+class RequeueIngestionResponse(BaseModel):
+    """Response payload for requeueing ingestion jobs."""
+
+    results: List[RequeueIngestionResult] = Field(..., description="Per-document outcomes")

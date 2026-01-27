@@ -26,6 +26,7 @@ from core.models.auth import AuthContext
 from core.parser.morphik_parser import MorphikParser
 from core.services.ingestion_service import IngestionService, PdfConversionError
 from core.services.telemetry import TelemetryService
+from core.services.v2_document_service import V2DocumentService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_content_type, is_colpali_native_format
@@ -33,6 +34,7 @@ from core.utils.folder_utils import normalize_ingest_folder_inputs
 from core.utils.storage_usage import extract_storage_bytes
 from core.utils.typed_metadata import MetadataBundle
 from core.vector_store.base_vector_store import BaseVectorStore
+from core.vector_store.chunk_v2_store import ChunkV2Store
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
 from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
@@ -181,6 +183,29 @@ async def update_document_progress(ingestion_service, document_id, auth, current
     except Exception as e:
         logger.warning(f"Failed to update progress for document {document_id}: {e}")
         # Don't fail the ingestion if progress update fails
+
+
+async def update_document_progress_v2(database, document_id, auth, current_step, total_steps, step_name):
+    """
+    Update progress metadata for v2 ingestion without requiring IngestionService.
+    """
+    try:
+        updates = {
+            "system_metadata": {
+                "status": "processing",
+                "progress": {
+                    "current_step": current_step,
+                    "total_steps": total_steps,
+                    "step_name": step_name,
+                    "percentage": round((current_step / total_steps) * 100),
+                },
+                "updated_at": datetime.now(UTC),
+            }
+        }
+        await database.update_document(document_id, updates, auth)
+        logger.debug("Updated v2 progress: %s (%s/%s)", step_name, current_step, total_steps)
+    except Exception as e:
+        logger.warning("Failed to update v2 progress for document %s: %s", document_id, e)
 
 
 _STORE_TIME_KEYS = ("chunk_payload_upload_s", "multivector_upload_s", "vector_store_write_s", "cache_write_s")
@@ -1324,6 +1349,138 @@ async def process_ingestion_job(
         }
 
 
+async def process_v2_ingestion_job(
+    ctx: Dict[str, Any],
+    document_id: str,
+    file_key: str,
+    bucket: str,
+    original_filename: str,
+    content_type: str,
+    auth_dict: Dict[str, Any],
+    folder_path: Optional[str] = None,
+    end_user_id: Optional[str] = None,
+    force_plain_text: bool = False,
+) -> Dict[str, Any]:
+    """
+    Background worker task that processes v2 ingestion jobs (chunk_v2 store).
+    """
+    telemetry = TelemetryService()
+
+    def _meta_resolver():  # noqa: D401
+        return {
+            "filename": original_filename,
+            "content_type": content_type,
+            "folder_path": folder_path,
+            "end_user_id": end_user_id,
+            "force_plain_text": force_plain_text,
+        }
+
+    try:
+        async with telemetry.track_operation(
+            operation_type="v2_ingest_worker",
+            user_id=auth_dict.get("user_id") or auth_dict.get("entity_id", "unknown"),
+            app_id=auth_dict.get("app_id"),
+            metadata=_meta_resolver(),
+        ):
+            auth = AuthContext(
+                user_id=auth_dict.get("user_id") or auth_dict.get("entity_id", ""),
+                app_id=auth_dict.get("app_id"),
+            )
+
+            database: PostgresDatabase = ctx["database"]
+            storage = ctx["storage"]
+            chunk_store: ChunkV2Store = ctx["chunk_v2_store"]
+
+            doc = await database.get_document(document_id, auth)
+            if not doc:
+                raise ValueError(f"Document {document_id} not found for v2 ingestion")
+
+            if not doc.filename and original_filename:
+                doc.filename = original_filename
+                await database.update_document(document_id, {"filename": doc.filename}, auth=auth)
+
+            if not doc.content_type and content_type:
+                doc.content_type = content_type
+                await database.update_document(document_id, {"content_type": doc.content_type}, auth=auth)
+
+            total_steps = 4
+            await update_document_progress_v2(database, document_id, auth, 1, total_steps, "Downloading file")
+
+            file_content = await storage.download_file(bucket, file_key)
+            if hasattr(file_content, "read"):
+                file_content = file_content.read()
+
+            v2_service = V2DocumentService(
+                database=database,
+                storage=storage,
+                parser=ctx["parser"],
+                embedding_model=ctx["embedding_model"],
+                chunk_store=chunk_store,
+            )
+
+            step_iter = iter(range(2, total_steps + 1))
+
+            async def _progress_cb(step_name: str) -> None:
+                step = next(step_iter, total_steps)
+                await update_document_progress_v2(database, document_id, auth, step, total_steps, step_name)
+
+            result = await v2_service.process_document_bytes(
+                doc=doc,
+                file_bytes=file_content,
+                auth=auth,
+                force_plain_text=force_plain_text,
+                progress_cb=_progress_cb,
+            )
+
+            return {
+                "document_id": document_id,
+                "status": "completed",
+                "filename": result.get("filename") or original_filename,
+                "chunk_count": result.get("chunk_count", 0),
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+    except Exception as e:
+        logger.error("Error processing v2 ingestion job for file %s: %s", original_filename, e)
+        logger.error(traceback.format_exc())
+        progress_logger.error("v2 ingest failed doc_id=%s file=%s error=%s", document_id, original_filename, e)
+
+        try:
+            auth
+        except NameError:
+            auth = AuthContext(
+                user_id=auth_dict.get("user_id") or auth_dict.get("entity_id", ""),
+                app_id=auth_dict.get("app_id"),
+            )
+
+        try:
+            database = ctx.get("database")
+            if database:
+                doc = await database.get_document(document_id, auth)
+                if doc:
+                    await database.update_document(
+                        document_id=document_id,
+                        updates={
+                            "system_metadata": {
+                                **(doc.system_metadata or {}),
+                                "status": "failed",
+                                "error": str(e),
+                                "updated_at": datetime.now(UTC),
+                                "progress": None,
+                            }
+                        },
+                        auth=auth,
+                    )
+        except Exception as inner_e:  # noqa: BLE001
+            logger.error("Failed to update v2 document status: %s", inner_e)
+
+        return {
+            "status": "failed",
+            "filename": original_filename,
+            "error": str(e),
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+
+
 async def startup(ctx):
     """
     Worker startup: Initialize all necessary services that will be reused across jobs.
@@ -1355,6 +1512,16 @@ async def startup(ctx):
     else:
         logger.error("Primary vector store initialization failed")
     ctx["vector_store"] = vector_store
+
+    # Initialize v2 chunk store
+    logger.info("Initializing v2 chunk store...")
+    chunk_v2_store = ChunkV2Store(uri=settings.POSTGRES_URI)
+    success = await chunk_v2_store.initialize()
+    if success:
+        logger.info("V2 chunk store initialization successful")
+    else:
+        logger.error("V2 chunk store initialization failed")
+    ctx["chunk_v2_store"] = chunk_v2_store
 
     # Initialize storage
     if settings.STORAGE_PROVIDER == "local":
@@ -1482,6 +1649,7 @@ async def shutdown(ctx):
             await engine.dispose()
 
     await _shutdown_store("vector_store")
+    await _shutdown_store("chunk_v2_store")
     await _shutdown_store("colpali_vector_store")
 
     # Close any other open connections or resources that need cleanup
@@ -1518,7 +1686,7 @@ class WorkerSettings:
     and any specific Redis settings.
     """
 
-    functions = [process_ingestion_job]
+    functions = [process_ingestion_job, process_v2_ingestion_job]
     on_startup = startup
     on_shutdown = shutdown
 

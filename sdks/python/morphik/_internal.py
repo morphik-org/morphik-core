@@ -1,7 +1,6 @@
 import base64
 import io
 import json
-import warnings
 from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
@@ -24,10 +23,6 @@ from .models import (
     IngestTextRequest,
     QueryPromptOverrides,
 )
-from .rules import Rule
-
-# Type alias for rules
-RuleOrDict = Union[Rule, Dict[str, Any]]
 
 
 class FinalChunkResult(BaseModel):
@@ -79,21 +74,6 @@ class _MorphikClientLogic:
         # Basic token validation
         jwt.decode(self._auth_token, options={"verify_signature": False})
 
-    def _convert_rule(self, rule: RuleOrDict) -> Dict[str, Any]:
-        """Convert a rule to a dictionary format"""
-        if hasattr(rule, "to_dict"):
-            return rule.to_dict()
-        return rule
-
-    def _warn_legacy_rules(self, rules: Optional[List[RuleOrDict]], context: str) -> None:
-        """Emit a deprecation warning when legacy rules are supplied."""
-        if rules:
-            warnings.warn(
-                f"'rules' support has been removed; payload supplied to {context} is ignored.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-
     def _get_url(self, endpoint: str) -> str:
         """Get the full URL for an API endpoint"""
         return f"{self._base_url}/{endpoint.lstrip('/')}"
@@ -110,13 +90,11 @@ class _MorphikClientLogic:
         content: str,
         filename: Optional[str],
         metadata: Optional[Dict[str, Any]],
-        rules: Optional[List[RuleOrDict]],
         use_colpali: bool,
         folder_name: Optional[str],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
         """Prepare request for ingest_text endpoint"""
-        self._warn_legacy_rules(rules, "ingest/text")
         serialized_metadata, metadata_types_map = self._serialize_metadata_map(metadata)
         payload = {
             "content": content,
@@ -183,7 +161,6 @@ class _MorphikClientLogic:
     def _prepare_ingest_file_form_data(
         self,
         metadata: Optional[Dict[str, Any]],
-        rules: Optional[List[RuleOrDict]],
         folder_name: Optional[str],
         end_user_id: Optional[str],
         use_colpali: Optional[bool] = None,
@@ -194,7 +171,6 @@ class _MorphikClientLogic:
         never relies on query-string values.  *use_colpali* is therefore always
         embedded here when provided.
         """
-        self._warn_legacy_rules(rules, "ingest/file")
         serialized_metadata, metadata_types_map = self._serialize_metadata_map(metadata)
         form_data = {
             "metadata": json.dumps(serialized_metadata),
@@ -217,15 +193,12 @@ class _MorphikClientLogic:
     def _prepare_ingest_files_form_data(
         self,
         metadata: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]],
-        rules: Optional[List[RuleOrDict]],
         use_colpali: bool,
         parallel: bool,
         folder_name: Optional[str],
         end_user_id: Optional[str],
     ) -> Dict[str, Any]:
         """Prepare form data for ingest_files endpoint"""
-        self._warn_legacy_rules(rules, "ingest/files")
-
         serialized_metadata, metadata_types_payload = self._serialize_metadata_collection(metadata)
 
         data = {
@@ -504,12 +477,9 @@ class _MorphikClientLogic:
         content: str,
         filename: Optional[str],
         metadata: Optional[Dict[str, Any]],
-        rules: Optional[List],
         use_colpali: Optional[bool],
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Prepare request for update_document_with_text endpoint"""
-        self._warn_legacy_rules(rules, "documents/update_text")
-
         serialized_metadata, metadata_types_map = self._serialize_metadata_map(metadata)
         request = IngestTextRequest(
             content=content,

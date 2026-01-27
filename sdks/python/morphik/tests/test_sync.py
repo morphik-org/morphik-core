@@ -138,7 +138,7 @@ class TestMorphik:
         docs = folder.list_documents()
 
         # There should be at least our test document
-        doc_ids = [d.external_id for d in docs]
+        doc_ids = [d.external_id for d in docs.documents]
         assert doc.external_id in doc_ids
 
         # Clean up - first delete the document
@@ -173,7 +173,7 @@ class TestMorphik:
         docs = user_scope.list_documents()
 
         # There should be at least our test document
-        doc_ids = [d.external_id for d in docs]
+        doc_ids = [d.external_id for d in docs.documents]
         assert doc.external_id in doc_ids
 
         # Clean up
@@ -224,8 +224,8 @@ class TestMorphik:
         # Create a user scope within the folder
         user_scope = folder.signin(user_id)
 
-        # Verify scopes
-        assert user_scope.folder_name == folder_name
+        # Verify scopes - folder_name uses full_path which includes leading slash
+        assert user_scope.folder_name == folder.full_path
         assert user_scope.end_user_id == user_id
 
         # Test ingestion in this combined scope
@@ -242,7 +242,7 @@ class TestMorphik:
         docs = user_scope.list_documents()
 
         # There should be at least our test document
-        doc_ids = [d.external_id for d in docs]
+        doc_ids = [d.external_id for d in docs.documents]
         assert doc.external_id in doc_ids
 
         # Clean up
