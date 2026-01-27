@@ -72,7 +72,7 @@ class V2DocumentService:
         self.parser = parser
         self.embedding_model = embedding_model
         self.chunk_store = chunk_store
-        self.docling_parser = DoclingV2Parser()
+        self.docling_parser = DoclingV2Parser(settings)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -365,10 +365,14 @@ class V2DocumentService:
             parse_bytes = self._convert_office_to_pdf_bytes(file_bytes, ".docx", "Word document")
             parse_filename = f"{Path(filename).stem}.pdf"
 
-        docling_doc = None
         if ext == ".pptx":
             try:
-                docling_doc = self.docling_parser.convert_bytes(parse_bytes, parse_filename)
+                xml_chunks = await self.docling_parser.parse(
+                    parse_bytes,
+                    parse_filename,
+                    document_id,
+                    display_filename=filename,
+                )
             except Exception:  # noqa: BLE001
                 parse_bytes = self._convert_office_to_pdf_bytes(
                     file_bytes,
@@ -376,14 +380,19 @@ class V2DocumentService:
                     "PowerPoint presentation",
                 )
                 parse_filename = f"{Path(filename).stem}.pdf"
-                docling_doc = self.docling_parser.convert_bytes(parse_bytes, parse_filename)
+                xml_chunks = await self.docling_parser.parse(
+                    parse_bytes,
+                    parse_filename,
+                    document_id,
+                    display_filename=filename,
+                )
         else:
-            docling_doc = self.docling_parser.convert_bytes(parse_bytes, parse_filename)
-        xml_chunks = self.docling_parser.build_page_xml_chunks(
-            docling_doc,
-            document_id,
-            filename,
-        )
+            xml_chunks = await self.docling_parser.parse(
+                parse_bytes,
+                parse_filename,
+                document_id,
+                display_filename=filename,
+            )
 
         if not xml_chunks:
             raise ValueError("No page chunks extracted from document")
