@@ -399,8 +399,10 @@ class ChunkV2Store:
             )
 
             async with self.get_session_with_retry() as session:
-                # PostgreSQL SET doesn't support parameterized values; safe since ivfflat_probes is a validated int
-                await session.execute(text(f"SET LOCAL ivfflat.probes = {self.ivfflat_probes}"))
+                # Use set_config() for parameterized config - SET doesn't support parameters
+                await session.execute(
+                    text("SELECT set_config('ivfflat.probes', :probes, true)"), {"probes": str(self.ivfflat_probes)}
+                )
                 result = await session.execute(query)
                 rows = result.all()
 
