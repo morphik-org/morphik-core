@@ -24,8 +24,10 @@ from core.parser.morphik_parser import MorphikParser
 from core.reranker.flag_reranker import FlagReranker
 from core.services.document_service import DocumentService
 from core.services.ingestion_service import IngestionService
+from core.services.v2_document_service import V2DocumentService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
+from core.vector_store.chunk_v2_store import ChunkV2Store
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
 from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
@@ -52,6 +54,9 @@ logger.debug("Created PostgresDatabase singleton")
 
 vector_store = PGVectorStore(uri=settings.POSTGRES_URI)
 logger.debug("Created PGVectorStore singleton")
+
+v2_chunk_store = ChunkV2Store(uri=settings.POSTGRES_URI)
+logger.debug("Created ChunkV2Store singleton")
 
 # ---------------------------------------------------------------------------
 # Object storage
@@ -205,6 +210,7 @@ document_service = DocumentService(
     enable_colpali=settings.ENABLE_COLPALI,
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
+    v2_chunk_store=v2_chunk_store,
 )
 logger.info("Document service initialised")
 
@@ -223,6 +229,19 @@ ingestion_service = IngestionService(
 )
 logger.info("Ingestion service initialised")
 
+# ---------------------------------------------------------------------------
+# V2 document service (chunk_v2 store)
+# ---------------------------------------------------------------------------
+
+v2_document_service = V2DocumentService(
+    database=database,
+    storage=storage,
+    parser=parser,
+    embedding_model=embedding_model,
+    chunk_store=v2_chunk_store,
+)
+logger.info("V2 document service initialised")
+
 __all__ = [
     "settings",
     "database",
@@ -232,4 +251,6 @@ __all__ = [
     "completion_model",
     "document_service",
     "ingestion_service",
+    "v2_chunk_store",
+    "v2_document_service",
 ]
