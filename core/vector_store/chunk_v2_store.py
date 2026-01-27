@@ -111,6 +111,7 @@ class ChunkV2Store:
             metadata_column="doc_metadata",
             metadata_types_column="metadata_types",
         )
+        self.ivfflat_probes = max(1, int(getattr(settings, "VECTOR_IVFFLAT_PROBES", 100) or 100))
 
     @asynccontextmanager
     async def get_session_with_retry(self) -> AsyncContextManager[AsyncSession]:
@@ -398,6 +399,7 @@ class ChunkV2Store:
             )
 
             async with self.get_session_with_retry() as session:
+                await session.execute(text("SET LOCAL ivfflat.probes = :probes"), {"probes": self.ivfflat_probes})
                 result = await session.execute(query)
                 rows = result.all()
 
