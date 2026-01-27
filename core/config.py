@@ -112,6 +112,7 @@ class Settings(BaseSettings):
     # Vector store configuration
     VECTOR_STORE_PROVIDER: Literal["pgvector"]
     VECTOR_STORE_DATABASE_NAME: Optional[str] = None
+    VECTOR_IVFFLAT_PROBES: int = 100
 
     # Multivector store configuration
     MULTIVECTOR_STORE_PROVIDER: Literal["postgres", "morphik"] = "postgres"
@@ -360,6 +361,12 @@ def get_settings() -> Settings:
 
     if "POSTGRES_URI" not in os.environ:
         raise ValueError(em.format(missing_value="POSTGRES_URI", field="vector_store.provider", value="pgvector"))
+
+    ivfflat_probes = config["vector_store"].get("ivfflat_probes", 100)
+    try:
+        settings_dict["VECTOR_IVFFLAT_PROBES"] = max(1, int(ivfflat_probes))
+    except (TypeError, ValueError):
+        settings_dict["VECTOR_IVFFLAT_PROBES"] = 100
 
     # Load morphik config
     api_domain = config["morphik"].get("api_domain", "api.morphik.ai")
