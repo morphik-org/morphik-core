@@ -29,6 +29,7 @@ from core.parser.base_parser import BaseParser
 from core.reranker.base_reranker import BaseReranker
 from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
+from core.vector_store.chunk_v2_store import ChunkV2Store
 from core.vector_store.utils import derive_repaired_image_key, is_storage_key, normalize_storage_key
 
 from ..models.auth import AuthContext
@@ -67,6 +68,7 @@ class DocumentService:
         enable_colpali: bool = False,
         colpali_embedding_model=None,  # Optional[ColpaliEmbeddingModel] = None,
         colpali_vector_store: Optional[BaseVectorStore] = None,
+        v2_chunk_store: Optional[ChunkV2Store] = None,
     ):
         self.db = database
         self.vector_store = vector_store
@@ -77,6 +79,7 @@ class DocumentService:
         self.reranker = reranker
         self.colpali_embedding_model = colpali_embedding_model
         self.colpali_vector_store = colpali_vector_store
+        self.v2_chunk_store = v2_chunk_store
 
         # MultiVectorStore initialization is now handled in the FastAPI startup event
         # so we don't need to initialize it here again
@@ -1771,6 +1774,13 @@ class DocumentService:
         if not await self.db.check_access(document_id, auth, "write"):
             logger.error(f"User {auth.user_id} doesn't have write access to document {document_id}")
             raise PermissionError(f"User doesn't have write access to document {document_id}")
+
+        # Delete v2 chunks first to satisfy FK constraints when present.
+        if self.v2_chunk_store and auth.app_id:
+            v2_deleted = await self.v2_chunk_store.delete_chunks_by_document_id(document_id, auth)
+            if not v2_deleted:
+                logger.error("Failed to delete v2 chunks for document %s", document_id)
+                return False
 
         # Delete document from database
         db_success = await self.db.delete_document(document_id, auth)

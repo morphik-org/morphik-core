@@ -27,7 +27,7 @@ async def lifespan(app_instance: FastAPI):
     # ------------------------------------------------------------------
     # Import services directly from services_init instead of through api_module
     # ------------------------------------------------------------------
-    from core.services_init import database, settings, vector_store
+    from core.services_init import database, settings, v2_chunk_store, vector_store
 
     # --- BEGIN MOVED STARTUP LOGIC ---
     logger.info("Lifespan: Initializing Database…")
@@ -53,6 +53,18 @@ async def lifespan(app_instance: FastAPI):
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "Lifespan: CRITICAL - Failed to initialize Vector Store: %s",
+            exc,
+            exc_info=True,
+        )
+
+    logger.info("Lifespan: Initializing V2 Chunk Store…")
+    try:
+        if hasattr(v2_chunk_store, "initialize"):
+            await v2_chunk_store.initialize()
+        logger.info("Lifespan: V2 Chunk Store initialization successful (or not applicable).")
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Lifespan: CRITICAL - Failed to initialize V2 Chunk Store: %s",
             exc,
             exc_info=True,
         )

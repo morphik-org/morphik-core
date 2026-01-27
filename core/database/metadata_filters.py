@@ -29,9 +29,16 @@ class InvalidMetadataFilterError(ValueError):
 class MetadataFilterBuilder:
     """Translate JSON-style metadata filters into SQL, covering arrays, regex, and substring operators."""
 
-    _COLUMN_FIELDS = {
-        "filename": "filename",
-    }
+    def __init__(
+        self,
+        *,
+        metadata_column: str = "doc_metadata",
+        metadata_types_column: Optional[str] = "metadata_types",
+        column_fields: Optional[Dict[str, str]] = None,
+    ) -> None:
+        self.metadata_column = metadata_column
+        self.metadata_types_column = metadata_types_column
+        self._column_fields = column_fields or {"filename": "filename"}
 
     def build(self, filters: Optional[Dict[str, Any]]) -> str:
         """Construct a SQL WHERE clause from a metadata filter dictionary."""
@@ -113,7 +120,7 @@ class MetadataFilterBuilder:
 
     def _build_field_metadata_clause(self, field: str, value: Any) -> str:
         """Build SQL clause for a single metadata field."""
-        if field in self._COLUMN_FIELDS:
+        if field in self._column_fields:
             return self._build_column_field_clause(field, value)
 
         if isinstance(value, dict) and not any(key.startswith("$") for key in value):
@@ -192,7 +199,7 @@ class MetadataFilterBuilder:
 
     def _build_column_field_clause(self, field: str, value: Any) -> str:
         """Build SQL clause for a reserved column field (e.g., filename)."""
-        column = self._COLUMN_FIELDS[field]
+        column = self._column_fields[field]
         builder = TextColumnFilterBuilder(column)
 
         if isinstance(value, dict):
@@ -220,7 +227,7 @@ class MetadataFilterBuilder:
             raise InvalidMetadataFilterError(f"$exists operator for field '{field}' expects a boolean value.")
 
         field_key = self._escape_single_quotes(field)
-        clause = f"(doc_metadata ? '{field_key}')"
+        clause = f"({self.metadata_column} ? '{field_key}')"
         return clause if expected else f"(NOT {clause})"
 
     def _build_comparison_clause(self, field: str, operator: str, operand: Any) -> str:
@@ -270,9 +277,9 @@ class MetadataFilterBuilder:
 
         field_key = self._escape_single_quotes(field)
         type_expr = self._metadata_type_expr(field_key)
-        # Use CASE to ensure casting only happens when type is correct
         value_expr = (
-            f"(CASE WHEN {type_expr} = 'number' THEN (doc_metadata ->> '{field_key}')::double precision ELSE NULL END)"
+            f"(CASE WHEN {type_expr} = 'number' THEN ({self.metadata_column} ->> '{field_key}')::double precision "
+            "ELSE NULL END)"
         )
         return f"({value_expr} {sql_operator} {literal})"
 
@@ -285,8 +292,10 @@ class MetadataFilterBuilder:
 
         field_key = self._escape_single_quotes(field)
         type_expr = self._metadata_type_expr(field_key)
-        # Use CASE to ensure casting only happens when type is correct
-        value_expr = f"(CASE WHEN {type_expr} = 'decimal' THEN (doc_metadata ->> '{field_key}')::numeric ELSE NULL END)"
+        value_expr = (
+            f"(CASE WHEN {type_expr} = 'decimal' THEN ({self.metadata_column} ->> '{field_key}')::numeric "
+            "ELSE NULL END)"
+        )
         return f"({value_expr} {sql_operator} {literal}::numeric)"
 
     def _build_datetime_comparison_clause(self, field: str, sql_operator: str, operand: Any) -> str:
@@ -298,9 +307,9 @@ class MetadataFilterBuilder:
 
         field_key = self._escape_single_quotes(field)
         type_expr = self._metadata_type_expr(field_key)
-        # Use CASE to ensure casting only happens when type is correct
         value_expr = (
-            f"(CASE WHEN {type_expr} = 'datetime' THEN (doc_metadata ->> '{field_key}')::timestamptz ELSE NULL END)"
+            f"(CASE WHEN {type_expr} = 'datetime' THEN ({self.metadata_column} ->> '{field_key}')::timestamptz "
+            "ELSE NULL END)"
         )
         return f"({value_expr} {sql_operator} {literal})"
 
@@ -313,8 +322,9 @@ class MetadataFilterBuilder:
 
         field_key = self._escape_single_quotes(field)
         type_expr = self._metadata_type_expr(field_key)
-        # Use CASE to ensure casting only happens when type is correct
-        value_expr = f"(CASE WHEN {type_expr} = 'date' THEN (doc_metadata ->> '{field_key}')::date ELSE NULL END)"
+        value_expr = (
+            f"(CASE WHEN {type_expr} = 'date' THEN ({self.metadata_column} ->> '{field_key}')::date " "ELSE NULL END)"
+        )
         return f"({value_expr} {sql_operator} {literal})"
 
     def _build_string_comparison_clause(self, field: str, sql_operator: str, operand: str) -> str:
@@ -322,7 +332,7 @@ class MetadataFilterBuilder:
         field_key = self._escape_single_quotes(field)
         escaped_value = self._escape_single_quotes(operand)
         type_expr = self._metadata_type_expr(field_key)
-        value_expr = f"(doc_metadata ->> '{field_key}')"
+        value_expr = f"({self.metadata_column} ->> '{field_key}')"
         # For strings without explicit type, assume string type (COALESCE handles missing metadata_types)
         return f"((COALESCE({type_expr}, 'string') = 'string') AND {value_expr} {sql_operator} '{escaped_value}')"
 
@@ -345,8 +355,23 @@ class MetadataFilterBuilder:
                 raise InvalidMetadataFilterError(str(exc)) from exc
 
         field_key = self._escape_single_quotes(field)
-        type_expr = f"COALESCE(metadata_types ->> '{field_key}', 'string')"
-        clauses = [f"({type_expr} = '{type_name}')" for type_name in canonical_types]
+        if not self.metadata_types_column:
+            jsonb_type_expr = f"jsonb_typeof({self.metadata_column} -> '{field_key}')"
+            type_map = {
+                "string": "string",
+                "number": "number",
+                "decimal": "number",
+                "boolean": "boolean",
+                "object": "object",
+                "array": "array",
+                "null": "null",
+                "datetime": "string",
+                "date": "string",
+            }
+            clauses = [f"({jsonb_type_expr} = '{type_map.get(type_name, type_name)}')" for type_name in canonical_types]
+        else:
+            type_expr = f"COALESCE({self.metadata_types_column} ->> '{field_key}', 'string')"
+            clauses = [f"({type_expr} = '{type_name}')" for type_name in canonical_types]
         if len(clauses) == 1:
             return clauses[0]
         return "(" + " OR ".join(clauses) + ")"
@@ -367,7 +392,7 @@ class MetadataFilterBuilder:
             ) from exc
 
         escaped_payload = json_payload.replace("'", "''")
-        base_clause = f"(doc_metadata @> '{escaped_payload}'::jsonb)"
+        base_clause = f"({self.metadata_column} @> '{escaped_payload}'::jsonb)"
 
         array_clause = self._build_array_membership_clause(field, value)
         if array_clause:
@@ -391,8 +416,8 @@ class MetadataFilterBuilder:
         field_key = self._escape_single_quotes(field)
 
         return (
-            f"((jsonb_typeof(doc_metadata -> '{field_key}') = 'array') "
-            f"AND ((doc_metadata -> '{field_key}') @> '{escaped_array_payload}'::jsonb))"
+            f"((jsonb_typeof({self.metadata_column} -> '{field_key}') = 'array') "
+            f"AND (({self.metadata_column} -> '{field_key}') @> '{escaped_array_payload}'::jsonb))"
         )
 
     def _build_regex_clause(self, field: str, operand: Any) -> str:
@@ -403,7 +428,7 @@ class MetadataFilterBuilder:
         escaped_pattern = pattern.replace("\\", "\\\\").replace("'", "''")
         field_key = self._escape_single_quotes(field)
 
-        base_clause = f"((doc_metadata ->> '{field_key}') {regex_operator} '{escaped_pattern}')"
+        base_clause = f"(({self.metadata_column} ->> '{field_key}') {regex_operator} '{escaped_pattern}')"
         array_clause = self._build_array_regex_clause(field, regex_operator, escaped_pattern)
         if array_clause:
             return f"({base_clause} OR {array_clause})"
@@ -440,8 +465,8 @@ class MetadataFilterBuilder:
         field_key = self._escape_single_quotes(field)
         array_value_expr = "trim('\"' FROM arr.value::text)"
         return (
-            f"((jsonb_typeof(doc_metadata -> '{field_key}') = 'array') AND EXISTS ("
-            f"SELECT 1 FROM jsonb_array_elements(doc_metadata -> '{field_key}') AS arr(value) "
+            f"((jsonb_typeof({self.metadata_column} -> '{field_key}') = 'array') AND EXISTS ("
+            f"SELECT 1 FROM jsonb_array_elements({self.metadata_column} -> '{field_key}') AS arr(value) "
             f"WHERE jsonb_typeof(arr.value) = 'string' AND {array_value_expr} {regex_operator} '{escaped_pattern}'))"
         )
 
@@ -453,7 +478,7 @@ class MetadataFilterBuilder:
         escaped_pattern = self._escape_like_pattern(value)
         field_key = self._escape_single_quotes(field)
 
-        base_clause = f"((doc_metadata ->> '{field_key}') {like_operator} '%{escaped_pattern}%')"
+        base_clause = f"(({self.metadata_column} ->> '{field_key}') {like_operator} '%{escaped_pattern}%')"
         array_clause = self._build_array_like_clause(field, like_operator, escaped_pattern)
         if array_clause:
             return f"({base_clause} OR {array_clause})"
@@ -492,15 +517,17 @@ class MetadataFilterBuilder:
         field_key = self._escape_single_quotes(field)
         array_value_expr = "trim('\"' FROM arr.value::text)"
         return (
-            f"((jsonb_typeof(doc_metadata -> '{field_key}') = 'array') AND EXISTS ("
-            f"SELECT 1 FROM jsonb_array_elements(doc_metadata -> '{field_key}') AS arr(value) "
+            f"((jsonb_typeof({self.metadata_column} -> '{field_key}') = 'array') AND EXISTS ("
+            f"SELECT 1 FROM jsonb_array_elements({self.metadata_column} -> '{field_key}') AS arr(value) "
             f"WHERE jsonb_typeof(arr.value) = 'string' AND "
             f"{array_value_expr} {like_operator} '%{escaped_pattern}%'))"
         )
 
     def _metadata_type_expr(self, field_key: str) -> str:
         """Return SQL expression fetching the stored metadata type for a field."""
-        return f"(metadata_types ->> '{field_key}')"
+        if not self.metadata_types_column:
+            return "NULL"
+        return f"({self.metadata_types_column} ->> '{field_key}')"
 
     def _map_comparison_operator(self, operator: str) -> str:
         """Map comparison operators to SQL symbols."""
