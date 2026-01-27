@@ -122,6 +122,7 @@ class PGVectorStore(BaseVectorStore):
         pool_recycle = getattr(settings, "DB_POOL_RECYCLE", 3600)
         pool_timeout = getattr(settings, "DB_POOL_TIMEOUT", 10)
         pool_pre_ping = getattr(settings, "DB_POOL_PRE_PING", True)
+        self.ivfflat_probes = max(1, int(getattr(settings, "VECTOR_IVFFLAT_PROBES", 100) or 100))
 
         # Strip parameters that asyncpg doesn't accept as keyword arguments
         # These will raise "unexpected keyword argument" errors
@@ -457,6 +458,7 @@ class PGVectorStore(BaseVectorStore):
         """
         try:
             async with self.get_session_with_retry() as session:
+                await session.execute(text("SET LOCAL ivfflat.probes = :probes"), {"probes": self.ivfflat_probes})
                 # Build query with cosine distance calculation, which is normalized to [0, 2].
                 # A distance of 0 is perfect similarity.
                 distance = VectorEmbedding.embedding.op("<=>")(query_embedding)
