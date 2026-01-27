@@ -2424,6 +2424,18 @@ main() {
     test_folder_move_integrity
     cleanup_folder_test
 
+    # V2 API sanity tests
+    if [[ "${SKIP_V2_SANITY:-0}" != "1" ]]; then
+        log_section "V2 API Sanity"
+        if AUTH_TOKEN="$AUTH_TOKEN" MORPHIK_URL="$BASE_URL" ./scripts/v2_api_sanity.sh; then
+            log_success "V2 API sanity checks passed"
+        else
+            log_error "V2 API sanity checks failed"
+        fi
+    else
+        log_warn "Skipping V2 API sanity tests (SKIP_V2_SANITY=1)"
+    fi
+
     cleanup_test_files "${1:-}"
     cleanup_auth_app
 
