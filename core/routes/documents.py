@@ -288,7 +288,8 @@ async def get_document_by_filename(
             raise HTTPException(status_code=404, detail=f"Document with filename '{filename}' not found")
         return doc
     except HTTPException as e:
-        logger.error(f"Error getting document by filename: {e}")
+        if e.status_code >= 500:
+            logger.error(f"Error getting document by filename: {e}")
         raise e
 
 
