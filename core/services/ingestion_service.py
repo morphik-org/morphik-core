@@ -1623,7 +1623,7 @@ class IngestionService:
                 ],
                 capture_output=True,
                 text=True,
-                timeout=90,
+                timeout=300,
             )
 
             if result.returncode != 0:
