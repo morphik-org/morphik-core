@@ -458,7 +458,10 @@ class PGVectorStore(BaseVectorStore):
         """
         try:
             async with self.get_session_with_retry() as session:
-                await session.execute(text("SET LOCAL ivfflat.probes = :probes"), {"probes": self.ivfflat_probes})
+                # Use set_config() for parameterized config - SET doesn't support parameters
+                await session.execute(
+                    text("SELECT set_config('ivfflat.probes', :probes, true)"), {"probes": str(self.ivfflat_probes)}
+                )
                 # Build query with cosine distance calculation, which is normalized to [0, 2].
                 # A distance of 0 is perfect similarity.
                 distance = VectorEmbedding.embedding.op("<=>")(query_embedding)
