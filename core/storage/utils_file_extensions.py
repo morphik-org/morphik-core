@@ -15,10 +15,6 @@ _COLPALI_NATIVE_MIME_TYPES = {
     "application/vnd.ms-powerpoint",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
-    # Excel spreadsheets
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel.sheet.macroEnabled.12",
 }
 
 _GENERIC_CONTENT_TYPES = {

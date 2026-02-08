@@ -1338,7 +1338,7 @@ class IngestionService:
         - PDFs (renders each page as image)
         - Word documents (converts to PDF, then to images)
         - PowerPoint presentations (converts to PDF, then to images)
-        - Excel spreadsheets (converts to PDF, then to images)
+        - Other formats: falls back to text chunks
         """
         normalized_mime = mime_type
         if normalized_mime in {"application/octet-stream", "binary/octet-stream", "application/x-octet-stream"}:
@@ -1428,7 +1428,12 @@ class IngestionService:
                 | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 | "application/vnd.ms-excel.sheet.macroEnabled.12"
             ):
-                return self._process_excel_for_colpali(file_content, normalized_mime, chunks)
+                # Excel files use text chunks embedded via ColPali's text path
+                # (no image conversion — text retrieval is much better for tabular data)
+                logger.info("Excel file detected — using text chunks for ColPali embedding")
+                return [
+                    Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks
+                ]
 
             case _:
                 logger.warning("Colpali is not supported for file type %s - skipping", normalized_mime)
@@ -1559,17 +1564,6 @@ class IngestionService:
 
         suffix = ".ppt" if mime_type == "application/vnd.ms-powerpoint" else ".pptx"
         return self._convert_office_to_images(file_content, suffix, "PowerPoint presentation", chunks)
-
-    def _process_excel_for_colpali(self, file_content: bytes, mime_type: str, chunks: List[Chunk]) -> List[Chunk]:
-        """Process Excel spreadsheet for ColPali embedding."""
-        logger.info("Working with Excel spreadsheet!")
-
-        if not file_content or len(file_content) == 0:
-            logger.error("Excel spreadsheet content is empty")
-            return [Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks]
-
-        suffix = ".xls" if mime_type == "application/vnd.ms-excel" else ".xlsx"
-        return self._convert_office_to_images(file_content, suffix, "Excel spreadsheet", chunks)
 
     def _convert_office_to_images(
         self, file_content: bytes, suffix: str, doc_type: str, chunks: List[Chunk]
