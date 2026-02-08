@@ -566,7 +566,7 @@ async def process_ingestion_job(
             phase_times["html_to_pdf"] = time.time() - html_conversion_start
 
             # Check if we're using ColPali
-            using_colpali = (
+            using_colpali = bool(
                 use_colpali and ingestion_service.colpali_embedding_model and ingestion_service.colpali_vector_store
             )
             logger.debug(
@@ -884,6 +884,38 @@ async def process_ingestion_job(
                 phase_times["generate_embeddings"] = 0
                 phase_times["create_chunk_objects"] = 0
 
+            # 11b. Delete old chunks if this is a re-ingestion (requeue)
+            # Must run before any new chunks are stored (both regular and ColPali)
+            if doc.chunk_ids:
+                logger.info(f"Re-ingestion detected for {document_id}, deleting {len(doc.chunk_ids)} old chunks")
+                deletion_tasks = []
+                if hasattr(vector_store, "delete_chunks_by_document_id"):
+                    deletion_tasks.append(vector_store.delete_chunks_by_document_id(document_id, auth.app_id))
+                # Always try to clean colpali store — the doc may have been ingested
+                # with colpali previously even if this re-ingestion doesn't use it
+                cleanup_colpali_store = colpali_vector_store
+                if not cleanup_colpali_store and settings.ENABLE_COLPALI:
+                    try:
+                        cleanup_colpali_store = await _get_worker_colpali_store(database)
+                    except Exception as e:
+                        logger.warning(f"Could not init colpali store for cleanup: {e}")
+                if cleanup_colpali_store and hasattr(cleanup_colpali_store, "delete_chunks_by_document_id"):
+                    deletion_tasks.append(cleanup_colpali_store.delete_chunks_by_document_id(document_id, auth.app_id))
+                chunk_v2_store = ctx.get("chunk_v2_store")
+                if chunk_v2_store and auth.app_id and hasattr(chunk_v2_store, "delete_chunks_by_document_id"):
+                    deletion_tasks.append(chunk_v2_store.delete_chunks_by_document_id(document_id, auth))
+                if deletion_tasks:
+                    try:
+                        results = await asyncio.wait_for(
+                            asyncio.gather(*deletion_tasks, return_exceptions=True),
+                            timeout=30,
+                        )
+                        for i, result in enumerate(results):
+                            if isinstance(result, Exception):
+                                logger.error(f"Error deleting old chunks (task {i}): {result}")
+                    except asyncio.TimeoutError:
+                        logger.error(f"Timeout deleting old chunks for {document_id}, proceeding anyway")
+
             # 12. Handle ColPali embeddings
             chunk_objects_multivector = []
             colpali_chunk_ids: List[str] = []
@@ -1122,6 +1154,7 @@ async def process_ingestion_job(
             # Update document status to completed after all processing
             doc.system_metadata["page_count"] = final_page_count
             doc.system_metadata["status"] = "completed"
+            doc.system_metadata["use_colpali"] = using_colpali
             doc.system_metadata["updated_at"] = datetime.now(UTC)
             # Clear progress info on completion
             doc.system_metadata.pop("progress", None)
