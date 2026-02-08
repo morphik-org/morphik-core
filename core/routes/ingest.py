@@ -326,7 +326,7 @@ async def requeue_ingest_jobs(
                             use_colpali_flag = bool(raw_value)
                         break
             if use_colpali_flag is None:
-                use_colpali_flag = True
+                use_colpali_flag = False
 
             system_metadata = doc.system_metadata or {}
             if isinstance(system_metadata, str):

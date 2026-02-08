@@ -936,6 +936,7 @@ class MultiVectorStore(BaseVectorStore):
             query = f"DELETE FROM multi_vector_embeddings WHERE document_id = '{document_id}'"
             with self.get_connection() as conn:
                 conn.execute(query)
+                conn.commit()
 
             logger.info(f"Deleted all chunks for document {document_id} from multi-vector store")
 
