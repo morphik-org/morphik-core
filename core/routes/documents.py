@@ -6,7 +6,6 @@ import arq
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
 
 from core.auth_utils import verify_token
-from core.config import get_settings
 from core.database.postgres_database import InvalidMetadataFilterError
 from core.dependencies import get_redis_pool
 from core.models.auth import AuthContext
@@ -37,7 +36,6 @@ from core.utils.typed_metadata import TypedMetadataError
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 logger = logging.getLogger(__name__)
-settings = get_settings()
 telemetry = TelemetryService()
 
 
