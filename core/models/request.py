@@ -323,14 +323,6 @@ class DocumentQueryResponse(BaseModel):
     )
 
 
-class BatchIngestJobResponse(BaseModel):
-    """Response model for batch ingestion jobs"""
-
-    status: str = Field(..., description="Status of the batch operation")
-    documents: List[Document] = Field(..., description="List of created documents with processing status")
-    timestamp: str = Field(..., description="ISO-formatted timestamp")
-
-
 class GenerateUriRequest(BaseModel):
     """Request model for generating a cloud URI"""
 

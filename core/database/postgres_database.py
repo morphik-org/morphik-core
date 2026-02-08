@@ -384,48 +384,6 @@ class PostgresDatabase:
             logger.error(f"Error batch retrieving documents: {str(e)}")
             return []
 
-    async def get_documents(
-        self,
-        auth: AuthContext,
-        skip: int = 0,
-        limit: int = 10000,
-        filters: Optional[Dict[str, Any]] = None,
-        system_filters: Optional[Dict[str, Any]] = None,
-    ) -> List[Document]:
-        """List documents the user has access to."""
-        try:
-            async with self.async_session() as session:
-                # Build query
-                access_filter = self._build_access_filter_optimized(auth)
-                metadata_filter = self._build_metadata_filter(filters)
-                system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
-                filter_params = self._build_filter_params(auth, system_filters)
-
-                where_clauses = [f"({access_filter})"]
-
-                if metadata_filter:
-                    where_clauses.append(f"({metadata_filter})")
-
-                if system_metadata_filter:
-                    where_clauses.append(f"({system_metadata_filter})")
-
-                final_where_clause = " AND ".join(where_clauses)
-                query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
-
-                query = query.offset(skip).limit(limit)
-
-                result = await session.execute(query)
-                doc_models = result.scalars().all()
-
-                return [Document(**_document_model_to_dict(doc)) for doc in doc_models]
-
-        except InvalidMetadataFilterError as exc:
-            logger.warning("Invalid metadata filter while listing documents: %s", exc)
-            raise
-        except Exception as e:
-            logger.error(f"Error listing documents: {str(e)}")
-            return []
-
     async def list_documents_flexible(
         self,
         auth: AuthContext,
@@ -2013,34 +1971,6 @@ class PostgresDatabase:
             logger.error(f"Error storing model config: {str(e)}")
             return False
 
-    async def get_model_config(self, config_id: str, user_id: str, app_id: str) -> Optional[ModelConfig]:
-        """Get a model configuration by ID if user has access."""
-        try:
-            async with self.async_session() as session:
-                result = await session.execute(
-                    select(ModelConfigModel)
-                    .where(ModelConfigModel.id == config_id)
-                    .where(ModelConfigModel.user_id == user_id)
-                    .where(ModelConfigModel.app_id == app_id)
-                )
-                config_model = result.scalar_one_or_none()
-
-                if config_model:
-                    return ModelConfig(
-                        id=config_model.id,
-                        user_id=config_model.user_id,
-                        app_id=config_model.app_id,
-                        provider=config_model.provider,
-                        config_data=config_model.config_data,
-                        created_at=config_model.created_at,
-                        updated_at=config_model.updated_at,
-                    )
-                return None
-
-        except Exception as e:
-            logger.error(f"Error getting model config: {str(e)}")
-            return None
-
     async def get_model_configs(self, user_id: str, app_id: str) -> List[ModelConfig]:
         """Get all model configurations for a user and app."""
         try:
@@ -2428,62 +2358,6 @@ class PostgresDatabase:
                             "now": now,
                         },
                     )
-
-    async def delete_document_storage_usage(self, document_id: str) -> None:
-        if not document_id:
-            logger.warning("delete_document_storage_usage called with empty document_id")
-            return
-
-        async with self.async_session() as session:
-            async with session.begin():
-                result = await session.execute(
-                    text(
-                        """
-                        SELECT app_id, raw_bytes, chunk_bytes, multivector_bytes
-                        FROM document_storage_usage
-                        WHERE document_id = :document_id
-                        """
-                    ),
-                    {"document_id": document_id},
-                )
-                row = result.first()
-                if not row:
-                    return
-
-                normalized_app_id = normalize_app_id(row.app_id)
-                raw_bytes = int(row.raw_bytes or 0)
-                chunk_bytes = int(row.chunk_bytes or 0)
-                multivector_bytes = int(row.multivector_bytes or 0)
-                now = datetime.now(UTC)
-
-                await session.execute(
-                    text("DELETE FROM document_storage_usage WHERE document_id = :document_id"),
-                    {"document_id": document_id},
-                )
-
-                await session.execute(
-                    text(
-                        """
-                        INSERT INTO app_storage_usage
-                            (app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
-                        VALUES
-                            (:app_id, 0, 0, 0, :now, :now)
-                        ON CONFLICT (app_id)
-                        DO UPDATE SET
-                            raw_bytes = GREATEST(app_storage_usage.raw_bytes - :raw_bytes, 0),
-                            chunk_bytes = GREATEST(app_storage_usage.chunk_bytes - :chunk_bytes, 0),
-                            multivector_bytes = GREATEST(app_storage_usage.multivector_bytes - :multivector_bytes, 0),
-                            updated_at = :now
-                        """
-                    ),
-                    {
-                        "app_id": normalized_app_id,
-                        "raw_bytes": raw_bytes,
-                        "chunk_bytes": chunk_bytes,
-                        "multivector_bytes": multivector_bytes,
-                        "now": now,
-                    },
-                )
 
     async def get_app_storage_usage(self, app_id: str) -> Dict[str, Any]:
         if not app_id:
