@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.auth_utils import verify_token
 from core.database.postgres_database import InvalidMetadataFilterError
 from core.models.auth import AuthContext
-from core.models.folders import Folder, FolderCreate, FolderSummary
+from core.models.folders import Folder, FolderCreate, FolderMove, FolderSummary
 from core.models.request import FolderDetailsRequest
 from core.models.responses import (
     DocumentAddToFolderResponse,
@@ -353,6 +353,41 @@ async def remove_document_from_folder(
         }
     except Exception as e:
         logger.error(f"Error removing document from folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{folder_id_or_name:path}/move", response_model=Folder)
+@telemetry.track(operation_type="move_folder")
+async def move_folder(
+    folder_id_or_name: str,
+    body: FolderMove,
+    auth: AuthContext = Depends(verify_token),
+) -> Folder:
+    """
+    Move and/or rename a folder by providing a new path.
+
+    - Changing the last segment renames the folder.
+    - Changing parent segments moves it.
+    - All descendant folders and documents are updated atomically.
+    - Missing ancestor folders at the new location are created automatically.
+    """
+    try:
+        folder = await _resolve_folder(folder_id_or_name, auth)
+        if not folder.id:
+            raise HTTPException(status_code=500, detail="Folder is missing an ID")
+
+        result = await document_service.db.move_folder(folder.id, body.new_path, auth)
+        if result is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to move folder to '{body.new_path}'. "
+                "The target path may already exist or be invalid.",
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error moving folder: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

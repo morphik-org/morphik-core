@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import desc, select, text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -1482,6 +1483,310 @@ class PostgresDatabase:
         except Exception as exc:  # noqa: BLE001
             logger.error("Error updating folder %s: %s", folder_id, exc)
             return False
+
+    async def move_folder(self, folder_id: str, new_path: str, auth: AuthContext) -> Optional[Folder]:
+        """Move/rename a folder by setting a new canonical path.
+
+        Updates the folder itself, all descendant folders, and all documents
+        whose folder_path falls under the old path.  Everything runs inside a
+        single transaction so the tree is never left in an inconsistent state.
+
+        Returns the updated Folder on success, or None on failure.
+        """
+        try:
+            new_path = normalize_folder_path(new_path)
+        except ValueError as exc:
+            logger.error("Invalid new_path for move_folder: %s", exc)
+            return None
+
+        if new_path == "/":
+            logger.error("Cannot move a folder to root '/'; provide a named path like '/FolderName'")
+            return None
+
+        new_segments = new_path.strip("/").split("/")
+        new_name = new_segments[-1]
+        new_depth = len(new_segments)
+
+        try:
+            async with self.async_session() as session:
+                async with session.begin():
+                    # Lock the target folder
+                    folder_model = await self._fetch_folder_locked(session, folder_id)
+                    if not folder_model:
+                        logger.error("Folder %s not found for move", folder_id)
+                        return None
+                    if not self._check_folder_model_access(folder_model, auth):
+                        logger.error("User does not have access to folder %s", folder_id)
+                        return None
+
+                    old_path = folder_model.full_path
+                    if not old_path:
+                        logger.error("Folder %s has no full_path, cannot move", folder_id)
+                        return None
+
+                    # No-op if path unchanged
+                    if old_path == new_path:
+                        return Folder(**_folder_row_to_dict(folder_model))
+
+                    # Check for conflict at the new path
+                    scope_col = "app_id" if auth.app_id else "owner_id"
+                    scope_val = auth.app_id or auth.user_id
+                    conflict = await session.execute(
+                        text(
+                            f"SELECT id FROM folders WHERE full_path = :new_path "
+                            f"AND {scope_col} = :scope_val AND id != :folder_id"
+                        ),
+                        {"new_path": new_path, "scope_val": scope_val, "folder_id": folder_id},
+                    )
+                    if conflict.first():
+                        logger.error("A folder already exists at path %s", new_path)
+                        return None
+
+                    # Prevent moving a folder under itself (e.g. /A -> /A/B/A)
+                    if new_path.startswith(old_path.rstrip("/") + "/"):
+                        logger.error("Cannot move folder %s under itself (%s -> %s)", folder_id, old_path, new_path)
+                        return None
+
+                    # --- Resolve or create ancestor folders for the new path ---
+                    new_parent_id = None
+                    for idx in range(len(new_segments) - 1):
+                        ancestor_path = "/" + "/".join(new_segments[: idx + 1])
+                        row = await session.execute(
+                            text(f"SELECT id FROM folders WHERE full_path = :p AND {scope_col} = :scope_val"),
+                            {"p": ancestor_path, "scope_val": scope_val},
+                        )
+                        existing = row.first()
+                        if existing:
+                            new_parent_id = existing[0]
+                        else:
+                            import uuid as _uuid
+
+                            ancestor_id = str(_uuid.uuid4())
+                            ancestor_name = new_segments[idx]
+                            await session.execute(
+                                text(
+                                    "INSERT INTO folders (id, name, full_path, parent_id, depth, "
+                                    "document_ids, system_metadata, owner_id, app_id) "
+                                    "VALUES (:id, :name, :full_path, :parent_id, :depth, "
+                                    "'[]'::jsonb, :sys_meta, :owner_id, :app_id)"
+                                ),
+                                {
+                                    "id": ancestor_id,
+                                    "name": ancestor_name,
+                                    "full_path": ancestor_path,
+                                    "parent_id": new_parent_id,
+                                    "depth": idx + 1,
+                                    "sys_meta": json.dumps(
+                                        _serialize_datetime(
+                                            {"created_at": datetime.now(UTC), "updated_at": datetime.now(UTC)}
+                                        )
+                                    ),
+                                    "owner_id": auth.user_id if not auth.app_id else None,
+                                    "app_id": auth.app_id,
+                                },
+                            )
+                            new_parent_id = ancestor_id
+
+                    # --- Update the folder itself ---
+                    folder_model.name = new_name
+                    folder_model.full_path = new_path
+                    folder_model.parent_id = new_parent_id
+                    folder_model.depth = new_depth
+                    sys_meta = dict(folder_model.system_metadata or {})
+                    sys_meta["updated_at"] = datetime.now(UTC)
+                    folder_model.system_metadata = _serialize_datetime(sys_meta)
+
+                    # --- Update all descendant folders (path prefix swap) ---
+                    old_prefix = old_path.rstrip("/") + "/"
+                    new_prefix = new_path.rstrip("/") + "/"
+                    # Escape LIKE wildcards so % and _ in folder names are literal
+                    old_prefix_escaped = old_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+                    desc_rows = await session.execute(
+                        text(
+                            f"SELECT id, full_path, depth FROM folders "
+                            f"WHERE full_path LIKE :prefix ESCAPE '\\' AND {scope_col} = :scope_val "
+                            f"ORDER BY depth ASC "
+                            f"FOR UPDATE"
+                        ),
+                        {"prefix": old_prefix_escaped + "%", "scope_val": scope_val},
+                    )
+                    descendants = desc_rows.fetchall()
+
+                    for row in descendants:
+                        desc_id, desc_old_path, _ = row
+                        desc_new_path = new_prefix + desc_old_path[len(old_prefix) :]
+                        desc_new_depth = len(desc_new_path.strip("/").split("/"))
+                        # Compute new parent_id: parent is the folder at the parent path
+                        desc_parent_path = "/" + "/".join(desc_new_path.strip("/").split("/")[:-1])
+                        desc_parent_id = folder_id if desc_parent_path == new_path else None
+                        if desc_parent_id is None:
+                            parent_row = await session.execute(
+                                text(f"SELECT id FROM folders WHERE full_path = :p AND {scope_col} = :scope_val"),
+                                {"p": desc_parent_path, "scope_val": scope_val},
+                            )
+                            pr = parent_row.first()
+                            if pr:
+                                desc_parent_id = pr[0]
+
+                        await session.execute(
+                            text(
+                                "UPDATE folders SET full_path = :new_path, depth = :depth, "
+                                "parent_id = :parent_id, "
+                                "system_metadata = jsonb_set(COALESCE(system_metadata, '{}'), "
+                                "'{updated_at}', to_jsonb(CAST(:now AS text))) "
+                                "WHERE id = :id"
+                            ),
+                            {
+                                "new_path": desc_new_path,
+                                "depth": desc_new_depth,
+                                "parent_id": desc_parent_id,
+                                "now": datetime.now(UTC).isoformat(),
+                                "id": desc_id,
+                            },
+                        )
+
+                    # --- Update documents in this folder ---
+                    # Match by folder_id OR by folder_path for path-only docs
+                    # (docs that have folder_path set but no folder_id).
+                    # Also heal path-only docs by setting their folder_id.
+                    await session.execute(
+                        text(
+                            "UPDATE documents SET "
+                            "folder_id = :folder_id, "
+                            "folder_name = :new_name, "
+                            "folder_path = :new_path, "
+                            "doc_metadata = jsonb_set("
+                            "  jsonb_set(COALESCE(doc_metadata, '{}'), "
+                            "    '{folder_name}', to_jsonb(CAST(:new_path_meta AS text))), "
+                            "  '{folder_id}', to_jsonb(CAST(:folder_id AS text))) "
+                            "WHERE ("
+                            "  folder_id = :folder_id "
+                            "  OR (folder_path = :old_path AND folder_id IS NULL)"
+                            f") AND {scope_col} = :scope_val"
+                        ),
+                        {
+                            "new_name": new_name,
+                            "new_path": new_path,
+                            "new_path_meta": new_path,
+                            "folder_id": folder_id,
+                            "old_path": old_path,
+                            "scope_val": scope_val,
+                        },
+                    )
+
+                    # --- Update documents in descendant folders ---
+                    # Key on folder_id (always reliable) via the already-updated
+                    # descendant folders, NOT on d.folder_path LIKE which would
+                    # miss docs with null/stale folder_path.
+                    if descendants:
+                        new_prefix_escaped = new_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                        await session.execute(
+                            text(
+                                "UPDATE documents d SET "
+                                "folder_id = f.id, "
+                                "folder_path = f.full_path, "
+                                "folder_name = f.name, "
+                                "doc_metadata = jsonb_set("
+                                "  jsonb_set(COALESCE(d.doc_metadata, '{}'), "
+                                "    '{folder_name}', to_jsonb(CAST(f.full_path AS text))), "
+                                "  '{folder_id}', to_jsonb(CAST(f.id AS text))) "
+                                "FROM folders f "
+                                "WHERE d.folder_id = f.id "
+                                "AND f.full_path LIKE :new_like ESCAPE '\\' "
+                                f"AND d.{scope_col} = :scope_val"
+                            ),
+                            {
+                                "new_like": new_prefix_escaped + "%",
+                                "scope_val": scope_val,
+                            },
+                        )
+
+                        # Also catch path-only docs (folder_id IS NULL but
+                        # folder_path matches the old prefix).  Heal their
+                        # folder_id by joining to the already-updated folders
+                        # via the computed new path.
+                        old_prefix_escaped_for_path = (
+                            old_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                        )
+                        await session.execute(
+                            text(
+                                "UPDATE documents d SET "
+                                "folder_id = f.id, "
+                                "folder_path = f.full_path, "
+                                "folder_name = f.name, "
+                                "doc_metadata = jsonb_set("
+                                "  jsonb_set(COALESCE(d.doc_metadata, '{}'), "
+                                "    '{folder_name}', to_jsonb(CAST(f.full_path AS text))), "
+                                "  '{folder_id}', to_jsonb(CAST(f.id AS text))) "
+                                "FROM folders f "
+                                "WHERE d.folder_id IS NULL "
+                                "AND d.folder_path IS NOT NULL "
+                                "AND d.folder_path LIKE :old_like ESCAPE '\\' "
+                                "AND f.full_path = :new_base || substring(d.folder_path FROM :old_base_len + 1) "
+                                f"AND f.{scope_col} = :scope_val "
+                                f"AND d.{scope_col} = :scope_val"
+                            ),
+                            {
+                                "old_like": old_prefix_escaped_for_path + "%",
+                                "new_base": new_path,
+                                "old_base_len": len(old_path),
+                                "scope_val": scope_val,
+                            },
+                        )
+
+                    # --- Sync chunk_v2 folder_path (if table exists) ---
+                    # chunk_v2 denormalises folder_path per chunk for v2
+                    # vector queries.  Use a savepoint so v1-only deployments
+                    # (where the table doesn't exist) don't abort the txn.
+                    # Only swallow ProgrammingError (undefined table); real
+                    # failures must propagate.
+                    try:
+                        async with session.begin_nested():
+                            # Direct folder chunks (with scope filter)
+                            await session.execute(
+                                text(
+                                    "UPDATE chunk_v2 c SET folder_path = :new_path "
+                                    "FROM documents d "
+                                    "WHERE c.document_id = d.external_id "
+                                    f"AND d.folder_id = :folder_id AND d.{scope_col} = :scope_val"
+                                ),
+                                {"new_path": new_path, "folder_id": folder_id, "scope_val": scope_val},
+                            )
+                            # Descendant folder chunks — join through docs → folders
+                            # to pick up the already-updated folder paths.
+                            if descendants:
+                                await session.execute(
+                                    text(
+                                        "UPDATE chunk_v2 c SET folder_path = f.full_path "
+                                        "FROM documents d "
+                                        "JOIN folders f ON d.folder_id = f.id "
+                                        "WHERE c.document_id = d.external_id "
+                                        "AND f.full_path LIKE :new_like ESCAPE '\\' "
+                                        f"AND d.{scope_col} = :scope_val"
+                                    ),
+                                    {
+                                        "new_like": new_prefix_escaped + "%",
+                                        "scope_val": scope_val,
+                                    },
+                                )
+                    except ProgrammingError as chunk_exc:
+                        # Only swallow 42P01 (undefined_table) for v1-only
+                        # deployments where chunk_v2 doesn't exist.  Any other
+                        # ProgrammingError is a real bug and must propagate.
+                        orig = getattr(chunk_exc, "orig", None)
+                        sqlstate = getattr(orig, "sqlstate", None)
+                        if sqlstate == "42P01":
+                            logger.debug("Skipping chunk_v2 sync (table missing): %s", chunk_exc)
+                        else:
+                            raise
+
+                    logger.info("Moved folder %s from %s to %s", folder_id, old_path, new_path)
+                    return Folder(**_folder_row_to_dict(folder_model))
+
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error moving folder %s: %s", folder_id, exc)
+            return None
 
     async def add_document_to_folder(self, folder_id: str, document_id: str, auth: AuthContext) -> bool:
         """Add a document to a folder."""

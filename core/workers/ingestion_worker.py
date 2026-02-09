@@ -687,13 +687,11 @@ async def process_ingestion_job(
                 "system_metadata": {**sanitized_system_metadata, "content": document_content},
             }
 
-            # Add folder info and end_user_id to updates if provided
-            if normalized_folder_leaf:
-                updates["folder_name"] = normalized_folder_leaf
-            if normalized_folder_path:
-                updates["folder_path"] = normalized_folder_path
-            if doc.folder_id:
-                updates["folder_id"] = doc.folder_id
+            # Folder fields are already set on the document by the ingest route
+            # (via _ensure_folder_exists / add_document_to_folder).  The worker
+            # must NOT overwrite them with the stale values baked into the job
+            # payload, because the folder may have been renamed or moved while
+            # the job was queued.
             if end_user_id:
                 updates["end_user_id"] = end_user_id
 
@@ -1116,10 +1114,16 @@ async def process_ingestion_job(
 
             logger.debug(f"Successfully completed processing for document {doc.external_id}")
 
-            # 12. Add document to folder if requested
-            if normalized_folder_path:
+            # 12. Add document to folder if requested.
+            # The ingest route already calls _ensure_folder_exists and
+            # add_document_to_folder before enqueuing the job, so the doc
+            # normally has folder_id set by now.
+            if normalized_folder_path and not doc.folder_id:
+                # Full fallback: the route's folder linking failed entirely
+                # (folder_id is still empty).  Use the stale job-payload path
+                # only in this case.
                 try:
-                    logger.info(f"Adding document {doc.external_id} to folder '{normalized_folder_path}'")
+                    logger.info(f"Fallback: linking document {doc.external_id} to folder '{normalized_folder_path}'")
                     folder_obj = await ingestion_service._ensure_folder_exists(
                         normalized_folder_path, doc.external_id, auth
                     )
@@ -1134,7 +1138,16 @@ async def process_ingestion_job(
                         )
                 except Exception as folder_exc:
                     logger.error(f"Failed to add document to folder: {folder_exc}")
-                    # Don't fail the entire ingestion if folder processing fails
+            elif doc.folder_id:
+                # Lightweight reconciliation: folder_id is set but
+                # add_document_to_folder may have silently failed during
+                # ingest, leaving folders.document_ids out of sync.
+                # Use the doc's current folder_id (not the stale job
+                # payload) so this is safe even after a folder move.
+                try:
+                    await ingestion_service.db.add_document_to_folder(doc.folder_id, doc.external_id, auth)
+                except Exception as folder_exc:
+                    logger.debug(f"Folder document_ids reconciliation skipped: {folder_exc}")
 
             await update_document_progress(ingestion_service, document_id, auth, 6, total_steps, "Finalizing")
             # Update document status to completed after all processing
