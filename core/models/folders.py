@@ -49,6 +49,12 @@ class FolderCreate(BaseModel):
     description: Optional[str] = None
 
 
+class FolderMove(BaseModel):
+    """Request model for moving/renaming a folder via a new path."""
+
+    new_path: str = Field(description="The new full path for the folder (e.g. '/NewParent/NewName')")
+
+
 # ---------------------------------------------------------------------------
 # Lightweight projection used by the `/folders/summary` endpoint.  This keeps
 # payloads tiny by excluding the expansive *document_ids* array while still
