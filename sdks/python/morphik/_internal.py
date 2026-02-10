@@ -64,15 +64,20 @@ class _MorphikClientLogic:
         if not parsed.netloc:
             raise ValueError("Invalid URI format")
 
-        # Split host and auth parts
-        auth, host = parsed.netloc.split("@")
-        _, self._auth_token = auth.split(":")
+        if "@" in parsed.netloc:
+            # URI contains embedded credentials: scheme://name:token@host
+            auth, host = parsed.netloc.split("@")
+            _, self._auth_token = auth.split(":")
 
-        # Set base URL
-        self._base_url = f"{'http' if self._is_local else 'https'}://{host}"
+            # Set base URL
+            self._base_url = f"{'http' if self._is_local else 'https'}://{host}"
 
-        # Basic token validation
-        jwt.decode(self._auth_token, options={"verify_signature": False})
+            # Basic token validation
+            jwt.decode(self._auth_token, options={"verify_signature": False})
+        else:
+            # Plain URI without credentials (e.g. http://0.0.0.0:8000)
+            self._auth_token = None
+            self._base_url = f"{parsed.scheme}://{parsed.netloc}"
 
     def _get_url(self, endpoint: str) -> str:
         """Get the full URL for an API endpoint"""
