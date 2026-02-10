@@ -64,12 +64,31 @@ class _MorphikClientLogic:
         if not parsed.netloc:
             raise ValueError("Invalid URI format")
 
+        # Allow direct HTTP(S) endpoints without auth token for self-hosted usage.
+        if parsed.scheme in {"http", "https"}:
+            path_prefix = (parsed.path or "").rstrip("/")
+            self._base_url = f"{parsed.scheme}://{parsed.netloc}{path_prefix}".rstrip("/")
+            self._auth_token = None
+            if parsed.hostname in {"localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"}:
+                self._is_local = True
+            return
+
+        if parsed.scheme != "morphik":
+            raise ValueError("Invalid URI format")
+        if "@" not in parsed.netloc:
+            raise ValueError("Invalid Morphik URI format. Expected morphik://<owner_id>:<token>@<host>")
+
         # Split host and auth parts
-        auth, host = parsed.netloc.split("@")
-        _, self._auth_token = auth.split(":")
+        auth, host = parsed.netloc.rsplit("@", 1)
+        if ":" not in auth:
+            raise ValueError("Invalid Morphik URI auth format. Expected <owner_id>:<token>")
+        _, self._auth_token = auth.split(":", 1)
+
+        if parsed.hostname in {"localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"}:
+            self._is_local = True
 
         # Set base URL
-        self._base_url = f"{'http' if self._is_local else 'https'}://{host}"
+        self._base_url = f"{'http' if self._is_local else 'https'}://{host}".rstrip("/")
 
         # Basic token validation
         jwt.decode(self._auth_token, options={"verify_signature": False})

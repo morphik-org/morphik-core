@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union
+from urllib.parse import quote
 
 from pydantic import BaseModel
 
@@ -144,6 +145,43 @@ def build_document_by_filename_params(
     if end_user_id is not None:
         params["end_user_id"] = end_user_id
     return params
+
+
+def normalize_folder_identifier(folder_id_or_name: str) -> str:
+    if not folder_id_or_name:
+        raise ValueError("folder_id_or_name is required")
+    normalized = folder_id_or_name.lstrip("/")
+    if not normalized:
+        raise ValueError("folder_id_or_name is required")
+    return normalized
+
+
+def build_folder_endpoint_identifier(folder_id_or_name: str) -> str:
+    normalized = normalize_folder_identifier(folder_id_or_name)
+    return quote(normalized, safe="/")
+
+
+def build_folder_move_payload(*, new_path: str) -> Dict[str, str]:
+    normalized_path = "/" + (new_path or "").strip("/")
+    if normalized_path == "/":
+        raise ValueError("new_path must include at least one non-root segment")
+    return {"new_path": normalized_path}
+
+
+def build_folder_rename_path(*, current_path: str, new_name: str) -> str:
+    normalized_name = (new_name or "").strip().strip("/")
+    if not normalized_name:
+        raise ValueError("new_name is required")
+    if "/" in normalized_name:
+        raise ValueError("new_name must be a single folder segment without '/'")
+
+    normalized_current = "/" + (current_path or "").strip("/")
+    segments = [segment for segment in normalized_current.split("/") if segment]
+    if not segments:
+        raise ValueError("current_path must include at least one non-root segment")
+
+    segments[-1] = normalized_name
+    return "/" + "/".join(segments)
 
 
 def normalize_additional_folders(

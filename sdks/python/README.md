@@ -39,6 +39,9 @@ from morphik import Morphik
 # Initialize client - connects to localhost:8000 by default
 db = Morphik()
 
+# You can also use a direct HTTP(S) base URL for self-hosted deployments
+# db = Morphik("http://morphik:8000")
+
 # Or with authentication URI (for production)
 # db = Morphik("morphik://owner_id:token@api.morphik.ai")
 
@@ -83,6 +86,10 @@ print(response.completion)
 # Create a nested folder (parents are auto-created server-side)
 folder = db.create_folder(full_path="/projects/alpha/specs", description="Specs folder")
 
+# Move or rename folder paths
+moved = db.move_folder("/projects/alpha/specs", "/projects/archive/specs")
+renamed = moved.rename("specs-v2")
+
 # Scope queries to a path and include descendants with folder_depth=-1
 chunks = folder.retrieve_chunks(query="design notes", folder_depth=-1)
 docs = db.list_documents(folder_name="/projects/alpha", folder_depth=-1)
@@ -99,6 +106,9 @@ from morphik.async_ import AsyncMorphik
 async def main():
     # Initialize async client - connects to localhost:8000 by default
     async with AsyncMorphik() as db:
+
+    # You can also use a direct HTTP(S) base URL for self-hosted deployments
+    # async with AsyncMorphik("http://morphik:8000") as db:
 
     # Or with authentication URI (for production)
     # async with AsyncMorphik("morphik://owner_id:token@api.morphik.ai") as db:

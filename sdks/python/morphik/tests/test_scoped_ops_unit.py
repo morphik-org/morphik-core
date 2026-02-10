@@ -1,4 +1,5 @@
 import httpx
+import jwt
 import pytest
 from morphik.async_ import AsyncMorphik
 from morphik.sync import Folder, Morphik
@@ -158,6 +159,56 @@ def test_sync_client_http2_toggle(monkeypatch):
 
     Morphik(http2=True, is_local=True)
     assert captured[-1] is False
+
+
+def test_sync_client_accepts_plain_http_uri_without_auth():
+    client = Morphik("http://0.0.0.0:8000")
+    try:
+        assert client._logic._base_url == "http://0.0.0.0:8000"
+        assert client._logic._auth_token is None
+        assert client._logic._is_local is True
+    finally:
+        client.close()
+
+
+def test_sync_client_preserves_http_path_prefix():
+    client = Morphik("https://api.example.com/morphik/v1/")
+    try:
+        assert client._logic._base_url == "https://api.example.com/morphik/v1"
+        assert client._logic._get_url("ping") == "https://api.example.com/morphik/v1/ping"
+    finally:
+        client.close()
+
+
+def test_sync_client_parses_morphik_uri_with_token():
+    token = jwt.encode({"sub": "test-user"}, "test-secret", algorithm="HS256")
+    client = Morphik(f"morphik://owner:{token}@api.morphik.ai")
+    try:
+        assert client._logic._base_url == "https://api.morphik.ai"
+        assert client._logic._auth_token == token
+    finally:
+        client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_client_accepts_plain_http_uri_without_auth():
+    client = AsyncMorphik("http://0.0.0.0:8000")
+    try:
+        assert client._logic._base_url == "http://0.0.0.0:8000"
+        assert client._logic._auth_token is None
+        assert client._logic._is_local is True
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_client_preserves_http_path_prefix():
+    client = AsyncMorphik("https://api.example.com/morphik/v1/")
+    try:
+        assert client._logic._base_url == "https://api.example.com/morphik/v1"
+        assert client._logic._get_url("ping") == "https://api.example.com/morphik/v1/ping"
+    finally:
+        await client.close()
 
 
 @pytest.mark.asyncio
@@ -492,6 +543,208 @@ def test_folder_hierarchy_properties():
         client.close()
 
 
+def test_sync_move_folder_calls_move_endpoint():
+    client, calls = _make_sync_client()
+    try:
+        original_request = client._request
+
+        def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if endpoint == "folders/folder-123/move":
+                return {
+                    "id": "folder-123",
+                    "name": "archived",
+                    "full_path": "/projects/archived",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "moved folder",
+                }
+            return original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        moved = client.move_folder("folder-123", "/projects/archived")
+        move_call = calls.pop()
+        assert move_call["method"] == "POST"
+        assert move_call["endpoint"] == "folders/folder-123/move"
+        assert move_call["data"] == {"new_path": "/projects/archived"}
+        assert moved.id == "folder-123"
+        assert moved.full_path == "/projects/archived"
+        assert moved.name == "archived"
+    finally:
+        client.close()
+
+
+def test_sync_move_folder_encodes_special_chars_in_identifier():
+    client, calls = _make_sync_client()
+    try:
+        original_request = client._request
+
+        def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if endpoint == "folders/team/a%231/move":
+                return {
+                    "id": "folder-123",
+                    "name": "a1",
+                    "full_path": "/team/a1",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "moved folder",
+                }
+            return original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        moved = client.move_folder("/team/a#1", "/team/a1")
+        move_call = calls.pop()
+        assert move_call["method"] == "POST"
+        assert move_call["endpoint"] == "folders/team/a%231/move"
+        assert move_call["data"] == {"new_path": "/team/a1"}
+        assert moved.full_path == "/team/a1"
+    finally:
+        client.close()
+
+
+def test_sync_rename_folder_derives_target_path_from_existing_folder():
+    client, calls = _make_sync_client()
+    try:
+        original_request = client._request
+
+        def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if method == "GET" and endpoint == "folders/folder-123":
+                return {
+                    "id": "folder-123",
+                    "name": "old-name",
+                    "full_path": "/team/old-name",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "original",
+                }
+            if method == "POST" and endpoint == "folders/folder-123/move":
+                return {
+                    "id": "folder-123",
+                    "name": "new-name",
+                    "full_path": "/team/new-name",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "renamed",
+                }
+            return original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        renamed = client.rename_folder("folder-123", "new-name")
+
+        get_call = calls[-2]
+        move_call = calls[-1]
+        assert get_call["method"] == "GET"
+        assert get_call["endpoint"] == "folders/folder-123"
+        assert move_call["method"] == "POST"
+        assert move_call["endpoint"] == "folders/folder-123/move"
+        assert move_call["data"] == {"new_path": "/team/new-name"}
+        assert renamed.name == "new-name"
+        assert renamed.full_path == "/team/new-name"
+    finally:
+        client.close()
+
+
+def test_sync_rename_folder_encodes_identifier_for_get_and_move():
+    client, calls = _make_sync_client()
+    try:
+        original_request = client._request
+
+        def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if method == "GET" and endpoint == "folders/team/a%231":
+                return {
+                    "id": "folder#123",
+                    "name": "a#1",
+                    "full_path": "/team/a#1",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "original",
+                }
+            if method == "POST" and endpoint == "folders/folder%23123/move":
+                return {
+                    "id": "folder#123",
+                    "name": "a-new",
+                    "full_path": "/team/a-new",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "renamed",
+                }
+            return original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        renamed = client.rename_folder("/team/a#1", "a-new")
+
+        get_call = calls[-2]
+        move_call = calls[-1]
+        assert get_call["method"] == "GET"
+        assert get_call["endpoint"] == "folders/team/a%231"
+        assert move_call["method"] == "POST"
+        assert move_call["endpoint"] == "folders/folder%23123/move"
+        assert move_call["data"] == {"new_path": "/team/a-new"}
+        assert renamed.full_path == "/team/a-new"
+    finally:
+        client.close()
+
+
+def test_sync_folder_move_and_rename_refresh_local_metadata():
+    client, _ = _make_sync_client()
+    try:
+        folder = Folder(client, "docs", folder_id="folder-123", full_path="/team/docs")
+
+        def mock_move(folder_id_or_name, new_path):
+            if new_path == "/archive/docs":
+                return Folder(
+                    client,
+                    "docs",
+                    folder_id="folder-123",
+                    full_path="/archive/docs",
+                    parent_id="parent-arch",
+                    depth=2,
+                    child_count=0,
+                    description="moved",
+                )
+            return Folder(
+                client,
+                "docs-v2",
+                folder_id="folder-123",
+                full_path="/archive/docs-v2",
+                parent_id="parent-arch",
+                depth=2,
+                child_count=0,
+                description="renamed",
+            )
+
+        client.move_folder = mock_move  # type: ignore[method-assign]
+        client.rename_folder = lambda folder_id_or_name, new_name: mock_move(  # type: ignore[method-assign]
+            folder_id_or_name, "/archive/docs-v2"
+        )
+
+        moved = folder.move("/archive/docs")
+        assert moved.full_path == "/archive/docs"
+        assert folder.full_path == "/archive/docs"
+        assert folder.parent_id == "parent-arch"
+
+        renamed = folder.rename("docs-v2")
+        assert renamed.name == "docs-v2"
+        assert renamed.full_path == "/archive/docs-v2"
+        assert folder.name == "docs-v2"
+        assert folder.full_path == "/archive/docs-v2"
+    finally:
+        client.close()
+
+
 def test_folder_uses_full_path_for_operations():
     """Test that Folder operations use full_path instead of name."""
     client, calls = _make_sync_client()
@@ -676,6 +929,215 @@ async def test_async_folder_hierarchy_properties():
         assert folder.depth == 3
         assert folder.child_count == 2
         assert folder.description == "Async test folder"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_move_folder_calls_move_endpoint():
+    client, calls = await _make_async_client()
+    try:
+        original_request = client._request
+
+        async def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if endpoint == "folders/folder-123/move":
+                return {
+                    "id": "folder-123",
+                    "name": "archived",
+                    "full_path": "/projects/archived",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "moved folder",
+                }
+            return await original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        moved = await client.move_folder("folder-123", "/projects/archived")
+        move_call = calls.pop()
+        assert move_call["method"] == "POST"
+        assert move_call["endpoint"] == "folders/folder-123/move"
+        assert move_call["data"] == {"new_path": "/projects/archived"}
+        assert moved.id == "folder-123"
+        assert moved.full_path == "/projects/archived"
+        assert moved.name == "archived"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_move_folder_encodes_special_chars_in_identifier():
+    client, calls = await _make_async_client()
+    try:
+        original_request = client._request
+
+        async def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if endpoint == "folders/team/a%231/move":
+                return {
+                    "id": "folder-123",
+                    "name": "a1",
+                    "full_path": "/team/a1",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "moved folder",
+                }
+            return await original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        moved = await client.move_folder("/team/a#1", "/team/a1")
+        move_call = calls.pop()
+        assert move_call["method"] == "POST"
+        assert move_call["endpoint"] == "folders/team/a%231/move"
+        assert move_call["data"] == {"new_path": "/team/a1"}
+        assert moved.full_path == "/team/a1"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_rename_folder_derives_target_path_from_existing_folder():
+    client, calls = await _make_async_client()
+    try:
+        original_request = client._request
+
+        async def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if method == "GET" and endpoint == "folders/folder-123":
+                return {
+                    "id": "folder-123",
+                    "name": "old-name",
+                    "full_path": "/team/old-name",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "original",
+                }
+            if method == "POST" and endpoint == "folders/folder-123/move":
+                return {
+                    "id": "folder-123",
+                    "name": "new-name",
+                    "full_path": "/team/new-name",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "renamed",
+                }
+            return await original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        renamed = await client.rename_folder("folder-123", "new-name")
+        get_call = calls[-2]
+        move_call = calls[-1]
+        assert get_call["method"] == "GET"
+        assert get_call["endpoint"] == "folders/folder-123"
+        assert move_call["method"] == "POST"
+        assert move_call["endpoint"] == "folders/folder-123/move"
+        assert move_call["data"] == {"new_path": "/team/new-name"}
+        assert renamed.name == "new-name"
+        assert renamed.full_path == "/team/new-name"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_rename_folder_encodes_identifier_for_get_and_move():
+    client, calls = await _make_async_client()
+    try:
+        original_request = client._request
+
+        async def mock_request(method, endpoint, data=None, files=None, params=None):
+            calls.append({"method": method, "endpoint": endpoint, "data": data, "params": params})
+            if method == "GET" and endpoint == "folders/team/a%231":
+                return {
+                    "id": "folder#123",
+                    "name": "a#1",
+                    "full_path": "/team/a#1",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "original",
+                }
+            if method == "POST" and endpoint == "folders/folder%23123/move":
+                return {
+                    "id": "folder#123",
+                    "name": "a-new",
+                    "full_path": "/team/a-new",
+                    "parent_id": "parent-1",
+                    "depth": 2,
+                    "child_count": 0,
+                    "description": "renamed",
+                }
+            return await original_request(method, endpoint, data, files, params)
+
+        client._request = mock_request
+
+        renamed = await client.rename_folder("/team/a#1", "a-new")
+        get_call = calls[-2]
+        move_call = calls[-1]
+        assert get_call["method"] == "GET"
+        assert get_call["endpoint"] == "folders/team/a%231"
+        assert move_call["method"] == "POST"
+        assert move_call["endpoint"] == "folders/folder%23123/move"
+        assert move_call["data"] == {"new_path": "/team/a-new"}
+        assert renamed.full_path == "/team/a-new"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_move_and_rename_refresh_local_metadata():
+    from morphik.async_ import AsyncFolder
+
+    client, _ = await _make_async_client()
+    try:
+        folder = AsyncFolder(client, "docs", folder_id="folder-123", full_path="/team/docs")
+
+        async def mock_move(folder_id_or_name, new_path):
+            if new_path == "/archive/docs":
+                return AsyncFolder(
+                    client,
+                    "docs",
+                    folder_id="folder-123",
+                    full_path="/archive/docs",
+                    parent_id="parent-arch",
+                    depth=2,
+                    child_count=0,
+                    description="moved",
+                )
+            return AsyncFolder(
+                client,
+                "docs-v2",
+                folder_id="folder-123",
+                full_path="/archive/docs-v2",
+                parent_id="parent-arch",
+                depth=2,
+                child_count=0,
+                description="renamed",
+            )
+
+        client.move_folder = mock_move  # type: ignore[method-assign]
+
+        async def mock_rename(folder_id_or_name, new_name):
+            return await mock_move(folder_id_or_name, "/archive/docs-v2")
+
+        client.rename_folder = mock_rename  # type: ignore[method-assign]
+
+        moved = await folder.move("/archive/docs")
+        assert moved.full_path == "/archive/docs"
+        assert folder.full_path == "/archive/docs"
+        assert folder.parent_id == "parent-arch"
+
+        renamed = await folder.rename("docs-v2")
+        assert renamed.name == "docs-v2"
+        assert renamed.full_path == "/archive/docs-v2"
+        assert folder.name == "docs-v2"
+        assert folder.full_path == "/archive/docs-v2"
     finally:
         await client.close()
 

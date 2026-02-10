@@ -264,7 +264,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         """
         headers = {"Authorization": f"Bearer {self.api_key}"}
         payload = {"input_type": input_type, "inputs": inputs}
-        timeout = Timeout(read=6000.0, connect=6000.0, write=6000.0, pool=6000.0)
+        timeout = Timeout(read=600.0, connect=30.0, write=600.0, pool=60.0)
 
         async with AsyncClient(timeout=timeout) as client:
             resp = await client.post(endpoint, json=payload, headers=headers)
