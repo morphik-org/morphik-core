@@ -830,7 +830,7 @@ class FastMultiVectorStore(BaseVectorStore):
             return self._document_app_id_cache[document_id]
 
         try:
-            query = "SELECT system_metadata->>'app_id' FROM documents WHERE external_id = %s"
+            query = "SELECT app_id FROM documents WHERE external_id = %s"
             with self.get_connection() as conn:
                 result = conn.execute(query, (document_id,)).fetchone()
 

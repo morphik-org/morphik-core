@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-02-09
+
+### Added
+- Folder management helpers across sync/async clients:
+  - `move_folder(folder_id_or_name, new_path)`
+  - `rename_folder(folder_id_or_name, new_name)`
+- Folder object convenience helpers:
+  - `Folder.move(new_path)` / `Folder.rename(new_name)`
+  - `AsyncFolder.move(new_path)` / `AsyncFolder.rename(new_name)`
+
+### Fixed
+- URI parsing now supports direct HTTP(S) base URLs (for example `http://0.0.0.0:8000`) without requiring `morphik://<owner>:<token>@<host>`.
+- Improved validation errors for malformed Morphik URIs and invalid folder move/rename inputs.
+
 ## [1.1.0] - 2025-02-09
 
 ### Added

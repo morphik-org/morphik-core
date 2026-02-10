@@ -36,8 +36,9 @@ class TestAsyncMorphik:
     @pytest.fixture
     async def db(self):
         """Create an AsyncMorphik client for testing"""
-        # Connects to localhost:8000 by default, increase timeout
-        client = AsyncMorphik(timeout=120)
+        # Use dedicated test URI when provided; otherwise default localhost behavior
+        uri = os.environ.get("MORPHIK_TEST_URI")
+        client = AsyncMorphik(uri=uri, timeout=120) if uri else AsyncMorphik(timeout=120)
         yield client
         await client.close()
 
@@ -149,6 +150,79 @@ class TestAsyncMorphik:
         await db.delete_document(doc.external_id)
 
         # TODO: Add folder deletion when API supports it
+
+    @pytest.mark.asyncio
+    async def test_direct_http_uri_ping(self):
+        """Test direct HTTP base URL initialization and connectivity (async)."""
+        uri = os.environ.get("MORPHIK_TEST_URI", "http://localhost:8000")
+        client = AsyncMorphik(uri, timeout=30)
+        try:
+            response = await client.ping()
+            assert response.get("status") == "ok"
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_move_and_rename_folder(self, db):
+        """Test moving and renaming folders via async client-level APIs."""
+        suffix = uuid.uuid4().hex[:8]
+        original_path = f"/it_async_{suffix}/leaf"
+        moved_path = f"/it_async_moved_{suffix}/leaf"
+        renamed_leaf = f"leaf_renamed_{suffix}"
+        expected_renamed_path = f"/it_async_moved_{suffix}/{renamed_leaf}"
+
+        folder = await db.create_folder(
+            name=f"leaf_{suffix}",
+            full_path=original_path,
+            description="integration move test",
+        )
+
+        moved = None
+        renamed = None
+        try:
+            moved = await db.move_folder(folder.id or original_path, moved_path)
+            assert moved.id == folder.id
+            assert moved.full_path == moved_path
+            assert moved.name == "leaf"
+
+            fetched_moved = await db.get_folder(moved.id or moved_path)
+            assert fetched_moved.full_path == moved_path
+
+            renamed = await db.rename_folder(moved.id or moved_path, renamed_leaf)
+            assert renamed.id == folder.id
+            assert renamed.name == renamed_leaf
+            assert renamed.full_path == expected_renamed_path
+
+            fetched_renamed = await db.get_folder(renamed.id or expected_renamed_path)
+            assert fetched_renamed.full_path == expected_renamed_path
+        finally:
+            target = renamed or moved or folder
+            if target and target.id:
+                await db.delete_folder(target.id)
+
+    @pytest.mark.asyncio
+    async def test_folder_object_move_and_rename(self, db):
+        """Test AsyncFolder convenience move/rename methods keep local metadata in sync."""
+        suffix = uuid.uuid4().hex[:8]
+        original_path = f"/it_async_obj_{suffix}/leaf"
+        moved_path = f"/it_async_obj_moved_{suffix}/leaf"
+        renamed_leaf = f"leaf_obj_renamed_{suffix}"
+        expected_renamed_path = f"/it_async_obj_moved_{suffix}/{renamed_leaf}"
+
+        folder = await db.create_folder(name=f"leaf_obj_{suffix}", full_path=original_path)
+        try:
+            moved = await folder.move(moved_path)
+            assert moved.full_path == moved_path
+            assert folder.full_path == moved_path
+
+            renamed = await folder.rename(renamed_leaf)
+            assert renamed.full_path == expected_renamed_path
+            assert renamed.name == renamed_leaf
+            assert folder.full_path == expected_renamed_path
+            assert folder.name == renamed_leaf
+        finally:
+            if folder.id:
+                await db.delete_folder(folder.id)
 
     @pytest.mark.asyncio
     async def test_user_scope(self, db):
