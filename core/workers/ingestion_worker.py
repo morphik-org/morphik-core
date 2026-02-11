@@ -32,7 +32,6 @@ from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_content_type, is_colpali_native_format
 from core.utils.folder_utils import normalize_ingest_folder_inputs
 from core.utils.storage_usage import extract_storage_bytes
-from core.utils.typed_metadata import MetadataBundle
 from core.vector_store.base_vector_store import BaseVectorStore
 from core.vector_store.chunk_v2_store import ChunkV2Store
 from core.vector_store.dual_multivector_store import DualMultiVectorStore
@@ -694,11 +693,9 @@ async def process_ingestion_job(
             else:
                 document_content = text
 
-            sanitized_system_metadata = IngestionService._clean_system_metadata(doc.system_metadata)
-
             updates = {
                 "additional_metadata": additional_metadata,
-                "system_metadata": {**sanitized_system_metadata, "content": document_content},
+                "system_metadata": {"content": document_content},
             }
 
             # Folder fields are already set on the document by the ingest route
@@ -773,26 +770,22 @@ async def process_ingestion_job(
                         original_filename,
                         conversion_error,
                     )
-                    system_metadata = dict(doc.system_metadata or {})
                     error_code = "pdf_conversion_failed"
                     error_message = str(conversion_error)
                     current_span = get_current_span()
                     current_span.set_status(Status(StatusCode.ERROR, error_message))
                     current_span.set_attribute("ingest.error_code", error_code)
                     current_span.set_attribute("ingest.error_message", error_message)
-                    system_metadata.update(
-                        {
-                            "status": "failed",
-                            "error": error_code,
-                            "error_message": error_message,
-                            "updated_at": datetime.now(UTC),
-                            "progress": None,
-                        }
-                    )
-                    cleaned_metadata = IngestionService._clean_system_metadata(system_metadata)
+                    failure_update = {
+                        "status": "failed",
+                        "error": error_code,
+                        "error_message": error_message,
+                        "updated_at": datetime.now(UTC),
+                        "progress": None,
+                    }
                     await ingestion_service.db.update_document(
                         document_id=document_id,
-                        updates={"system_metadata": cleaned_metadata},
+                        updates={"system_metadata": failure_update},
                         auth=auth,
                     )
                     return {
@@ -1066,14 +1059,13 @@ async def process_ingestion_job(
             store_start = time.time()
             if using_colpali:
                 # We already stored ColPali chunks in batches; just persist doc.chunk_ids via DB update
-                # Only update chunk_ids and system_metadata - everything else was set correctly by the route
+                # Only update chunk_ids. Avoid writing a stale in-memory system_metadata
+                # snapshot that could overwrite concurrent metadata updates.
                 doc.chunk_ids = colpali_chunk_ids
-                doc.system_metadata = IngestionService._clean_system_metadata(doc.system_metadata)
                 await ingestion_service.db.update_document(
                     document_id=doc.external_id,
                     updates={
                         "chunk_ids": doc.chunk_ids,
-                        "system_metadata": doc.system_metadata,
                     },
                     auth=auth,
                 )
@@ -1092,13 +1084,6 @@ async def process_ingestion_job(
                                 "Failed recording ColPali storage bytes for doc %s: %s", document_id, storage_err
                             )
             else:
-                metadata_bundle = None
-                if isinstance(doc.metadata, dict) and isinstance(doc.metadata_types, dict):
-                    metadata_bundle = MetadataBundle(
-                        values=dict(doc.metadata),
-                        types=dict(doc.metadata_types),
-                        is_normalized=True,
-                    )
                 _, store_metrics = await ingestion_service._store_chunks_and_doc(
                     chunk_objects,
                     doc,
@@ -1106,7 +1091,7 @@ async def process_ingestion_job(
                     chunk_objects_multivector,
                     is_update=True,
                     auth=auth,
-                    metadata_bundle=metadata_bundle,
+                    minimal_update=True,
                 )
                 if store_metrics:
                     _accumulate_store_metrics(store_metrics_total, store_metrics)
@@ -1173,9 +1158,15 @@ async def process_ingestion_job(
             doc.system_metadata.pop("progress", None)
 
             # Final update to mark as completed
-            doc.system_metadata = IngestionService._clean_system_metadata(doc.system_metadata)
+            completion_update = {
+                "page_count": final_page_count,
+                "status": "completed",
+                "use_colpali": using_colpali,
+                "updated_at": doc.system_metadata["updated_at"],
+                "progress": None,
+            }
             await ingestion_service.db.update_document(
-                document_id=document_id, updates={"system_metadata": doc.system_metadata}, auth=auth
+                document_id=document_id, updates={"system_metadata": completion_update}, auth=auth
             )
 
             # 13. Log successful completion
@@ -1373,28 +1364,21 @@ async def process_ingestion_job(
         try:
             database: Optional[PostgresDatabase] = ctx.get("database")
 
-            # Proceed only if we have a database object
             if database:
-                # Try to get the document
-                doc = await database.get_document(document_id, auth)
-
-                if doc:
-                    # Update the document status to failed
-                    await database.update_document(
-                        document_id=document_id,
-                        updates={
-                            "system_metadata": {
-                                **doc.system_metadata,
-                                "status": "failed",
-                                "error": str(e),
-                                "updated_at": datetime.now(UTC),
-                                # Clear progress info on failure
-                                "progress": None,
-                            }
-                        },
-                        auth=auth,
-                    )
-                    logger.info(f"Updated document {document_id} status to failed")
+                await database.update_document(
+                    document_id=document_id,
+                    updates={
+                        "system_metadata": {
+                            "status": "failed",
+                            "error": str(e),
+                            "updated_at": datetime.now(UTC),
+                            # Clear progress info on failure
+                            "progress": None,
+                        }
+                    },
+                    auth=auth,
+                )
+                logger.info(f"Updated document {document_id} status to failed")
         except Exception as inner_e:
             logger.error(f"Failed to update document status: {inner_e}")
 
@@ -1515,21 +1499,18 @@ async def process_v2_ingestion_job(
         try:
             database = ctx.get("database")
             if database:
-                doc = await database.get_document(document_id, auth)
-                if doc:
-                    await database.update_document(
-                        document_id=document_id,
-                        updates={
-                            "system_metadata": {
-                                **(doc.system_metadata or {}),
-                                "status": "failed",
-                                "error": str(e),
-                                "updated_at": datetime.now(UTC),
-                                "progress": None,
-                            }
-                        },
-                        auth=auth,
-                    )
+                await database.update_document(
+                    document_id=document_id,
+                    updates={
+                        "system_metadata": {
+                            "status": "failed",
+                            "error": str(e),
+                            "updated_at": datetime.now(UTC),
+                            "progress": None,
+                        }
+                    },
+                    auth=auth,
+                )
         except Exception as inner_e:  # noqa: BLE001
             logger.error("Failed to update v2 document status: %s", inner_e)
 

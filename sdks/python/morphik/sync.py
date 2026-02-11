@@ -14,6 +14,9 @@ from ._scoped_ops import _ScopedOperationsMixin
 from ._shared import (
     build_create_app_payload,
     build_document_by_filename_params,
+    build_folder_endpoint_identifier,
+    build_folder_move_payload,
+    build_folder_rename_path,
     build_list_apps_params,
     build_logs_params,
     build_rename_app_params,
@@ -442,6 +445,15 @@ class Folder(_ScopedClientOps):
         """Returns the folder ID if available."""
         return self._id
 
+    def _sync_from_folder(self, folder: "Folder") -> None:
+        self._id = folder.id or self._id
+        self._name = folder.name
+        self._full_path = folder.full_path
+        self._parent_id = folder.parent_id
+        self._depth = folder.depth
+        self._child_count = folder.child_count
+        self._description = folder.description
+
     def get_info(self) -> Dict[str, Any]:
         """
         Get detailed information about this folder.
@@ -472,6 +484,24 @@ class Folder(_ScopedClientOps):
         self._child_count = info.child_count or self._child_count
         self._description = info.description or self._description
         return info
+
+    def move(self, new_path: str) -> "Folder":
+        """Move this folder to a new canonical path and refresh local metadata."""
+        identifier = self._id or self.full_path
+        if not identifier:
+            raise ValueError("Folder identifier is missing")
+        moved = self._client.move_folder(identifier, new_path)
+        self._sync_from_folder(moved)
+        return moved
+
+    def rename(self, new_name: str) -> "Folder":
+        """Rename this folder (leaf segment only) and refresh local metadata."""
+        identifier = self._id or self.full_path
+        if not identifier:
+            raise ValueError("Folder identifier is missing")
+        renamed = self._client.rename_folder(identifier, new_name)
+        self._sync_from_folder(renamed)
+        return renamed
 
     def get_summary(self) -> Summary:
         """Retrieve the latest summary for this folder."""
@@ -728,6 +758,50 @@ class Morphik(_ScopedOperationsMixin):
         """
         response = self._request("DELETE", f"folders/{folder_id_or_name}")
         return response
+
+    def move_folder(self, folder_id_or_name: str, new_path: str) -> Folder:
+        """
+        Move and/or rename a folder by setting its new canonical path.
+
+        Args:
+            folder_id_or_name: Folder ID, name, or full path
+            new_path: Target full path (e.g. "/projects/archive/specs")
+
+        Returns:
+            Folder: Updated folder metadata
+        """
+        folder_param = build_folder_endpoint_identifier(folder_id_or_name)
+        payload = build_folder_move_payload(new_path=new_path)
+        response = self._request("POST", f"folders/{folder_param}/move", data=payload)
+        info = FolderInfo(**response)
+        return Folder(
+            self,
+            info.name,
+            folder_id=info.id,
+            full_path=info.full_path,
+            parent_id=info.parent_id,
+            depth=info.depth,
+            child_count=info.child_count,
+            description=info.description,
+        )
+
+    def rename_folder(self, folder_id_or_name: str, new_name: str) -> Folder:
+        """
+        Rename a folder by changing only its leaf segment.
+
+        Args:
+            folder_id_or_name: Folder ID, name, or full path
+            new_name: New folder name (single segment, no '/')
+
+        Returns:
+            Folder: Updated folder metadata
+        """
+        folder_param = build_folder_endpoint_identifier(folder_id_or_name)
+        current_info = FolderInfo(**self._request("GET", f"folders/{folder_param}"))
+        current_path = current_info.full_path or current_info.name
+        new_path = build_folder_rename_path(current_path=current_path, new_name=new_name)
+        move_identifier = current_info.id or folder_param
+        return self.move_folder(move_identifier, new_path)
 
     def get_folder_summary(self, folder_id_or_path: str) -> Summary:
         """Get the persisted summary for a folder."""

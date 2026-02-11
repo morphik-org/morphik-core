@@ -327,15 +327,17 @@ class IngestionService:
         return cls._clean_system_metadata(cleaned_metadata)
 
     async def _mark_document_failed(self, doc: Document, auth: AuthContext, error: str) -> None:
-        failure_metadata = dict(doc.system_metadata or {})
-        failure_metadata["status"] = "failed"
-        failure_metadata["error"] = error
-        failure_metadata["updated_at"] = datetime.now(UTC)
-        doc.system_metadata = failure_metadata
+        failure_update = {
+            "status": "failed",
+            "error": error,
+            "updated_at": datetime.now(UTC),
+        }
+        doc.system_metadata = dict(doc.system_metadata or {})
+        doc.system_metadata.update(failure_update)
         try:
             await self.db.update_document(
                 doc.external_id,
-                {"system_metadata": self._clean_system_metadata(failure_metadata)},
+                {"system_metadata": failure_update},
                 auth=auth,
             )
         except Exception as db_update_err:
@@ -550,7 +552,6 @@ class IngestionService:
                 resolved_content_type,
             )
 
-            doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
             await self.db.update_document(
                 document_id=doc.external_id,
                 updates={
@@ -983,14 +984,9 @@ class IngestionService:
         metadata_bundle: Optional[MetadataBundle],
     ) -> Optional[Document]:
         """Update document metadata without reprocessing chunks."""
-        doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
-
         updates = {
             "metadata": doc.metadata,
             "metadata_types": doc.metadata_types,
-            "system_metadata": doc.system_metadata,
-            "filename": doc.filename,
-            "storage_info": doc.storage_info if hasattr(doc, "storage_info") else None,
         }
         updates = {k: v for k, v in updates.items() if v is not None}
 
@@ -1150,6 +1146,7 @@ class IngestionService:
         is_update: bool = False,
         auth: Optional[AuthContext] = None,
         metadata_bundle: Optional[MetadataBundle] = None,
+        minimal_update: bool = False,
     ) -> Tuple[List[str], Dict[str, Any]]:
         """Helper to store chunks and document."""
         max_retries = 3
@@ -1195,18 +1192,19 @@ class IngestionService:
 
             while attempt < max_retries and not success:
                 try:
-                    doc.system_metadata = self._clean_system_metadata(doc.system_metadata)
-
                     if is_update and auth:
-                        updates = {
-                            "chunk_ids": doc.chunk_ids,
-                            "metadata": doc.metadata,
-                            "metadata_types": doc.metadata_types,
-                            "system_metadata": doc.system_metadata,
-                            "filename": doc.filename,
-                            "content_type": doc.content_type,
-                            "storage_info": doc.storage_info,
-                        }
+                        if minimal_update:
+                            updates = {"chunk_ids": doc.chunk_ids}
+                        else:
+                            updates = {
+                                "chunk_ids": doc.chunk_ids,
+                                "metadata": doc.metadata,
+                                "metadata_types": doc.metadata_types,
+                                "system_metadata": doc.system_metadata,
+                                "filename": doc.filename,
+                                "content_type": doc.content_type,
+                                "storage_info": doc.storage_info,
+                            }
                         success = await self.db.update_document(
                             doc.external_id,
                             updates,

@@ -328,13 +328,15 @@ class V2DocumentService:
         }
 
     async def _mark_document_failed(self, doc: Document, auth: AuthContext, error: str) -> None:
-        failure_metadata = dict(doc.system_metadata or {})
-        failure_metadata["status"] = "failed"
-        failure_metadata["error"] = error
-        failure_metadata["updated_at"] = datetime.now(UTC)
-        doc.system_metadata = failure_metadata
+        failure_update = {
+            "status": "failed",
+            "error": error,
+            "updated_at": datetime.now(UTC),
+        }
+        doc.system_metadata = dict(doc.system_metadata or {})
+        doc.system_metadata.update(failure_update)
         try:
-            await self.db.update_document(doc.external_id, {"system_metadata": failure_metadata}, auth=auth)
+            await self.db.update_document(doc.external_id, {"system_metadata": failure_update}, auth=auth)
         except Exception as db_update_err:  # noqa: BLE001
             logger.error("Failed to mark doc %s as failed: %s", doc.external_id, db_update_err)
 
@@ -343,13 +345,6 @@ class V2DocumentService:
         """Check if filename indicates a rich document (has bbox/pages)."""
         ext = Path(filename).suffix.lower()
         return ext in {".pdf", ".pptx", ".docx"}
-
-    @staticmethod
-    def _strip_metadata_scope(metadata: Dict[str, Any]) -> Dict[str, Any]:
-        cleaned = dict(metadata)
-        for key in {"folder_name", "folder_id", "end_user_id", "app_id"}:
-            cleaned.pop(key, None)
-        return cleaned
 
     @staticmethod
     def _convert_office_to_pdf_bytes(file_bytes: bytes, suffix: str, doc_type: str) -> bytes:
@@ -553,7 +548,17 @@ class V2DocumentService:
         doc.system_metadata["updated_at"] = datetime.now(UTC)
 
         try:
-            await self.db.update_document(doc.external_id, {"system_metadata": doc.system_metadata}, auth=auth)
+            await self.db.update_document(
+                doc.external_id,
+                {
+                    "system_metadata": {
+                        "page_count": doc.system_metadata["page_count"],
+                        "status": "completed",
+                        "updated_at": doc.system_metadata["updated_at"],
+                    }
+                },
+                auth=auth,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to update v2 document status: %s", exc)
 
@@ -651,10 +656,9 @@ class V2DocumentService:
                 content_type=resolved_content_type,
             )
             doc.storage_info = self._build_storage_info(bucket_name, storage_key, safe_filename, resolved_content_type)
-            doc.system_metadata = self._strip_metadata_scope(doc.system_metadata)
             await self.db.update_document(
                 document_id=doc.external_id,
-                updates={"storage_info": doc.storage_info, "system_metadata": doc.system_metadata},
+                updates={"storage_info": doc.storage_info},
                 auth=auth,
             )
             await self._record_storage_usage(auth, len(file_bytes), doc.external_id)
