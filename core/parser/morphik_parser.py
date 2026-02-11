@@ -1,9 +1,11 @@
+import io
 import logging
 import os
 import tempfile
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 
+import openpyxl
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -271,6 +273,64 @@ class MorphikParser(BaseParser):
         lower_filename = filename.lower()
         return any(lower_filename.endswith(ext) for ext in plain_text_extensions)
 
+    # Extensions that openpyxl can handle directly (much faster than Docling)
+    _FAST_EXCEL_EXTENSIONS = {".xlsx", ".xlsm"}
+
+    def _is_fast_excel_file(self, filename: str) -> bool:
+        """Check if the file can be parsed via fast openpyxl path."""
+        ext = os.path.splitext(filename.lower())[1]
+        return ext in self._FAST_EXCEL_EXTENSIONS
+
+    @staticmethod
+    def _parse_excel_to_markdown(file: bytes) -> str:
+        """Parse XLSX/XLSM to markdown tables using openpyxl directly.
+
+        Much faster than Docling (sub-second vs minutes) and produces better
+        output for RAG because labels and values stay on the same row.
+        """
+        wb = openpyxl.load_workbook(io.BytesIO(file), data_only=True, read_only=True)
+        parts: list[str] = []
+
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows: list[tuple] = []
+            for row in ws.iter_rows(values_only=True):
+                if all(cell is None for cell in row):
+                    continue
+                rows.append(row)
+
+            if not rows:
+                continue
+
+            parts.append(f"## {sheet_name}\n")
+
+            # Find max columns actually used (trim trailing None columns)
+            max_cols = 0
+            for row in rows:
+                for i in range(len(row) - 1, -1, -1):
+                    if row[i] is not None:
+                        max_cols = max(max_cols, i + 1)
+                        break
+
+            if max_cols == 0:
+                continue
+
+            for row_idx, row in enumerate(rows):
+                cells = []
+                for col_idx in range(max_cols):
+                    val = row[col_idx] if col_idx < len(row) else None
+                    cell_str = str(val) if val is not None else ""
+                    cell_str = cell_str.replace("|", "\\|")
+                    cells.append(cell_str)
+                parts.append("| " + " | ".join(cells) + " |")
+                if row_idx == 0:
+                    parts.append("| " + " | ".join(["---"] * max_cols) + " |")
+
+            parts.append("")
+
+        wb.close()
+        return "\n".join(parts)
+
     async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], str]:
         """Parse video file to extract transcript and frame descriptions"""
         if not self._assemblyai_api_key:
@@ -398,6 +458,16 @@ class MorphikParser(BaseParser):
             except UnicodeDecodeError:
                 text = file.decode("latin-1")
             return {}, text
+
+        # Fast path for Excel files — openpyxl is orders of magnitude faster than Docling
+        if self._is_fast_excel_file(filename):
+            try:
+                text = self._parse_excel_to_markdown(file)
+                if text.strip():
+                    return {}, text
+                self.logger.warning(f"Fast Excel parser returned empty for {filename}, falling back to Docling")
+            except Exception as e:
+                self.logger.warning(f"Fast Excel parser failed for {filename}: {e}, falling back to Docling")
 
         # For complex formats, use API if configured, otherwise local Docling
         if self._parse_api_endpoints:
