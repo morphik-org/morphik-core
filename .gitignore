@@ -58,3 +58,4 @@ multi_vector_embeddings_*.json
 # Rust build artifacts
 morphik_rust/target/
 morphik_rust/Cargo.lock
+/morphik-fast/target/
