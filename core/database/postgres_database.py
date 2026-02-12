@@ -223,6 +223,12 @@ class PostgresDatabase:
             doc_dict["system_metadata"]["updated_at"] = datetime.now(UTC)
             if summary_metadata:
                 doc_dict["system_metadata"].update(summary_metadata)
+            if isinstance(doc_dict.get("system_metadata"), dict):
+                doc_dict["system_metadata"] = {
+                    key: value
+                    for key, value in doc_dict["system_metadata"].items()
+                    if key not in SYSTEM_METADATA_SCOPE_KEYS
+                }
 
             # Remove storage_files - we only use storage_info now
             doc_dict.pop("storage_files", None)
@@ -580,77 +586,12 @@ class PostgresDatabase:
                                       Used for optimistic locking on summary updates.
         """
         try:
-            # Get existing document to preserve system_metadata
-            existing_doc = await self.get_document(document_id, auth)
-            if not existing_doc:
-                return False
-
             summary_metadata = self._extract_summary_metadata(updates)
 
             # Update system metadata
             updates.setdefault("system_metadata", {})
             if summary_metadata:
                 updates["system_metadata"].update(summary_metadata)
-
-            # Merge with existing system_metadata instead of just preserving specific fields
-            if existing_doc.system_metadata:
-                # Start with existing system_metadata
-                merged_system_metadata = dict(existing_doc.system_metadata)
-                # Update with new values
-                merged_system_metadata.update(updates["system_metadata"])
-                # Replace with merged result
-                updates["system_metadata"] = merged_system_metadata
-                logger.debug("Merged system_metadata during document update, preserving existing fields")
-
-            # Remove scope fields that are now stored as dedicated columns
-            if isinstance(updates.get("system_metadata"), dict):
-                updates["system_metadata"] = {
-                    key: value
-                    for key, value in updates["system_metadata"].items()
-                    if key not in SYSTEM_METADATA_SCOPE_KEYS
-                }
-
-            # Always update the updated_at timestamp
-            updates["system_metadata"]["updated_at"] = datetime.now(UTC)
-
-            # Keep folder writes consistent: if folder_id is set, ensure folder_name/path are populated
-            if "folder_id" in updates:
-                folder_id_value = updates.get("folder_id")
-                if folder_id_value:
-                    needs_folder_name = updates.get("folder_name") in (None, "") if "folder_name" in updates else True
-                    needs_folder_path = updates.get("folder_path") in (None, "") if "folder_path" in updates else True
-                    if needs_folder_name or needs_folder_path:
-                        folder_for_update = await self.get_folder(folder_id_value, auth)
-                        if not folder_for_update:
-                            logger.error(
-                                "Folder %s not found or inaccessible while updating document %s",
-                                folder_id_value,
-                                document_id,
-                            )
-                            return False
-                        if needs_folder_name:
-                            updates["folder_name"] = folder_for_update.name
-                        if needs_folder_path:
-                            try:
-                                updates["folder_path"] = folder_for_update.full_path or normalize_folder_path(
-                                    folder_for_update.name
-                                )
-                            except ValueError:
-                                updates["folder_path"] = folder_for_update.name
-                else:
-                    updates.setdefault("folder_name", None)
-                    updates.setdefault("folder_path", None)
-
-            # Keep folder_path aligned with folder_name when provided and no path supplied
-            folder_name_for_alignment = updates["folder_name"] if "folder_name" in updates else existing_doc.folder_name
-            if "folder_name" in updates and "folder_path" not in updates:
-                if folder_name_for_alignment:
-                    try:
-                        updates["folder_path"] = normalize_folder_path(folder_name_for_alignment)
-                    except ValueError:
-                        updates["folder_path"] = folder_name_for_alignment
-                else:
-                    updates["folder_path"] = None
 
             # -------------------------------------------------------------------------
             # METADATA SYNC: doc_metadata["folder_name"] stores the FULL PATH for search
@@ -659,23 +600,14 @@ class PostgresDatabase:
             # Priority for folder_value_for_metadata (what goes into doc_metadata["folder_name"]):
             #   1. updates["folder_path"] - explicit path update takes precedence
             #   2. updates["folder_name"] - explicit name update (may be a path in some contexts)
-            #   3. existing_doc.folder_path or folder_name - fallback to current values
+            #   3. current persisted folder_path/folder_name on the locked row
             #
             # CLEARING SUPPORT: If user explicitly passes folder_path=None or folder_name=None,
             # we respect that and set folder_value_for_metadata to None (don't fall back).
             # -------------------------------------------------------------------------
-            if "folder_path" in updates:
-                folder_value_for_metadata = updates.get("folder_path")
-            elif "folder_name" in updates:
-                folder_value_for_metadata = updates.get("folder_name")
-            else:
-                folder_value_for_metadata = existing_doc.folder_path or existing_doc.folder_name
             explicit_folder_change = any(key in updates for key in ("folder_name", "folder_path", "folder_id"))
             explicit_path_in_updates = "folder_path" in updates
             explicit_name_in_updates = "folder_name" in updates
-
-            # Serialize datetime objects to ISO format strings
-            updates = _serialize_datetime(updates)
 
             bundle = metadata_bundle
             if bundle is None and "metadata" in updates:
@@ -696,6 +628,28 @@ class PostgresDatabase:
 
             async with self.async_session() as session:
                 async with session.begin():
+                    folder_for_update: Optional[FolderModel] = None
+                    folder_id_value = updates.get("folder_id") if "folder_id" in updates else None
+
+                    # Lock folder first (when provided) to keep lock ordering consistent
+                    # with add/remove folder flows and avoid deadlocks.
+                    if "folder_id" in updates and folder_id_value:
+                        folder_for_update = await self._fetch_folder_locked(session, folder_id_value)
+                        if not folder_for_update:
+                            logger.error(
+                                "Folder %s not found while updating document %s",
+                                folder_id_value,
+                                document_id,
+                            )
+                            return False
+                        if not self._check_folder_model_access(folder_for_update, auth):
+                            logger.error(
+                                "User does not have write access to folder %s while updating document %s",
+                                folder_id_value,
+                                document_id,
+                            )
+                            return False
+
                     doc_model = await self._fetch_document_locked(session, document_id)
 
                     if not doc_model:
@@ -704,6 +658,65 @@ class PostgresDatabase:
                     if not self._has_document_access(doc_model, auth):
                         logger.error("User does not have write access to document %s", document_id)
                         return False
+
+                    # Keep folder writes consistent: if folder_id is set, ensure
+                    # folder_name/path are populated from the same transactional snapshot.
+                    if "folder_id" in updates:
+                        if folder_id_value:
+                            needs_folder_name = (
+                                updates.get("folder_name") in (None, "") if "folder_name" in updates else True
+                            )
+                            needs_folder_path = (
+                                updates.get("folder_path") in (None, "") if "folder_path" in updates else True
+                            )
+                            if needs_folder_name or needs_folder_path:
+                                if not folder_for_update:
+                                    logger.error(
+                                        "Folder %s not found while updating document %s",
+                                        folder_id_value,
+                                        document_id,
+                                    )
+                                    return False
+                                if needs_folder_name:
+                                    updates["folder_name"] = folder_for_update.name
+                                if needs_folder_path:
+                                    try:
+                                        updates["folder_path"] = folder_for_update.full_path or normalize_folder_path(
+                                            folder_for_update.name
+                                        )
+                                    except ValueError:
+                                        updates["folder_path"] = folder_for_update.name
+                        else:
+                            updates.setdefault("folder_name", None)
+                            updates.setdefault("folder_path", None)
+
+                    # Merge with existing system_metadata from the locked row.
+                    merged_system_metadata = dict(doc_model.system_metadata or {})
+                    merged_system_metadata.update(updates.get("system_metadata") or {})
+                    merged_system_metadata = {
+                        key: value
+                        for key, value in merged_system_metadata.items()
+                        if key not in SYSTEM_METADATA_SCOPE_KEYS
+                    }
+                    # Preserve historical behavior where clearing progress removes
+                    # the key instead of storing JSON null.
+                    if merged_system_metadata.get("progress") is None:
+                        merged_system_metadata.pop("progress", None)
+                    merged_system_metadata["updated_at"] = datetime.now(UTC)
+                    updates["system_metadata"] = merged_system_metadata
+
+                    # Keep folder_path aligned with folder_name when provided and no path supplied.
+                    folder_name_for_alignment = (
+                        updates["folder_name"] if "folder_name" in updates else doc_model.folder_name
+                    )
+                    if "folder_name" in updates and "folder_path" not in updates:
+                        if folder_name_for_alignment:
+                            try:
+                                updates["folder_path"] = normalize_folder_path(folder_name_for_alignment)
+                            except ValueError:
+                                updates["folder_path"] = folder_name_for_alignment
+                        else:
+                            updates["folder_path"] = None
 
                     # Optimistic locking: if expected_summary_version is provided, verify it matches
                     if expected_summary_version is not None:
@@ -732,6 +745,12 @@ class PostgresDatabase:
                     # This field stores the FULL PATH for search/filter compatibility.
                     doc_metadata_update = updates.get("doc_metadata") if "doc_metadata" in updates else None
                     has_folder_change = explicit_folder_change
+                    if "folder_path" in updates:
+                        folder_value_for_metadata = updates.get("folder_path")
+                    elif "folder_name" in updates:
+                        folder_value_for_metadata = updates.get("folder_name")
+                    else:
+                        folder_value_for_metadata = doc_model.folder_path or doc_model.folder_name
 
                     if doc_metadata_update is not None:
                         folder_value = folder_value_for_metadata
@@ -760,6 +779,9 @@ class PostgresDatabase:
                             new_doc_metadata["folder_id"] = updates["folder_id"]
                         updates["doc_metadata"] = new_doc_metadata
 
+                    # Serialize datetime objects exactly once after merge/sync work.
+                    updates = _serialize_datetime(updates)
+
                     # Set all attributes
                     for key, value in updates.items():
                         setattr(doc_model, key, value)
@@ -777,81 +799,161 @@ class PostgresDatabase:
 
     async def delete_document(self, document_id: str, auth: AuthContext) -> bool:
         """Delete document if user has write access."""
+        import asyncio
+
+        class _RetryableFolderLock(Exception):
+            """Internal sentinel to retry when a folder row lock is contended."""
+
+            pass
+
+        max_retries = 3
+        retry_delay = 0.5
+
         try:
-            async with self.async_session() as session:
-                async with session.begin():
-                    doc_model = await self._fetch_document_locked(session, document_id)
+            for attempt in range(max_retries):
+                try:
+                    async with self.async_session() as session:
+                        async with session.begin():
+                            if auth.app_id:
+                                folder_scope_val = auth.app_id
+                                folder_lock_query = text(
+                                    """
+                                    SELECT id
+                                    FROM folders
+                                    WHERE app_id = :scope_val
+                                    AND document_ids ? :doc_id
+                                    FOR UPDATE NOWAIT
+                                    """
+                                )
+                                folder_cleanup_query = text(
+                                    """
+                                    UPDATE folders
+                                    SET document_ids = COALESCE(document_ids, '[]'::jsonb) - :doc_id
+                                    WHERE app_id = :scope_val
+                                    AND document_ids ? :doc_id
+                                    """
+                                )
+                            elif auth.user_id:
+                                folder_scope_val = auth.user_id
+                                folder_lock_query = text(
+                                    """
+                                    SELECT id
+                                    FROM folders
+                                    WHERE owner_id = :scope_val
+                                    AND document_ids ? :doc_id
+                                    FOR UPDATE NOWAIT
+                                    """
+                                )
+                                folder_cleanup_query = text(
+                                    """
+                                    UPDATE folders
+                                    SET document_ids = COALESCE(document_ids, '[]'::jsonb) - :doc_id
+                                    WHERE owner_id = :scope_val
+                                    AND document_ids ? :doc_id
+                                    """
+                                )
+                            else:
+                                logger.error("No auth scope available while deleting document %s", document_id)
+                                return False
 
-                    if not doc_model:
-                        return False
+                            # Lock folder rows that reference this document before locking the
+                            # document row. This keeps lock ordering consistent with folder
+                            # mutation flows (folder -> document) and avoids deadlocks.
+                            try:
+                                await session.execute(
+                                    folder_lock_query,
+                                    {"scope_val": folder_scope_val, "doc_id": document_id},
+                                )
+                            except Exception as lock_exc:
+                                orig = getattr(lock_exc, "orig", None)
+                                if getattr(orig, "sqlstate", None) == "55P03":
+                                    raise _RetryableFolderLock from lock_exc
+                                raise
 
-                    if not self._has_document_access(doc_model, auth):
-                        logger.error("User does not have write access to document %s", document_id)
-                        return False
+                            doc_model = await self._fetch_document_locked(session, document_id)
 
-                    usage_row = await session.execute(
-                        text(
-                            """
-                            SELECT app_id, raw_bytes, chunk_bytes, multivector_bytes
-                            FROM document_storage_usage
-                            WHERE document_id = :doc_id
-                            """
-                        ),
-                        {"doc_id": document_id},
-                    )
-                    usage = usage_row.first()
-                    if usage:
-                        normalized_app_id = normalize_app_id(usage.app_id)
-                        raw_bytes = int(usage.raw_bytes or 0)
-                        chunk_bytes = int(usage.chunk_bytes or 0)
-                        multivector_bytes = int(usage.multivector_bytes or 0)
-                        now = datetime.now(UTC)
+                            if not doc_model:
+                                return False
 
-                        await session.execute(
-                            text("DELETE FROM document_storage_usage WHERE document_id = :doc_id"),
-                            {"doc_id": document_id},
+                            if not self._has_document_access(doc_model, auth):
+                                logger.error("User does not have write access to document %s", document_id)
+                                return False
+
+                            usage_row = await session.execute(
+                                text(
+                                    """
+                                    SELECT app_id, raw_bytes, chunk_bytes, multivector_bytes
+                                    FROM document_storage_usage
+                                    WHERE document_id = :doc_id
+                                    """
+                                ),
+                                {"doc_id": document_id},
+                            )
+                            usage = usage_row.first()
+                            if usage:
+                                normalized_app_id = normalize_app_id(usage.app_id)
+                                raw_bytes = int(usage.raw_bytes or 0)
+                                chunk_bytes = int(usage.chunk_bytes or 0)
+                                multivector_bytes = int(usage.multivector_bytes or 0)
+                                now = datetime.now(UTC)
+
+                                await session.execute(
+                                    text("DELETE FROM document_storage_usage WHERE document_id = :doc_id"),
+                                    {"doc_id": document_id},
+                                )
+
+                                await session.execute(
+                                    text(
+                                        """
+                                        INSERT INTO app_storage_usage
+                                            (app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
+                                        VALUES
+                                            (:app_id, 0, 0, 0, :now, :now)
+                                        ON CONFLICT (app_id)
+                                        DO UPDATE SET
+                                            raw_bytes = GREATEST(app_storage_usage.raw_bytes - :raw_bytes, 0),
+                                            chunk_bytes = GREATEST(app_storage_usage.chunk_bytes - :chunk_bytes, 0),
+                                            multivector_bytes = GREATEST(app_storage_usage.multivector_bytes - :multivector_bytes, 0),
+                                            updated_at = :now
+                                        """
+                                    ),
+                                    {
+                                        "app_id": normalized_app_id,
+                                        "raw_bytes": raw_bytes,
+                                        "chunk_bytes": chunk_bytes,
+                                        "multivector_bytes": multivector_bytes,
+                                        "now": now,
+                                    },
+                                )
+
+                            await session.delete(doc_model)
+
+                            # Maintain referential integrity inside the same transaction
+                            await session.execute(
+                                folder_cleanup_query,
+                                {"scope_val": folder_scope_val, "doc_id": document_id},
+                            )
+
+                            logger.info("Deleted document %s and removed folder references", document_id)
+                            return True
+                except _RetryableFolderLock:
+                    if attempt < max_retries - 1:
+                        logger.info(
+                            "Folder lock contention while deleting document %s on attempt %d/%d, retrying in %.2fs...",
+                            document_id,
+                            attempt + 1,
+                            max_retries,
+                            retry_delay,
                         )
-
-                        await session.execute(
-                            text(
-                                """
-                                INSERT INTO app_storage_usage
-                                    (app_id, raw_bytes, chunk_bytes, multivector_bytes, created_at, updated_at)
-                                VALUES
-                                    (:app_id, 0, 0, 0, :now, :now)
-                                ON CONFLICT (app_id)
-                                DO UPDATE SET
-                                    raw_bytes = GREATEST(app_storage_usage.raw_bytes - :raw_bytes, 0),
-                                    chunk_bytes = GREATEST(app_storage_usage.chunk_bytes - :chunk_bytes, 0),
-                                    multivector_bytes = GREATEST(app_storage_usage.multivector_bytes - :multivector_bytes, 0),
-                                    updated_at = :now
-                                """
-                            ),
-                            {
-                                "app_id": normalized_app_id,
-                                "raw_bytes": raw_bytes,
-                                "chunk_bytes": chunk_bytes,
-                                "multivector_bytes": multivector_bytes,
-                                "now": now,
-                            },
-                        )
-
-                    await session.delete(doc_model)
-
-                    # Maintain referential integrity inside the same transaction
-                    await session.execute(
-                        text(
-                            """
-                            UPDATE folders
-                            SET document_ids = COALESCE(document_ids, '[]'::jsonb) - :doc_id
-                            WHERE document_ids ? :doc_id
-                            """
-                        ),
-                        {"doc_id": document_id},
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 1.5
+                        continue
+                    logger.error(
+                        "Folder lock contention persisted while deleting document %s after %d attempts",
+                        document_id,
+                        max_retries,
                     )
-
-                    logger.info("Deleted document %s and removed folder references", document_id)
-                    return True
+                    return False
 
         except Exception as e:
             logger.error(f"Error deleting document: {str(e)}")
@@ -1797,6 +1899,11 @@ class PostgresDatabase:
 
             pass
 
+        class _RetryableFolderLock(Exception):
+            """Internal sentinel to retry when a folder row lock is contended."""
+
+            pass
+
         max_retries = 3
         retry_delay = 0.5  # Start with 500ms delay for transient visibility issues
 
@@ -1842,6 +1949,25 @@ class PostgresDatabase:
 
                         # Remove the document from its previous folder (if any) using an atomic JSONB update
                         if doc_model.folder_id and doc_model.folder_id != folder_id:
+                            previous_folder_id = doc_model.folder_id
+                            try:
+                                await session.execute(
+                                    text(
+                                        """
+                                        SELECT id
+                                        FROM folders
+                                        WHERE id = :previous_folder_id
+                                        FOR UPDATE NOWAIT
+                                        """
+                                    ),
+                                    {"previous_folder_id": previous_folder_id},
+                                )
+                            except Exception as lock_exc:
+                                orig = getattr(lock_exc, "orig", None)
+                                if getattr(orig, "sqlstate", None) == "55P03":
+                                    raise _RetryableFolderLock from lock_exc
+                                raise
+
                             await session.execute(
                                 text(
                                     """
@@ -1850,7 +1976,7 @@ class PostgresDatabase:
                                     WHERE id = :previous_folder_id
                                     """
                                 ),
-                                {"doc_id": document_id, "previous_folder_id": doc_model.folder_id},
+                                {"doc_id": document_id, "previous_folder_id": previous_folder_id},
                             )
 
                         # Append to the target folder with the lock held to avoid lost updates
@@ -1886,6 +2012,20 @@ class PostgresDatabase:
                     continue
                 logger.error(
                     f"Document {document_id} not found or user does not have access after {max_retries} attempts"
+                )
+                return False
+            except _RetryableFolderLock:
+                if attempt < max_retries - 1:
+                    logger.info(
+                        f"Folder lock contention while moving document {document_id} on attempt "
+                        f"{attempt + 1}/{max_retries}, retrying in {retry_delay}s..."
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 1.5
+                    continue
+                logger.error(
+                    f"Folder lock contention persisted while moving document {document_id} "
+                    f"after {max_retries} attempts"
                 )
                 return False
             except Exception as e:

@@ -36,8 +36,9 @@ class TestMorphik:
     @pytest.fixture
     def db(self):
         """Create a Morphik client for testing"""
-        # Connects to localhost:8000 by default, increase timeout for query tests
-        client = Morphik(timeout=120)
+        # Use dedicated test URI when provided; otherwise default localhost behavior
+        uri = os.environ.get("MORPHIK_TEST_URI")
+        client = Morphik(uri=uri, timeout=120) if uri else Morphik(timeout=120)
         yield client
         client.close()
 
@@ -145,6 +146,72 @@ class TestMorphik:
         db.delete_document(doc.external_id)
 
         # TODO: Add folder deletion when API supports it
+
+    def test_direct_http_uri_ping(self):
+        """Test direct HTTP base URL initialization and connectivity."""
+        uri = os.environ.get("MORPHIK_TEST_URI", "http://localhost:8000")
+        client = Morphik(uri, timeout=30)
+        try:
+            response = client.ping()
+            assert response.get("status") == "ok"
+        finally:
+            client.close()
+
+    def test_move_and_rename_folder(self, db):
+        """Test moving and renaming folders via client-level APIs."""
+        suffix = uuid.uuid4().hex[:8]
+        original_path = f"/it_sync_{suffix}/leaf"
+        moved_path = f"/it_sync_moved_{suffix}/leaf"
+        renamed_leaf = f"leaf_renamed_{suffix}"
+        expected_renamed_path = f"/it_sync_moved_{suffix}/{renamed_leaf}"
+
+        folder = db.create_folder(name=f"leaf_{suffix}", full_path=original_path, description="integration move test")
+
+        moved = None
+        renamed = None
+        try:
+            moved = db.move_folder(folder.id or original_path, moved_path)
+            assert moved.id == folder.id
+            assert moved.full_path == moved_path
+            assert moved.name == "leaf"
+
+            fetched_moved = db.get_folder(moved.id or moved_path)
+            assert fetched_moved.full_path == moved_path
+
+            renamed = db.rename_folder(moved.id or moved_path, renamed_leaf)
+            assert renamed.id == folder.id
+            assert renamed.name == renamed_leaf
+            assert renamed.full_path == expected_renamed_path
+
+            fetched_renamed = db.get_folder(renamed.id or expected_renamed_path)
+            assert fetched_renamed.full_path == expected_renamed_path
+        finally:
+            target = renamed or moved or folder
+            if target and target.id:
+                db.delete_folder(target.id)
+
+    def test_folder_object_move_and_rename(self, db):
+        """Test Folder convenience move/rename methods keep local metadata in sync."""
+        suffix = uuid.uuid4().hex[:8]
+        original_path = f"/it_sync_obj_{suffix}/leaf"
+        moved_path = f"/it_sync_obj_moved_{suffix}/leaf"
+        renamed_leaf = f"leaf_obj_renamed_{suffix}"
+        expected_renamed_path = f"/it_sync_obj_moved_{suffix}/{renamed_leaf}"
+
+        folder = db.create_folder(name=f"leaf_obj_{suffix}", full_path=original_path)
+        try:
+            moved = folder.move(moved_path)
+            assert moved.full_path == moved_path
+            assert folder.full_path == moved_path
+
+            renamed = folder.rename(renamed_leaf)
+            assert renamed.full_path == expected_renamed_path
+            assert renamed.name == renamed_leaf
+            assert folder.full_path == expected_renamed_path
+            assert folder.name == renamed_leaf
+        finally:
+            if folder.id:
+                db.delete_folder(folder.id)
 
     def test_user_scope(self, db):
         """Test user scoped operations"""
