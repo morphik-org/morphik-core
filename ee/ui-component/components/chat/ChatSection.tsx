@@ -314,7 +314,7 @@ const ChatSection: React.FC<ChatSectionProps> = ({
   useEffect(() => {
     // Define a function to handle data fetching
     const fetchData = async () => {
-      if (authToken || apiBaseUrl.includes("localhost")) {
+      if (apiBaseUrl) {
         console.log("ChatSection: Fetching data with auth token:", !!authToken);
         await fetchFolders();
         await fetchDocuments();
