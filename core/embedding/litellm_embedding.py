@@ -91,7 +91,11 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
 
             return embeddings
         except Exception as e:
-            logger.error(f"Error generating embeddings with LiteLLM: {e}")
+            logger.error(
+                f"Error generating embeddings with LiteLLM: {e}. "
+                f"Context: model_key={self.model_key}, model_name={self.model_config.get('model_name')}, "
+                f"api_base={self.model_config.get('api_base', 'default')}, num_texts={len(texts)}"
+            )
             raise
 
     async def embed_query(self, text: str) -> List[float]:

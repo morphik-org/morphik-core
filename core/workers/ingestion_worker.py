@@ -38,6 +38,7 @@ from core.vector_store.dual_multivector_store import DualMultiVectorStore
 from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
+from core.workers.ingestion_diagnostics import format_no_content_chunks_error, should_warn_empty_parsing
 
 logger = logging.getLogger(__name__)
 for noisy_logger in ("httpx", "httpcore", "aiohttp", "turbopuffer"):
@@ -619,6 +620,13 @@ async def process_ingestion_job(
             logger.debug(
                 f"Parsed file into {'XML chunks' if xml_processing else f'text of length {len(text)}'} (filename used: {parse_filename})"
             )
+
+            # Warn if parsing yielded no text, but it was expected to
+            if should_warn_empty_parsing(text, skip_text_parsing, xml_processing):
+                logger.warning(
+                    f"Parsing yielded empty text for document {document_id} "
+                    f"(filename={original_filename}, mime_type={mime_type})"
+                )
             parse_time = time.time() - parse_start
             phase_times["parse_file"] = parse_time
 
@@ -795,7 +803,16 @@ async def process_ingestion_job(
 
             # If we still have no chunks at all (neither text nor image) abort early
             if not parsed_chunks and not chunks_multivector:
-                raise ValueError("No content chunks (text or image) could be extracted from the document")
+                raise ValueError(
+                    format_no_content_chunks_error(
+                        document_id=document_id,
+                        mime_type=mime_type,
+                        using_colpali=using_colpali,
+                        skip_text_parsing=skip_text_parsing,
+                        xml_processing=xml_processing,
+                        text=text,
+                    )
+                )
 
             # Determine the final page count for recording usage
             final_page_count = num_pages_estimated  # Default to estimate
