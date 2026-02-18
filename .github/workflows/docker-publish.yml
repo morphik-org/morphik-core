@@ -144,6 +144,7 @@ jobs:
           IMAGE_BASE="ghcr.io/${{ github.repository_owner }}/morphik-core"
           AMD64_IMAGE="${IMAGE_BASE}:${{ github.sha }}-amd64"
           ARM64_IMAGE="${IMAGE_BASE}:${{ github.sha }}-arm64"
+          DATE_TAG=$(date -u +%Y-%m-%d)
 
           # Use buildx imagetools to create multi-arch manifests (handles manifest lists properly)
           # Create manifest for 'latest' tag
@@ -161,8 +162,14 @@ jobs:
             ${AMD64_IMAGE} \
             ${ARM64_IMAGE}
 
+          # Create manifest for date tag (enables easy rollback by date)
+          docker buildx imagetools create -t ${IMAGE_BASE}:${DATE_TAG} \
+            ${AMD64_IMAGE} \
+            ${ARM64_IMAGE}
+
           echo "✅ Multi-arch manifests created and pushed successfully"
           echo "Tags created:"
           echo "  - ${IMAGE_BASE}:latest"
           echo "  - ${IMAGE_BASE}:main"
           echo "  - ${IMAGE_BASE}:main-${{ github.sha }}"
+          echo "  - ${IMAGE_BASE}:${DATE_TAG}"
