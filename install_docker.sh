@@ -15,6 +15,24 @@ DIRECT_INSTALL_URL="https://www.morphik.ai/docs/getting-started#self-host-direct
 
 EMBEDDING_PROVIDER=""
 EMBEDDING_PROVIDER_LABEL=""
+MORPHIK_VERSION="latest"
+
+# --- Parse Arguments ---
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version)
+            MORPHIK_VERSION="$2"
+            shift 2
+            ;;
+        --version=*)
+            MORPHIK_VERSION="${1#*=}"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 # --- Helper Functions ---
 print_info() {
@@ -85,7 +103,7 @@ ensure_compose_profile() {
 
 copy_ui_from_image() {
     local tmp_container
-    tmp_container=$(docker create ghcr.io/morphik-org/morphik-core:latest 2>/dev/null) || return 1
+    tmp_container=$(docker create ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION} 2>/dev/null) || return 1
 
     mkdir -p ee
     rm -rf ee/ui-component
@@ -161,6 +179,9 @@ JWT_SECRET_KEY=your-super-secret-key-that-is-long-and-random-$(openssl rand -hex
 
 # Local URI password for secure URI generation (required for creating connection URIs)
 LOCAL_URI_PASSWORD=
+
+# Morphik image version (use a date tag like 2025-02-01 to pin, or "latest" for newest)
+MORPHIK_VERSION=${MORPHIK_VERSION}
 EOF
 
 print_info "Morphik supports 100s of models including OpenAI, Anthropic (Claude), Google Gemini, local models, and even custom models!"
@@ -204,8 +225,8 @@ print_info "Setting up configuration file..."
 
 # Pull the Docker image first if needed
 print_info "Pulling Docker image if not already available..."
-if ! docker pull ghcr.io/morphik-org/morphik-core:latest; then
-    print_error "Failed to pull Docker image 'ghcr.io/morphik-org/morphik-core:latest'"
+if ! docker pull ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION}; then
+    print_error "Failed to pull Docker image 'ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION}'"
     print_info "Possible reasons:"
     print_info "  - The image hasn't been published to GitHub Container Registry yet"
     print_info "  - Network/firewall is blocking access to ghcr.io"
@@ -227,7 +248,7 @@ else
     print_info "Extracting default 'morphik.toml' for you to customize..."
 
     # Method 1: Try using docker run with output capture (more reliable on Windows)
-    CONFIG_CONTENT=$(docker run --rm ghcr.io/morphik-org/morphik-core:latest cat /app/morphik.toml.default 2>/dev/null)
+    CONFIG_CONTENT=$(docker run --rm ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION} cat /app/morphik.toml.default 2>/dev/null)
     if [ -n "$CONFIG_CONTENT" ]; then
         echo "$CONFIG_CONTENT" > morphik.toml
         if [ -f morphik.toml ] && [ -s morphik.toml ]; then
@@ -243,7 +264,7 @@ else
     # Method 2: If Method 1 failed, try docker cp approach
     if [ "$CONFIG_EXTRACTED" = "false" ] 2>/dev/null || [ ! -f morphik.toml ]; then
         print_info "Trying alternative extraction method..."
-        TEMP_CONTAINER=$(docker create ghcr.io/morphik-org/morphik-core:latest)
+        TEMP_CONTAINER=$(docker create ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION})
         if docker cp "$TEMP_CONTAINER:/app/morphik.toml.default" morphik.toml 2>/dev/null; then
             docker rm "$TEMP_CONTAINER" >/dev/null 2>&1
             print_success "Extracted configuration using docker cp."
@@ -445,6 +466,8 @@ print_info "📋 Management commands:"
 print_info "   View logs:    docker compose -f $COMPOSE_FILE $UI_PROFILE logs -f"
 print_info "   Stop services: ./stop-morphik.sh   # runs docker compose down --volumes --remove-orphans"
 print_info "   Restart:      ./start-morphik.sh"
+print_info "   Pin version:  ./start-morphik.sh --version 2025-02-01"
+print_info "   List versions: docker image ls ghcr.io/morphik-org/morphik-core"
 
 # Create convenience startup script
 cat > start-morphik.sh << 'EOF'
@@ -453,6 +476,7 @@ set -e
 
 # Purpose: Production startup script for Morphik
 # Automatically updates port mapping from morphik.toml and includes UI if installed
+# Usage: ./start-morphik.sh [--version <tag>]
 
 # Color functions
 print_info() {
@@ -462,6 +486,31 @@ print_info() {
 print_warning() {
     echo -e "\033[33m[WARNING]\033[0m $1"
 }
+
+# Parse --version flag (overrides .env)
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version)
+            export MORPHIK_VERSION="$2"
+            shift 2
+            ;;
+        --version=*)
+            export MORPHIK_VERSION="${1#*=}"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# Load MORPHIK_VERSION from .env if not set via flag
+if [ -z "$MORPHIK_VERSION" ] && [ -f ".env" ]; then
+    MORPHIK_VERSION=$(grep "^MORPHIK_VERSION=" .env 2>/dev/null | tail -n1 | cut -d= -f2-)
+fi
+export MORPHIK_VERSION="${MORPHIK_VERSION:-latest}"
+
+print_info "Using Morphik version: ${MORPHIK_VERSION}"
 
 API_PORT=$(awk '/^\[api\]/{flag=1; next} /^\[/{flag=0} flag && /^port[[:space:]]*=/ {gsub(/^port[[:space:]]*=[[:space:]]*/, ""); print; exit}' morphik.toml 2>/dev/null || echo "8000")
 CURRENT_PORT=$(grep -oE '"[0-9]+:[0-9]+"' docker-compose.run.yml | head -1 | cut -d: -f1 | tr -d '"')
@@ -486,7 +535,7 @@ if [ -f ".env" ] && grep -q "UI_INSTALLED=true" .env; then
 fi
 
 docker compose -f docker-compose.run.yml $UI_PROFILE up -d
-echo "🚀 Morphik is running on http://localhost:${API_PORT}"
+echo "🚀 Morphik ${MORPHIK_VERSION} is running on http://localhost:${API_PORT}"
 echo "   Health: http://localhost:${API_PORT}/health"
 echo "   Docs:   http://localhost:${API_PORT}/docs"
 if [ -n "$UI_PROFILE" ]; then
