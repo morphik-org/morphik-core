@@ -193,8 +193,11 @@ class ContextualChunker(BaseChunker):
 class MorphikParser(BaseParser):
     """Unified parser that handles different file types and chunking strategies"""
 
-    # Docling converter is expensive to initialize, so we cache it at class level
-    _docling_converter: Optional[DocumentConverter] = None
+    # Docling converters are expensive to initialize, so we cache them at class level.
+    # _fast: no OCR, no table structure (text-layer extraction only — very quick)
+    # _full: OCR + table structure (slow, used as fallback for scanned/image PDFs)
+    _docling_converter_fast: Optional[DocumentConverter] = None
+    _docling_converter_full: Optional[DocumentConverter] = None
 
     def __init__(
         self,
@@ -234,21 +237,34 @@ class MorphikParser(BaseParser):
                 self.logger.info(f"Parser API mode enabled with {len(self._parse_api_endpoints)} endpoint(s)")
 
     @classmethod
-    def _get_docling_converter(cls) -> DocumentConverter:
-        """Get or create the cached Docling converter."""
-        if cls._docling_converter is None:
-            # Configure pipeline options for better performance
+    def _get_docling_converter_fast(cls) -> DocumentConverter:
+        """Get or create the fast Docling converter (no OCR, no table structure)."""
+        if cls._docling_converter_fast is None:
             pipeline_options = PdfPipelineOptions()
-            # Use fast OCR settings by default
-            pipeline_options.do_ocr = True
-            pipeline_options.do_table_structure = True
+            pipeline_options.do_ocr = False
+            pipeline_options.do_table_structure = False
 
-            cls._docling_converter = DocumentConverter(
+            cls._docling_converter_fast = DocumentConverter(
                 format_options={
                     InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
                 }
             )
-        return cls._docling_converter
+        return cls._docling_converter_fast
+
+    @classmethod
+    def _get_docling_converter_full(cls) -> DocumentConverter:
+        """Get or create the full Docling converter (OCR + table structure)."""
+        if cls._docling_converter_full is None:
+            pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = True
+            pipeline_options.do_table_structure = True
+
+            cls._docling_converter_full = DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+                }
+            )
+        return cls._docling_converter_full
 
     def _is_video_file(self, file: bytes, filename: str) -> bool:
         """Check if the file is a video file."""
@@ -425,19 +441,39 @@ class MorphikParser(BaseParser):
         raise RuntimeError(f"All parse API endpoints failed. Last error: {last_error}")
 
     async def _parse_document_local(self, file: bytes, filename: str) -> str:
-        """Parse document using local Docling."""
+        """Parse document using local Docling with a two-tier strategy.
+
+        First tries the fast converter (no OCR, no table structure) which only
+        extracts the existing text layer.  If that yields no text (e.g. scanned
+        / image-based PDFs), falls back to the full converter with OCR enabled.
+        """
         suffix = os.path.splitext(filename)[1] or ".pdf"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_file.write(file)
             temp_path = temp_file.name
 
         try:
-            converter = self._get_docling_converter()
-            result = converter.convert(temp_path)
+            # --- Fast pass: text-layer extraction only ---
+            try:
+                converter_fast = self._get_docling_converter_fast()
+                result = converter_fast.convert(temp_path)
+                text = result.document.export_to_markdown()
+
+                if text.strip():
+                    self.logger.info(f"Docling fast pass extracted text for {filename}")
+                    return text
+
+                self.logger.info(f"Docling fast pass returned no text for {filename}, falling back to OCR")
+            except Exception as fast_err:
+                self.logger.warning(f"Docling fast pass failed for {filename}: {fast_err}, falling back to OCR")
+
+            # --- Full pass: OCR + table structure ---
+            converter_full = self._get_docling_converter_full()
+            result = converter_full.convert(temp_path)
             text = result.document.export_to_markdown()
 
             if not text.strip():
-                self.logger.warning(f"Docling returned no text for {filename}")
+                self.logger.warning(f"Docling full OCR returned no text for {filename}")
 
             return text
         except Exception as e:
