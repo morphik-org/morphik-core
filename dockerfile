@@ -136,10 +136,21 @@ fi\n\
 # Function to check PostgreSQL\n\
 check_postgres() {\n\
     if [ -n "$POSTGRES_URI" ]; then\n\
-        echo "Waiting for PostgreSQL..."\n\
+        # Parse host, port, user, and dbname from POSTGRES_URI\n\
+        # Format: postgresql://user:password@host:port/dbname\n\
+        PG_HOST=$(echo "$POSTGRES_URI" | sed -n "s|.*@\\([^:/]*\\).*|\\1|p")\n\
+        PG_PORT=$(echo "$POSTGRES_URI" | sed -n "s|.*:\\([0-9]*\\)/.*|\\1|p")\n\
+        PG_USER=$(echo "$POSTGRES_URI" | sed -n "s|.*://\\([^:]*\\):.*|\\1|p")\n\
+        PG_DB=$(echo "$POSTGRES_URI" | sed -n "s|.*/\\([^?]*\\).*|\\1|p")\n\
+        PG_HOST=${PG_HOST:-postgres}\n\
+        PG_PORT=${PG_PORT:-5432}\n\
+        PG_USER=${PG_USER:-morphik}\n\
+        PG_DB=${PG_DB:-morphik}\n\
+        \n\
+        echo "Waiting for PostgreSQL at $PG_HOST:$PG_PORT..."\n\
         max_retries=30\n\
         retries=0\n\
-        until PGPASSWORD=$PGPASSWORD pg_isready -h postgres -U morphik -d morphik; do\n\
+        until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB"; do\n\
             retries=$((retries + 1))\n\
             if [ $retries -eq $max_retries ]; then\n\
                 echo "Error: PostgreSQL did not become ready in time"\n\
@@ -150,8 +161,8 @@ check_postgres() {\n\
         done\n\
         echo "PostgreSQL is ready!"\n\
         \n\
-        # Verify database connection\n\
-        if ! PGPASSWORD=$PGPASSWORD psql -h postgres -U morphik -d morphik -c "SELECT 1" > /dev/null 2>&1; then\n\
+        # Verify database connection using the full URI\n\
+        if ! psql "$POSTGRES_URI" -c "SELECT 1" > /dev/null 2>&1; then\n\
             echo "Error: Could not connect to PostgreSQL database"\n\
             exit 1\n\
         fi\n\
