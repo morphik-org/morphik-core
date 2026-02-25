@@ -75,6 +75,27 @@ jobs:
           IMAGE_TAG="morphik-core:test"
           echo "Testing image: $IMAGE_TAG"
 
+          # Create a Docker network so the app container can reach postgres
+          docker network create morphik-test-net
+
+          # Start a PostgreSQL container with pgvector support
+          docker run -d --name postgres --network morphik-test-net \
+            -e POSTGRES_USER=morphik \
+            -e POSTGRES_PASSWORD=morphik \
+            -e POSTGRES_DB=morphik \
+            pgvector/pgvector:pg16
+
+          # Wait for PostgreSQL to be ready
+          echo "Waiting for PostgreSQL to be ready..."
+          for i in $(seq 1 30); do
+            if docker exec postgres pg_isready -U morphik -d morphik > /dev/null 2>&1; then
+              echo "✅ PostgreSQL is ready"
+              break
+            fi
+            echo "⏳ Waiting for PostgreSQL... ($i/30)"
+            sleep 2
+          done
+
           # Create a config file for testing (mirrors morphik.docker.toml)
           cat > morphik.toml.test << 'EOF'
           [api]
@@ -203,9 +224,9 @@ jobs:
           max_local_bytes = 1073741824
           EOF
 
-          # Start container in detached mode with config mounted
-          CONTAINER_ID=$(docker run -d -p 8000:8000 \
-            -e POSTGRES_URI="postgresql://morphik:morphik@localhost:5432/morphik" \
+          # Start container in detached mode on the same network as postgres
+          CONTAINER_ID=$(docker run -d -p 8000:8000 --network morphik-test-net \
+            -e POSTGRES_URI="postgresql://morphik:morphik@postgres:5432/morphik" \
             -v "$(pwd)/morphik.toml.test:/app/morphik.toml" \
             "$IMAGE_TAG")
 
@@ -233,8 +254,11 @@ jobs:
             echo "❌ Server failed to respond within ${timeout} seconds"
             echo "Container logs:"
             docker logs "$CONTAINER_ID"
-            docker stop "$CONTAINER_ID"
-            docker rm "$CONTAINER_ID"
+            docker stop "$CONTAINER_ID" || true
+            docker rm "$CONTAINER_ID" || true
+            docker stop postgres || true
+            docker rm postgres || true
+            docker network rm morphik-test-net || true
             exit 1
           fi
 
@@ -245,13 +269,19 @@ jobs:
           else
             echo "❌ Health check failed - /ping returned HTTP $HTTP_CODE"
             docker logs "$CONTAINER_ID"
-            docker stop "$CONTAINER_ID"
-            docker rm "$CONTAINER_ID"
+            docker stop "$CONTAINER_ID" || true
+            docker rm "$CONTAINER_ID" || true
+            docker stop postgres || true
+            docker rm postgres || true
+            docker network rm morphik-test-net || true
             exit 1
           fi
 
           # Clean up
-          echo "🧹 Cleaning up container"
-          docker stop "$CONTAINER_ID"
-          docker rm "$CONTAINER_ID"
+          echo "🧹 Cleaning up containers"
+          docker stop "$CONTAINER_ID" || true
+          docker rm "$CONTAINER_ID" || true
+          docker stop postgres || true
+          docker rm postgres || true
+          docker network rm morphik-test-net || true
           echo "✅ Test completed successfully"
