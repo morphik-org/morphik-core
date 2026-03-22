@@ -55,6 +55,13 @@ openai_embedding = { model_name = "text-embedding-3-small" }
 openai_embedding_large = { model_name = "text-embedding-3-large" }
 azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "embedding-ada-002" }
 
+# MiniMax models (set MINIMAX_API_KEY in environment)
+# MiniMax-M2.7: 1M context, latest model; MiniMax-M2.7-highspeed: optimized for speed
+minimax_m27 = { model_name = "openai/MiniMax-M2.7", api_base = "https://api.minimax.io/v1" }
+minimax_m27_highspeed = { model_name = "openai/MiniMax-M2.7-highspeed", api_base = "https://api.minimax.io/v1" }
+# MiniMax embo-01 embedding (1536 dimensions) - uses native MiniMax embedding API
+minimax_embedding = { model_name = "embo-01", provider = "minimax" }
+
 
 #### Component configurations ####
 

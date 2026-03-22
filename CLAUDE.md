@@ -15,7 +15,7 @@ Morphik is an AI-native toolset for visually rich documents and multimodal data.
 - **Services**: Business logic in `core/services/`
 - **Routes**: API endpoints in `core/routes/`
 - **Vector Store**: Multiple providers (pgvector, TurboPuffer) in `core/vector_store/`
-- **Embedding**: Support for multiple providers (OpenAI, Ollama, Azure) in `core/embedding/`
+- **Embedding**: Support for multiple providers (OpenAI, Ollama, Azure, MiniMax) in `core/embedding/`
 - **Parser**: Document processing and chunking in `core/parser/`
 
 ### Frontend (TypeScript/Next.js)
@@ -95,7 +95,7 @@ docker compose down -v   # Reset all data
 - Connection pooling and retry mechanisms
 
 ### AI Model Integration
-- Abstracted model interface supporting OpenAI, Anthropic, Google, Ollama, Azure
+- Abstracted model interface supporting OpenAI, Anthropic, Google, Ollama, Azure, MiniMax
 - Vision-capable models for multimodal processing
 - Embedding models for vector similarity search
 - Completion models for chat and generation

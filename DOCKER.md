@@ -89,6 +89,7 @@ Create a `.env` file to customize these settings:
 ```bash
 JWT_SECRET_KEY=your-secure-key-here  # Important: Change in production
 OPENAI_API_KEY=sk-...                # Only if using OpenAI
+MINIMAX_API_KEY=...                  # Only if using MiniMax (embo-01 embedding)
 HOST=0.0.0.0                         # Leave as is for Docker
 PORT=8000                            # Change if needed
 ```

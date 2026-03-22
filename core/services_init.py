@@ -20,6 +20,7 @@ from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
+from core.embedding.minimax_embedding import MiniMaxEmbeddingModel
 from core.parser.morphik_parser import MorphikParser
 from core.reranker.flag_reranker import FlagReranker
 from core.services.document_service import DocumentService
@@ -91,8 +92,14 @@ parser = MorphikParser(
     use_contextual_chunking=settings.USE_CONTEXTUAL_CHUNKING,
 )
 
-embedding_model = LiteLLMEmbeddingModel(model_key=settings.EMBEDDING_MODEL)
-logger.info("Initialized LiteLLM embedding model with model key: %s", settings.EMBEDDING_MODEL)
+# Use MiniMax embedding model if the registered model has provider="minimax"
+_emb_cfg = settings.REGISTERED_MODELS.get(settings.EMBEDDING_MODEL, {})
+if _emb_cfg.get("provider") == "minimax":
+    embedding_model = MiniMaxEmbeddingModel(model_key=settings.EMBEDDING_MODEL)
+    logger.info("Initialized MiniMax embedding model with model key: %s", settings.EMBEDDING_MODEL)
+else:
+    embedding_model = LiteLLMEmbeddingModel(model_key=settings.EMBEDDING_MODEL)
+    logger.info("Initialized LiteLLM embedding model with model key: %s", settings.EMBEDDING_MODEL)
 
 completion_model = LiteLLMCompletionModel(model_key=settings.COMPLETION_MODEL)
 logger.info("Initialized LiteLLM completion model with model key: %s", settings.COMPLETION_MODEL)
