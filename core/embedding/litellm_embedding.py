@@ -77,8 +77,8 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
                 # Use a harmless placeholder; some LiteLLM providers demand a key even if backend ignores it
                 model_params["api_key"] = get_settings().LITELLM_DUMMY_API_KEY
 
-            # Call LiteLLM
-            response = await litellm.aembedding(input=texts, **model_params)
+            # Call LiteLLM with retries for transient provider errors (e.g. OpenAI 500s)
+            response = await litellm.aembedding(input=texts, num_retries=3, **model_params)
 
             embeddings = [data["embedding"] for data in response.data]
 

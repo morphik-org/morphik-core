@@ -182,11 +182,11 @@ jobs:
           colpali_pdf_dpi = 150
 
           [morphik]
-          enable_colpali = true
+          enable_colpali = false
           mode = "self_hosted"
           use_local_env = true
           api_domain = "api.morphik.ai"
-          morphik_embedding_api_domain = "http://localhost:6000"
+          morphik_embedding_api_domain = ["http://localhost:6000"]
           colpali_mode = "local"
 
           [pdf_viewer]
@@ -203,9 +203,47 @@ jobs:
           max_local_bytes = 1073741824
           EOF
 
+          # Create a Docker network for the test
+          docker network create test-net
+
+          # Start PostgreSQL container with pgvector
+          PG_CONTAINER=$(docker run -d --name postgres --network test-net \
+            -e POSTGRES_USER=morphik \
+            -e POSTGRES_PASSWORD=morphik \
+            -e POSTGRES_DB=morphik \
+            pgvector/pgvector:pg16)
+
+          # Start Redis container
+          REDIS_CONTAINER=$(docker run -d --name redis --network test-net redis:7-alpine)
+          echo "Started Redis container: $REDIS_CONTAINER"
+
+          echo "Started PostgreSQL container: $PG_CONTAINER"
+
+          # Wait for PostgreSQL to be ready
+          pg_timeout=30
+          pg_elapsed=0
+          echo "Waiting for PostgreSQL to be ready..."
+          while [ $pg_elapsed -lt $pg_timeout ]; do
+            if docker exec postgres pg_isready -U morphik -d morphik > /dev/null 2>&1; then
+              echo "✅ PostgreSQL is ready"
+              break
+            fi
+            sleep 1
+            pg_elapsed=$((pg_elapsed + 1))
+          done
+
+          if [ $pg_elapsed -ge $pg_timeout ]; then
+            echo "❌ PostgreSQL failed to start within ${pg_timeout} seconds"
+            docker logs postgres
+            docker rm -f postgres redis
+            docker network rm test-net
+            exit 1
+          fi
+
           # Start container in detached mode with config mounted
-          CONTAINER_ID=$(docker run -d -p 8000:8000 \
-            -e POSTGRES_URI="postgresql://morphik:morphik@localhost:5432/morphik" \
+          CONTAINER_ID=$(docker run -d --network test-net -p 8000:8000 \
+            -e POSTGRES_URI="postgresql+asyncpg://morphik:morphik@postgres:5432/morphik" \
+            -e PGPASSWORD="morphik" \
             -v "$(pwd)/morphik.toml.test:/app/morphik.toml" \
             "$IMAGE_TAG")
 
@@ -235,6 +273,8 @@ jobs:
             docker logs "$CONTAINER_ID"
             docker stop "$CONTAINER_ID"
             docker rm "$CONTAINER_ID"
+            docker rm -f postgres redis
+            docker network rm test-net
             exit 1
           fi
 
@@ -247,11 +287,15 @@ jobs:
             docker logs "$CONTAINER_ID"
             docker stop "$CONTAINER_ID"
             docker rm "$CONTAINER_ID"
+            docker rm -f postgres redis
+            docker network rm test-net
             exit 1
           fi
 
           # Clean up
-          echo "🧹 Cleaning up container"
+          echo "🧹 Cleaning up containers"
           docker stop "$CONTAINER_ID"
           docker rm "$CONTAINER_ID"
+          docker rm -f postgres redis
+          docker network rm test-net
           echo "✅ Test completed successfully"
