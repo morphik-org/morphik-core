@@ -186,7 +186,7 @@ jobs:
           mode = "self_hosted"
           use_local_env = true
           api_domain = "api.morphik.ai"
-          morphik_embedding_api_domain = "http://localhost:6000"
+          morphik_embedding_api_domain = ["http://localhost:6000"]
           colpali_mode = "local"
 
           [pdf_viewer]

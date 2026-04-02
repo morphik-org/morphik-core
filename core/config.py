@@ -372,6 +372,8 @@ def get_settings() -> Settings:
     api_domain = config["morphik"].get("api_domain", "api.morphik.ai")
     # morphik_embedding_api_domain is always a list of endpoints
     embedding_api_endpoints = config["morphik"].get("morphik_embedding_api_domain", [f"https://{api_domain}"])
+    if isinstance(embedding_api_endpoints, str):
+        embedding_api_endpoints = [embedding_api_endpoints]
     secret_manager = config["morphik"].get("secret_manager", "env")
 
     settings_dict.update(
