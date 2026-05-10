@@ -6,7 +6,7 @@
 
 services:
   morphik:
-    image: ghcr.io/morphik-org/morphik-core:latest
+    image: ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION:-latest}
     container_name: morphik-app
     ports:
       - "8000:8000"
@@ -37,7 +37,7 @@ services:
       - .env
 
   worker:
-    image: ghcr.io/morphik-org/morphik-core:latest
+    image: ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION:-latest}
     container_name: morphik-worker
     # The worker runs as a background job processor, so no ports are exposed.
     command: arq core.workers.ingestion_worker.WorkerSettings

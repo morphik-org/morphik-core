@@ -51,9 +51,26 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
 
         # Track endpoint health for failover
         self.healthy_endpoints: set[str] = set(self.endpoints)
+        self._endpoint_unhealthy_since: Dict[str, float] = {}
+        self._unhealthy_recovery_seconds: float = 60.0
         self._endpoint_latencies: dict[str, float] = {}
         self.endpoint = self.endpoints[0]
         self._latest_ingest_metrics: Dict[str, float] = {}
+
+    def _recover_endpoints(self) -> None:
+        """Re-include endpoints whose unhealthy cooldown has elapsed."""
+        if not self._endpoint_unhealthy_since:
+            return
+        now = time.monotonic()
+        recovered = [
+            ep
+            for ep, marked_at in self._endpoint_unhealthy_since.items()
+            if now - marked_at >= self._unhealthy_recovery_seconds
+        ]
+        for ep in recovered:
+            self.healthy_endpoints.add(ep)
+            self._endpoint_unhealthy_since.pop(ep, None)
+            logger.info("Re-probing previously unhealthy ColPali endpoint: %s", ep)
 
     async def embed_for_ingestion(self, chunks: Union[Chunk, List[Chunk]]) -> List[MultiVector]:
         ingest_start = time.monotonic()
@@ -131,6 +148,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         if not indexed_inputs:
             return {}
 
+        self._recover_endpoints()
         # Use healthy endpoints, fall back to all if none healthy
         endpoints = list(self.healthy_endpoints) if self.healthy_endpoints else self.endpoints
         n_endpoints = len(endpoints)
@@ -166,6 +184,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
             elif isinstance(result, Exception):
                 logger.warning(f"Endpoint {endpoint} failed: {result}")
                 self.healthy_endpoints.discard(endpoint)
+                self._endpoint_unhealthy_since[endpoint] = time.monotonic()
                 failed_inputs.extend(batch)
             else:
                 merged.update(result)
@@ -182,6 +201,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
                 # All endpoints failed, reset health and raise
                 logger.error("All ColPali endpoints failed, resetting health status")
                 self.healthy_endpoints = set(self.endpoints)
+                self._endpoint_unhealthy_since.clear()
                 raise RuntimeError(
                     f"All {len(self.endpoints)} ColPali endpoints failed for {len(failed_inputs)} {input_type} inputs"
                 )
@@ -289,6 +309,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
 
     async def embed_for_query(self, text: str) -> MultiVector:
         # Use first healthy endpoint for queries (single text, fast)
+        self._recover_endpoints()
         endpoint = next(iter(self.healthy_endpoints), self.endpoints[0])
         data = await self._call_api_endpoint(endpoint, [text], "text")
         if not data:
@@ -304,6 +325,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         Returns:
             numpy array of embeddings.
         """
+        self._recover_endpoints()
         endpoint = next(iter(self.healthy_endpoints), self.endpoints[0])
 
         if isinstance(content, Image):
