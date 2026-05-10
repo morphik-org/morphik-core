@@ -5,7 +5,7 @@ set -e
 # This script reads the port from morphik.toml and dynamically updates docker-compose.run.yml
 # port mapping if it has changed. This allows users to change ports in morphik.toml
 # without manually editing docker-compose.run.yml after installation.
-# Usage: ./start-morphik.sh
+# Usage: ./start-morphik.sh [--version <tag>]
 
 # Color output functions
 print_info() {
@@ -15,6 +15,31 @@ print_info() {
 print_success() {
     echo -e "\033[32m✅ $1\033[0m"
 }
+
+# Parse --version flag (overrides .env)
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version)
+            export MORPHIK_VERSION="$2"
+            shift 2
+            ;;
+        --version=*)
+            export MORPHIK_VERSION="${1#*=}"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+# Load MORPHIK_VERSION from .env if not set via flag
+if [ -z "$MORPHIK_VERSION" ] && [ -f ".env" ]; then
+    MORPHIK_VERSION=$(grep "^MORPHIK_VERSION=" .env 2>/dev/null | tail -n1 | cut -d= -f2-)
+fi
+export MORPHIK_VERSION="${MORPHIK_VERSION:-latest}"
+
+print_info "Using Morphik version: ${MORPHIK_VERSION}"
 
 # Read port from morphik.toml
 API_PORT=$(awk '/^\[api\]/{flag=1; next} /^\[/{flag=0} flag && /^port[[:space:]]*=/ {gsub(/^port[[:space:]]*=[[:space:]]*/, ""); print; exit}' morphik.toml 2>/dev/null || echo "8000")
