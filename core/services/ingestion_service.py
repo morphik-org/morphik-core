@@ -43,6 +43,7 @@ from core.storage.base_storage import BaseStorage
 from core.storage.utils_file_extensions import detect_content_type, detect_file_type
 from core.utils.fast_ops import bytes_to_data_uri, encode_base64
 from core.utils.folder_utils import normalize_folder_path, normalize_ingest_folder_inputs
+from core.utils.arq_jobs import enqueue_job_clearing_stale_result
 from core.utils.storage_usage import extract_storage_bytes
 from core.utils.typed_metadata import MetadataBundle, merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
@@ -604,7 +605,13 @@ class IngestionService:
                 folder_leaf=folder_leaf,
                 end_user_id=end_user_id,
             )
-            job = await redis.enqueue_job("process_ingestion_job", **job_payload)
+            job = await enqueue_job_clearing_stale_result(
+                redis,
+                "process_ingestion_job",
+                job_payload,
+                logger=logger,
+                context=f"ingest doc_id={doc.external_id}",
+            )
             if job is None:
                 logger.info("Connector file ingestion job already queued (doc_id=%s)", doc.external_id)
             else:
@@ -746,7 +753,13 @@ class IngestionService:
                 folder_leaf=doc.folder_name,
                 end_user_id=doc.end_user_id,
             )
-            job = await redis.enqueue_job("process_ingestion_job", **job_payload)
+            job = await enqueue_job_clearing_stale_result(
+                redis,
+                "process_ingestion_job",
+                job_payload,
+                logger=logger,
+                context=f"update doc_id={doc.external_id}",
+            )
             if job is None:
                 logger.info("Update ingestion job already queued (doc_id=%s)", doc.external_id)
             else:
