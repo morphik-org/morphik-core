@@ -81,6 +81,37 @@ def test_render_pdf_with_pymupdf_skips_blank_and_failed_pages(monkeypatch):
     assert fake_document.closed is True
 
 
+def test_pdf_pdf2image_fallback_skips_blank_and_failed_pages(monkeypatch):
+    service = IngestionService(None, None, None, None, None)
+    good_page = Image.open(BytesIO(_non_blank_png_bytes()))
+    blank_page = Image.open(BytesIO(_png_bytes((255, 255, 255))))
+    failing_page = Image.open(BytesIO(_non_blank_png_bytes()))
+
+    def fake_img_to_base64_with_bytes(image):
+        if image is failing_page:
+            raise RuntimeError("bad fallback page")
+        return IngestionService.img_to_base64_with_bytes(service, image)
+
+    monkeypatch.setattr(
+        ingestion_module.fitz,
+        "open",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("force pdf2image fallback")),
+    )
+    monkeypatch.setattr(ingestion_module.pdf2image, "convert_from_bytes", lambda *args, **kwargs: [
+        good_page,
+        blank_page,
+        failing_page,
+        good_page,
+    ])
+    monkeypatch.setattr(service, "img_to_base64_with_bytes", fake_img_to_base64_with_bytes)
+
+    chunks = service._process_pdf_for_colpali(b"%PDF")
+
+    assert len(chunks) == 2
+    assert all(chunk.metadata["is_image"] is True for chunk in chunks)
+    assert all(chunk.content.startswith("data:image/png;base64,") for chunk in chunks)
+
+
 def test_office_conversion_skips_blank_and_failed_pages(monkeypatch):
     service = IngestionService(None, None, None, None, None)
     fake_document = FakeDocument(

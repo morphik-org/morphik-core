@@ -1520,7 +1520,23 @@ class IngestionService:
 
             try:
                 images = pdf2image.convert_from_bytes(file_content, dpi=dpi)
-                image_payloads = [self.img_to_base64_with_bytes(image) for image in images]
+                image_payloads = []
+                for page_num, image in enumerate(images):
+                    try:
+                        if self._is_blank_image(image):
+                            logger.info(
+                                "Skipping PDF page %d because it rendered as a blank image",
+                                page_num + 1,
+                            )
+                            continue
+                        image_payloads.append(self.img_to_base64_with_bytes(image))
+                    except Exception as page_error:
+                        logger.warning(
+                            "Skipping PDF page %d because image conversion failed: %s",
+                            page_num + 1,
+                            page_error,
+                        )
+                        continue
                 logger.info(f"pdf2image fallback processed {len(image_payloads)} pages")
                 return [
                     self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
