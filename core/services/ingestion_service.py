@@ -1301,6 +1301,27 @@ class IngestionService:
         img_str, _ = self.img_to_base64_with_bytes(img)
         return img_str
 
+    @staticmethod
+    def _is_blank_image(img: PILImage.Image, tolerance: int = 2) -> bool:
+        """Return True when an image has no meaningful visual variation."""
+        grayscale = img.convert("L")
+        extrema = grayscale.getextrema()
+        if extrema is None:
+            return True
+        darkest, lightest = extrema
+        return lightest - darkest <= tolerance
+
+    def _is_blank_image_bytes(self, image_bytes: bytes, tolerance: int = 2) -> bool:
+        """Return True when image bytes decode to a visually blank image."""
+        if not image_bytes:
+            return True
+        try:
+            with PILImage.open(BytesIO(image_bytes)) as img:
+                return self._is_blank_image(img, tolerance=tolerance)
+        except Exception as e:
+            logger.warning("Unable to inspect rendered page image for blank-content detection: %s", e)
+            return False
+
     def _render_pdf_with_pymupdf(
         self, file_content: bytes, dpi: int, include_bytes: bool = False
     ) -> List[Union[str, Tuple[str, bytes]]]:
@@ -1308,15 +1329,28 @@ class IngestionService:
         pdf_document = fitz.open("pdf", file_content)
         try:
             images: List[Union[str, Tuple[str, bytes]]] = []
-            for page in pdf_document:
-                mat = fitz.Matrix(dpi / 72, dpi / 72)
-                pix = page.get_pixmap(matrix=mat)
-                png_bytes = pix.tobytes("png")
+            page_count = 0
+            render_failures = 0
+            for page_index, page in enumerate(pdf_document):
+                page_count += 1
+                try:
+                    mat = fitz.Matrix(dpi / 72, dpi / 72)
+                    pix = page.get_pixmap(matrix=mat)
+                    png_bytes = pix.tobytes("png")
+                except Exception as e:
+                    render_failures += 1
+                    logger.warning("Skipping PDF page %d because rendering failed: %s", page_index + 1, e)
+                    continue
+                if self._is_blank_image_bytes(png_bytes):
+                    logger.info("Skipping PDF page %d because it rendered as a blank image", page_index + 1)
+                    continue
                 b64 = bytes_to_data_uri(png_bytes, "image/png")
                 if include_bytes:
                     images.append((b64, png_bytes))
                 else:
                     images.append(b64)
+            if not images and page_count > 0 and render_failures == page_count:
+                raise RuntimeError("All PDF pages failed to render with PyMuPDF")
             return images
         finally:
             pdf_document.close()
@@ -1486,7 +1520,23 @@ class IngestionService:
 
             try:
                 images = pdf2image.convert_from_bytes(file_content, dpi=dpi)
-                image_payloads = [self.img_to_base64_with_bytes(image) for image in images]
+                image_payloads = []
+                for page_num, image in enumerate(images):
+                    try:
+                        if self._is_blank_image(image):
+                            logger.info(
+                                "Skipping PDF page %d because it rendered as a blank image",
+                                page_num + 1,
+                            )
+                            continue
+                        image_payloads.append(self.img_to_base64_with_bytes(image))
+                    except Exception as page_error:
+                        logger.warning(
+                            "Skipping PDF page %d because image conversion failed: %s",
+                            page_num + 1,
+                            page_error,
+                        )
+                        continue
                 logger.info(f"pdf2image fallback processed {len(image_payloads)} pages")
                 return [
                     self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
@@ -1517,6 +1567,7 @@ class IngestionService:
 
         try:
             total_pages = len(pdf_document)
+            render_failures = 0
             for batch_start in range(0, total_pages, batch_size):
                 batch_end = min(batch_start + batch_size, total_pages)
                 logger.debug(f"Rendering pages {batch_start + 1}-{batch_end} of {total_pages} (batched mode)")
@@ -1524,9 +1575,17 @@ class IngestionService:
                 # Render and convert this batch
                 for page_num in range(batch_start, batch_end):
                     page = pdf_document[page_num]
-                    mat = fitz.Matrix(dpi / 72, dpi / 72)
-                    pix = page.get_pixmap(matrix=mat)
-                    png_bytes = pix.tobytes("png")
+                    try:
+                        mat = fitz.Matrix(dpi / 72, dpi / 72)
+                        pix = page.get_pixmap(matrix=mat)
+                        png_bytes = pix.tobytes("png")
+                    except Exception as e:
+                        render_failures += 1
+                        logger.warning("Skipping PDF page %d because rendering failed: %s", page_num + 1, e)
+                        continue
+                    if self._is_blank_image_bytes(png_bytes):
+                        logger.info("Skipping PDF page %d because it rendered as a blank image", page_num + 1)
+                        continue
                     b64 = bytes_to_data_uri(png_bytes, "image/png")
 
                     # Create chunk immediately
@@ -1536,6 +1595,9 @@ class IngestionService:
                     # Explicitly release pixmap memory - this is the key memory optimization
                     del pix
                     del png_bytes
+
+            if not all_chunks and total_pages > 0 and render_failures == total_pages:
+                raise RuntimeError("All PDF pages failed to render with PyMuPDF")
 
             logger.info(f"PyMuPDF processed {total_pages} pages in batched mode")
             return all_chunks
@@ -1639,19 +1701,41 @@ class IngestionService:
             try:
                 pdf_document = fitz.open("pdf", pdf_content)
                 images_payload: List[Tuple[str, bytes]] = []
+                total_pages = len(pdf_document)
+                render_failures = 0
 
-                for page_num in range(len(pdf_document)):
-                    page = pdf_document[page_num]
-                    dpi = settings.COLPALI_PDF_DPI
-                    mat = fitz.Matrix(dpi / 72, dpi / 72)
-                    pix = page.get_pixmap(matrix=mat)
-                    img_data = pix.tobytes("png")
+                try:
+                    for page_num in range(total_pages):
+                        page = pdf_document[page_num]
+                        try:
+                            dpi = settings.COLPALI_PDF_DPI
+                            mat = fitz.Matrix(dpi / 72, dpi / 72)
+                            pix = page.get_pixmap(matrix=mat)
+                            img_data = pix.tobytes("png")
+                            img = PILImage.open(BytesIO(img_data))
+                            if self._is_blank_image(img):
+                                logger.info(
+                                    "Skipping %s page %d because it rendered as a blank image",
+                                    doc_type,
+                                    page_num + 1,
+                                )
+                                continue
+                            img_str, img_bytes = self.img_to_base64_with_bytes(img)
+                            images_payload.append((img_str, img_bytes))
+                        except Exception as page_error:
+                            render_failures += 1
+                            logger.warning(
+                                "Skipping %s page %d because rendering failed: %s",
+                                doc_type,
+                                page_num + 1,
+                                page_error,
+                            )
+                            continue
+                finally:
+                    pdf_document.close()
 
-                    img = PILImage.open(BytesIO(img_data))
-                    img_str, img_bytes = self.img_to_base64_with_bytes(img)
-                    images_payload.append((img_str, img_bytes))
-
-                pdf_document.close()
+                if not images_payload and total_pages > 0 and render_failures == total_pages:
+                    raise RuntimeError(f"All {doc_type} pages failed to render with PyMuPDF")
 
                 logger.info(f"{doc_type} successfully processed {len(images_payload)} pages as images")
                 return [
@@ -1663,7 +1747,25 @@ class IngestionService:
                 logger.warning(f"PyMuPDF failed for {doc_type} ({pymupdf_error}), trying pdf2image")
                 try:
                     images = pdf2image.convert_from_bytes(pdf_content)
-                    images_payload = [self.img_to_base64_with_bytes(image) for image in images]
+                    images_payload = []
+                    for page_num, image in enumerate(images):
+                        try:
+                            if self._is_blank_image(image):
+                                logger.info(
+                                    "Skipping %s page %d because it rendered as a blank image",
+                                    doc_type,
+                                    page_num + 1,
+                                )
+                                continue
+                            images_payload.append(self.img_to_base64_with_bytes(image))
+                        except Exception as page_error:
+                            logger.warning(
+                                "Skipping %s page %d because image conversion failed: %s",
+                                doc_type,
+                                page_num + 1,
+                                page_error,
+                            )
+                            continue
 
                     logger.info(f"{doc_type} processed {len(images_payload)} pages with pdf2image")
                     return [

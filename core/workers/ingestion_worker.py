@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 import traceback
 import urllib.parse as up
@@ -23,6 +24,7 @@ from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
 from core.models.auth import AuthContext
+from core.models.chunk import Chunk
 from core.parser.morphik_parser import MorphikParser
 from core.services.ingestion_service import IngestionService, PdfConversionError
 from core.services.telemetry import TelemetryService
@@ -609,8 +611,6 @@ async def process_ingestion_job(
                 )
                 # Clean the extracted text to remove NULL and other problematic control characters
                 # Keep: tabs, newlines, carriage returns, and all printable characters (including Unicode)
-                import re
-
                 # Remove NULL characters
                 text = re.sub(r"\x00", "", text)
                 # Remove control characters (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F) but keep tab, newline, carriage return
@@ -793,9 +793,150 @@ async def process_ingestion_job(
             else:
                 phase_times["multivector_create_chunks"] = 0
 
-            # If we still have no chunks at all (neither text nor image) abort early
+            no_content_extracted = False
+            content_extraction_warning: Optional[str] = None
+
+            if skip_text_parsing and not parsed_chunks and not chunks_multivector:
+                logger.warning(
+                    "No image chunks extracted for ColPali-native document %s (%s). "
+                    "Attempting text extraction fallback before failing ingestion.",
+                    document_id,
+                    original_filename,
+                )
+                fallback_parse_start = time.time()
+                fallback_metadata, fallback_text = await ingestion_service.parser.parse_file_to_text(
+                    file_content, parse_filename
+                )
+
+                fallback_text = re.sub(r"\x00", "", fallback_text)
+                fallback_text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", fallback_text)
+                phase_times["fallback_parse_file"] = time.time() - fallback_parse_start
+
+                if fallback_text.strip():
+                    fallback_chunking_start = time.time()
+                    fallback_chunks = await ingestion_service.parser.split_text(fallback_text)
+                    phase_times["fallback_split_into_chunks"] = time.time() - fallback_chunking_start
+                    if fallback_chunks:
+                        parsed_chunks = fallback_chunks
+                        chunks_multivector = [
+                            Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                            for chunk in fallback_chunks
+                        ]
+                        text = fallback_text
+                        additional_metadata = fallback_metadata
+                        fallback_updates = {
+                            "additional_metadata": additional_metadata,
+                            "system_metadata": {"content": text},
+                        }
+                        if end_user_id:
+                            fallback_updates["end_user_id"] = end_user_id
+                        await ingestion_service.db.update_document(
+                            document_id=document_id,
+                            updates=fallback_updates,
+                            auth=auth,
+                        )
+                        refreshed_doc = await ingestion_service.db.get_document(document_id, auth)
+                        if refreshed_doc:
+                            doc = refreshed_doc
+                        logger.info(
+                            "Recovered ColPali-native document %s with %d text chunks after image extraction "
+                            "yielded no chunks",
+                            document_id,
+                            len(parsed_chunks),
+                        )
+                    else:
+                        logger.warning(
+                            "Text fallback for ColPali-native document %s produced no chunks",
+                            document_id,
+                        )
+                else:
+                    logger.warning(
+                        "Text fallback for ColPali-native document %s produced no text",
+                        document_id,
+                    )
+
+            if not parsed_chunks and not chunks_multivector and not xml_processing:
+                deep_parse = getattr(ingestion_service.parser, "parse_file_to_text_deep", None)
+                if callable(deep_parse):
+                    logger.warning(
+                        "No chunks extracted for document %s (%s). Running deep parser fallback.",
+                        document_id,
+                        original_filename,
+                    )
+                    deep_parse_start = time.time()
+                    deep_metadata, deep_text = await deep_parse(file_content, parse_filename)
+                    deep_text = re.sub(r"\x00", "", deep_text)
+                    deep_text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", deep_text)
+                    phase_times["deep_parse_file"] = time.time() - deep_parse_start
+
+                    if deep_text.strip():
+                        deep_chunking_start = time.time()
+                        deep_chunks = await ingestion_service.parser.split_text(deep_text)
+                        phase_times["deep_split_into_chunks"] = time.time() - deep_chunking_start
+                        if deep_chunks:
+                            parsed_chunks = deep_chunks
+                            if using_colpali:
+                                chunks_multivector = [
+                                    Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
+                                    for chunk in deep_chunks
+                                ]
+                            text = deep_text
+                            additional_metadata = deep_metadata
+                            deep_updates = {
+                                "additional_metadata": additional_metadata,
+                                "system_metadata": {
+                                    "content": text,
+                                    "content_extraction_status": "deep_fallback_succeeded",
+                                    "content_extraction_warning": None,
+                                },
+                            }
+                            if end_user_id:
+                                deep_updates["end_user_id"] = end_user_id
+                            await ingestion_service.db.update_document(
+                                document_id=document_id,
+                                updates=deep_updates,
+                                auth=auth,
+                            )
+                            refreshed_doc = await ingestion_service.db.get_document(document_id, auth)
+                            if refreshed_doc:
+                                doc = refreshed_doc
+                            logger.info(
+                                "Recovered document %s with %d text chunks using deep parser fallback",
+                                document_id,
+                                len(parsed_chunks),
+                            )
+                        else:
+                            logger.warning("Deep parser fallback for document %s produced no chunks", document_id)
+                    else:
+                        logger.warning("Deep parser fallback for document %s produced no text", document_id)
+
+            # If we still have no chunks at all, accept the document but mark it as non-searchable.
             if not parsed_chunks and not chunks_multivector:
-                raise ValueError("No content chunks (text or image) could be extracted from the document")
+                no_content_extracted = True
+                content_extraction_warning = (
+                    "No content chunks (text or image) could be extracted from the document. "
+                    "The document was saved successfully but will not be searchable until content can be extracted."
+                )
+                logger.warning(
+                    "%s document_id=%s filename=%s",
+                    content_extraction_warning,
+                    document_id,
+                    original_filename,
+                )
+                await ingestion_service.db.update_document(
+                    document_id=document_id,
+                    updates={
+                        "system_metadata": {
+                            "content_extraction_status": "no_content_extracted",
+                            "content_extraction_warning": content_extraction_warning,
+                            "content": text,
+                        }
+                    },
+                    auth=auth,
+                )
+                refreshed_doc = await ingestion_service.db.get_document(document_id, auth)
+                if refreshed_doc:
+                    doc = refreshed_doc
 
             # Determine the final page count for recording usage
             final_page_count = num_pages_estimated  # Default to estimate
@@ -1151,6 +1292,9 @@ async def process_ingestion_job(
                 "updated_at": doc.system_metadata["updated_at"],
                 "progress": None,
             }
+            if no_content_extracted:
+                completion_update["content_extraction_status"] = "no_content_extracted"
+                completion_update["content_extraction_warning"] = content_extraction_warning
             await ingestion_service.db.update_document(
                 document_id=document_id, updates={"system_metadata": completion_update}, auth=auth
             )
@@ -1245,6 +1389,7 @@ async def process_ingestion_job(
                 {
                     "xml_processing": xml_processing,
                     "html_to_pdf": html_converted,
+                    "no_content_extracted": no_content_extracted,
                 }
             )
 
