@@ -428,10 +428,7 @@ class MorphikParser(BaseParser):
         return "\n".join(parts)
 
     async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], str]:
-        """Parse video file to extract transcript and frame descriptions"""
-        if not self._assemblyai_api_key:
-            raise ValueError("AssemblyAI API key is required for video parsing")
-
+        """Parse video file to extract frame descriptions and, when configured, transcript."""
         # Save video to temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
             temp_file.write(file)
@@ -452,16 +449,23 @@ class MorphikParser(BaseParser):
             )
             results = await parser.process_video()
 
-            # Combine frame descriptions and transcript
+            # Combine frame descriptions and optional transcript
             frame_text = "\n".join(results.frame_descriptions.time_to_content.values())
-            transcript_text = "\n".join(results.transcript.time_to_content.values())
-            combined_text = f"Frame Descriptions:\n{frame_text}\n\nTranscript:\n{transcript_text}"
+            text_sections = []
+            if frame_text:
+                text_sections.append(f"Frame Descriptions:\n{frame_text}")
+            if self._assemblyai_api_key:
+                transcript_text = "\n".join(results.transcript.time_to_content.values())
+                if transcript_text:
+                    text_sections.append(f"Transcript:\n{transcript_text}")
+            combined_text = "\n\n".join(text_sections)
 
             metadata = {
                 "video_metadata": results.metadata,
                 "frame_timestamps": list(results.frame_descriptions.time_to_content.keys()),
-                "transcript_timestamps": list(results.transcript.time_to_content.keys()),
             }
+            if self._assemblyai_api_key:
+                metadata["transcript_timestamps"] = list(results.transcript.time_to_content.keys())
 
             return metadata, combined_text
         finally:
