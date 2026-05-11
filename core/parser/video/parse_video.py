@@ -89,13 +89,18 @@ class VisionModelClient:
 
 
 class VideoParser:
-    def __init__(self, video_path: str, assemblyai_api_key: str, frame_sample_rate: Optional[int] = None):
+    def __init__(
+        self,
+        video_path: str,
+        assemblyai_api_key: Optional[str] = None,
+        frame_sample_rate: Optional[int] = None,
+    ):
         """
         Initialize the video parser
 
         Args:
             video_path: Path to the video file
-            assemblyai_api_key: API key for AssemblyAI
+            assemblyai_api_key: Optional API key for AssemblyAI. If omitted, audio transcription is skipped.
             frame_sample_rate: Sample every nth frame for description (optional, defaults to config value)
         """
         logger.info(f"Initializing VideoParser for {video_path}")
@@ -112,11 +117,16 @@ class VideoParser:
         self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.duration = self.total_frames / self.fps
 
-        # Initialize AssemblyAI
-        aai.settings.api_key = assemblyai_api_key
-        aai_config = aai.TranscriptionConfig(speaker_labels=True)
-        self.transcriber = aai.Transcriber(config=aai_config)
         self.transcript = TimeSeriesData(time_to_content={})
+
+        # Initialize AssemblyAI only when audio transcription is configured.
+        self.transcriber = None
+        if assemblyai_api_key:
+            aai.settings.api_key = assemblyai_api_key
+            aai_config = aai.TranscriptionConfig(speaker_labels=True)
+            self.transcriber = aai.Transcriber(config=aai_config)
+        else:
+            logger.warning("AssemblyAI API key is not available; skipping transcription")
 
         # Initialize vision model client
         self.vision_client = VisionModelClient(self.config)
@@ -135,6 +145,9 @@ class VideoParser:
         """
         Get the transcript object from AssemblyAI
         """
+        if self.transcriber is None:
+            raise ValueError("AssemblyAI API key is required for video transcription")
+
         logger.info("Starting video transcription")
         transcript = self.transcriber.transcribe(self.video_path)
         if transcript.status == "error":
@@ -153,6 +166,10 @@ class VideoParser:
         Returns:
             TimeSeriesData object containing transcript
         """
+        if self.transcriber is None:
+            self.transcript = TimeSeriesData(time_to_content={})
+            return self.transcript
+
         logger.info("Starting video transcription")
         transcript = self.get_transcript_object()
         # divide by 1000 because assemblyai timestamps are in milliseconds
@@ -193,18 +210,38 @@ class VideoParser:
 
                 img_base64 = self.frame_to_base64(frame)
 
-                context = f"""Describe this frame from a video. Focus on the main elements, actions, and any notable details. Here is the transcript around the time of the frame:
-                ---
-                {self.transcript.at_time(timestamp, padding=10)}
-                ---
+                if last_description:
+                    previous_frame_context = last_description
+                else:
+                    previous_frame_context = "No previous frame description available, this is the first frame"
 
-                Here is a description of the previous frame:
-                ---
-                {last_description if last_description else 'No previous frame description available, this is the first frame'}
-                ---
-
-                In your response, only provide the description of the current frame, using the above information as context.
-                """
+                description_instruction = (
+                    "Describe this frame from a video. Focus on the main elements, actions, and any notable details."
+                )
+                previous_frame_section = (
+                    "Here is a description of the previous frame:\n"
+                    "---\n"
+                    f"{previous_frame_context}\n"
+                    "---"
+                )
+                transcript_context = self.transcript.at_time(timestamp, padding=10)
+                if transcript_context:
+                    context = (
+                        f"{description_instruction} Here is the transcript around the time of the frame:\n"
+                        "---\n"
+                        f"{transcript_context}\n"
+                        "---\n\n"
+                        f"{previous_frame_section}\n\n"
+                        "In your response, only provide the description of the current frame, using the above "
+                        "information as context."
+                    )
+                else:
+                    context = (
+                        f"{description_instruction}\n\n"
+                        f"{previous_frame_section}\n\n"
+                        "In your response, only provide the description of the current frame, using the above "
+                        "information as context."
+                    )
 
                 last_description = await self.vision_client.get_frame_description(img_base64, context)
                 time_to_description[timestamp] = last_description
@@ -216,7 +253,7 @@ class VideoParser:
 
     async def process_video(self) -> ParseVideoResult:
         """
-        Process the video to get both transcript and frame descriptions
+        Process the video to get frame descriptions and transcript when configured.
 
         Returns:
             Dictionary containing transcript and frame descriptions as TimeSeriesData objects
@@ -230,7 +267,7 @@ class VideoParser:
         }
         result = ParseVideoResult(
             metadata=metadata,
-            transcript=self.get_transcript(),
+            transcript=self.get_transcript() if self.transcriber is not None else self.transcript,
             frame_descriptions=await self.get_frame_descriptions(),
         )
         logger.info("Video processing completed successfully")
