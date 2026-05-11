@@ -31,6 +31,7 @@ from core.services.morphik_on_the_fly_structured_output import (
 )
 from core.services.telemetry import TelemetryService
 from core.services_init import ingestion_service
+from core.utils.arq_jobs import enqueue_job_clearing_stale_result
 from core.utils.typed_metadata import TypedMetadataError
 
 # ---------------------------------------------------------------------------
@@ -350,7 +351,13 @@ async def requeue_ingest_jobs(
                 folder_leaf=doc.folder_name,
                 end_user_id=doc.end_user_id,
             )
-            job = await redis.enqueue_job("process_ingestion_job", **job_payload)
+            job = await enqueue_job_clearing_stale_result(
+                redis,
+                "process_ingestion_job",
+                job_payload,
+                logger=logger,
+                context=f"requeue doc_id={ext_id}",
+            )
 
             if job is None:
                 results.append(

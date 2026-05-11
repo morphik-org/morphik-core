@@ -25,6 +25,7 @@ from core.parser.docling_v2 import DoclingV2Parser
 from core.parser.morphik_parser import MorphikParser
 from core.storage.base_storage import BaseStorage
 from core.storage.utils_file_extensions import detect_content_type
+from core.utils.arq_jobs import enqueue_job_clearing_stale_result
 from core.utils.folder_utils import normalize_folder_path, normalize_ingest_folder_inputs
 from core.utils.typed_metadata import MetadataBundle, normalize_metadata
 from core.vector_store.chunk_v2_store import ChunkV2Store
@@ -703,7 +704,13 @@ class V2DocumentService:
                     end_user_id=end_user_id,
                     force_plain_text=force_plain_text,
                 )
-                job = await redis.enqueue_job("process_v2_ingestion_job", **job_payload)
+                job = await enqueue_job_clearing_stale_result(
+                    redis,
+                    "process_v2_ingestion_job",
+                    job_payload,
+                    logger=logger,
+                    context=f"v2 ingest doc_id={doc.external_id}",
+                )
                 if job is None:
                     logger.info("V2 ingestion job already queued (doc_id=%s)", doc.external_id)
                 else:
