@@ -82,6 +82,10 @@ class IngestionService:
         "owner_id",
         "end_user_id",
     }
+    _FOLDER_PATH_UPDATE_ERROR = (
+        "folder_path is managed by Morphik and cannot be changed using the update metadata endpoint. "
+        "Use the folder endpoints to move the document or folder instead."
+    )
 
     def __init__(
         self,
@@ -127,6 +131,14 @@ class IngestionService:
         allow_unchanged_metadata: bool = False,
     ) -> None:
         """Prevent users from setting reserved system fields directly."""
+        if self._has_folder_path_field(metadata, extra_fields, metadata_types):
+            if context == "update":
+                raise ValueError(self._FOLDER_PATH_UPDATE_ERROR)
+            raise ValueError(
+                f"folder_path is managed by Morphik and cannot be set directly during {context}. "
+                "Use folder parameters or folder endpoints to manage document placement."
+            )
+
         invalid_fields = set()
 
         if isinstance(metadata, dict):
@@ -172,13 +184,14 @@ class IngestionService:
         if folder_metadata_value is not None:
             current_values.setdefault("folder_name", folder_metadata_value)
 
-        if doc.folder_path is not None:
-            current_values.setdefault("folder_path", doc.folder_path)
-
         if doc.folder_id is not None:
             current_values.setdefault("folder_id", doc.folder_id)
 
         return current_values
+
+    @staticmethod
+    def _has_folder_path_field(*payloads: Optional[Dict[str, Any]]) -> bool:
+        return any(isinstance(payload, dict) and "folder_path" in payload for payload in payloads)
 
     def _is_unchanged_managed_metadata_value(self, doc: Document, key: str, value: Any) -> bool:
         current_values = self._current_managed_metadata_values(doc)
