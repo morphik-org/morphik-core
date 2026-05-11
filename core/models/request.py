@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Type, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from core.models.completion import ChunkSource
 from core.models.documents import Document
@@ -227,6 +227,7 @@ class IngestTextRequest(BaseModel):
 
     content: str = Field(
         ...,
+        min_length=1,
         description="Raw text content to store as a document.",
     )
     filename: Optional[str] = Field(
@@ -247,6 +248,13 @@ class IngestTextRequest(BaseModel):
     )
     folder_name: Optional[str] = Field(None, description="Optional folder scope for the operation")
     end_user_id: Optional[str] = Field(None, description="Optional end-user scope for the operation")
+
+    @field_validator("content")
+    @classmethod
+    def validate_content_not_blank(cls, content: str) -> str:
+        if not content.strip():
+            raise ValueError("content must not be empty")
+        return content
 
 
 class MetadataUpdateRequest(BaseModel):
