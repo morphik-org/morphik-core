@@ -172,6 +172,9 @@ class IngestionService:
         if folder_metadata_value is not None:
             current_values.setdefault("folder_name", folder_metadata_value)
 
+        if doc.folder_path is not None:
+            current_values.setdefault("folder_path", doc.folder_path)
+
         if doc.folder_id is not None:
             current_values.setdefault("folder_id", doc.folder_id)
 

@@ -113,6 +113,26 @@ async def test_metadata_only_update_allows_unchanged_managed_metadata_fields():
 
 
 @pytest.mark.asyncio
+async def test_metadata_only_update_allows_unchanged_folder_path():
+    doc = _document()
+    service, db = _service(doc)
+
+    updated = await service.update_document(
+        document_id="doc-1",
+        auth=_auth(),
+        metadata={
+            "folder_path": "/Team/Reports",
+            "custom": "new",
+        },
+    )
+
+    assert updated is doc
+    assert doc.metadata["folder_path"] == "/Team/Reports"
+    assert doc.metadata["custom"] == "new"
+    assert len(db.update_calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_metadata_only_update_rejects_changed_managed_metadata_fields():
     doc = _document()
     service, db = _service(doc)
