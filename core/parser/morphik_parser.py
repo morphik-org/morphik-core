@@ -1,8 +1,11 @@
 import io
 import logging
 import os
+import shutil
+import subprocess
 import tempfile
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import openpyxl
@@ -282,6 +285,99 @@ class MorphikParser(BaseParser):
         return ext in self._FAST_EXCEL_EXTENSIONS
 
     @staticmethod
+    def _office_suffix(filename: str) -> Optional[str]:
+        suffix = Path(filename).suffix.lower()
+        if suffix in {".docx", ".doc", ".pptx", ".ppt"}:
+            return suffix
+        return None
+
+    @staticmethod
+    def _convert_office_to_pdf_bytes(file: bytes, suffix: str) -> Optional[bytes]:
+        """Convert Office bytes to PDF bytes for fallback parsing."""
+        if not shutil.which("soffice"):
+            logger.warning("LibreOffice (soffice) not found in PATH; cannot run Office-to-PDF parse fallback.")
+            return None
+
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_input:
+            temp_input.write(file)
+            temp_input_path = temp_input.name
+
+        with tempfile.TemporaryDirectory() as output_dir:
+            try:
+                result = subprocess.run(
+                    [
+                        "soffice",
+                        "--headless",
+                        "--convert-to",
+                        "pdf",
+                        "--outdir",
+                        output_dir,
+                        temp_input_path,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                if result.returncode != 0:
+                    logger.warning(
+                        "LibreOffice fallback conversion failed: %s",
+                        result.stderr.strip() or result.stdout.strip(),
+                    )
+                    return None
+
+                pdf_path = Path(output_dir) / f"{Path(temp_input_path).stem}.pdf"
+                if not pdf_path.exists() or pdf_path.stat().st_size == 0:
+                    logger.warning("LibreOffice fallback conversion produced no PDF content")
+                    return None
+
+                return pdf_path.read_bytes()
+            except subprocess.TimeoutExpired:
+                logger.warning("LibreOffice fallback conversion timed out")
+                return None
+            except Exception as e:
+                logger.warning("LibreOffice fallback conversion failed unexpectedly: %s", e)
+                return None
+            finally:
+                try:
+                    os.unlink(temp_input_path)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _build_deep_pdf_converter() -> DocumentConverter:
+        """Build an uncached Docling converter for expensive fallback parsing."""
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_ocr = True
+        pipeline_options.do_table_structure = True
+
+        try:
+            import easyocr  # noqa: F401
+            from docling.datamodel.pipeline_options import EasyOcrOptions
+
+            pipeline_options.ocr_options = EasyOcrOptions(lang=["en"])
+        except Exception as e:
+            logger.info("Could not configure EasyOCR for deep parse fallback: %s", e)
+
+        try:
+            from docling.datamodel.pipeline_options import TableStructureOptions
+
+            pipeline_options.table_structure_options = TableStructureOptions(mode="accurate")
+        except Exception as e:
+            logger.debug("Could not configure accurate table structure for deep parse fallback: %s", e)
+
+        for attr in ("generate_picture_images", "generate_page_images"):
+            if hasattr(pipeline_options, attr):
+                setattr(pipeline_options, attr, True)
+        if hasattr(pipeline_options, "images_scale"):
+            pipeline_options.images_scale = 2.0
+
+        return DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+            }
+        )
+
+    @staticmethod
     def _parse_excel_to_markdown(file: bytes) -> str:
         """Parse XLSX/XLSM to markdown tables using openpyxl directly.
 
@@ -449,6 +545,38 @@ class MorphikParser(BaseParser):
             except OSError:
                 pass
 
+    async def _parse_document_local_deep(self, file: bytes, filename: str) -> str:
+        """Parse document with expensive fallbacks after normal parsing produced no chunks."""
+        parse_file = file
+        parse_filename = filename
+        office_suffix = self._office_suffix(filename)
+        if office_suffix:
+            converted_pdf = self._convert_office_to_pdf_bytes(file, office_suffix)
+            if converted_pdf:
+                parse_file = converted_pdf
+                parse_filename = f"{Path(filename).stem}.pdf"
+
+        suffix = os.path.splitext(parse_filename)[1] or ".pdf"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(parse_file)
+            temp_path = temp_file.name
+
+        try:
+            converter = self._build_deep_pdf_converter()
+            result = converter.convert(temp_path)
+            text = result.document.export_to_markdown()
+            if not text.strip():
+                self.logger.warning(f"Deep Docling fallback returned no text for {filename}")
+            return text
+        except Exception as e:
+            self.logger.warning(f"Deep Docling fallback failed for {filename}: {e}")
+            return ""
+        finally:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+
     async def _parse_document(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Parse document using Docling (local or API), or read directly for plain text files."""
         # For plain text files, read directly without parsing
@@ -492,6 +620,31 @@ class MorphikParser(BaseParser):
             # Return empty to indicate XML files should use parse_and_chunk_xml
             return {}, ""
         return await self._parse_document(file, filename)
+
+    async def parse_file_to_text_deep(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
+        """Run an expensive parse fallback after normal parsing produced no usable chunks."""
+        if self._is_plain_text_file(filename):
+            return await self.parse_file_to_text(file, filename)
+
+        parse_file = file
+        parse_filename = filename
+        office_suffix = self._office_suffix(filename)
+        if office_suffix:
+            converted_pdf = self._convert_office_to_pdf_bytes(file, office_suffix)
+            if converted_pdf:
+                parse_file = converted_pdf
+                parse_filename = f"{Path(filename).stem}.pdf"
+
+        if self._parse_api_endpoints:
+            try:
+                text = await self._parse_document_via_api(parse_file, parse_filename)
+                if text.strip():
+                    return {"parse_fallback": "deep"}, text
+            except Exception as e:
+                self.logger.warning(f"Deep API parsing failed, falling back to local: {e}")
+
+        text = await self._parse_document_local_deep(parse_file, parse_filename)
+        return {"parse_fallback": "deep"}, text
 
     async def parse_and_chunk_xml(self, file: bytes, filename: str) -> List[Chunk]:
         """Parse and chunk XML files in one step."""
