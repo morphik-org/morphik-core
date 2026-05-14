@@ -679,7 +679,8 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
       });
 
       if (response.ok) {
-        const allDocuments = await response.json();
+        const _rawData = await response.json();
+        const allDocuments = Array.isArray(_rawData) ? _rawData : _rawData.documents || [];
         console.log("All documents received:", allDocuments.length);
 
         // Filter for PDF documents only
