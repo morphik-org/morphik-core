@@ -53,8 +53,9 @@ from core.routes.logs import router as logs_router  # noqa: E402 – import afte
 from core.routes.models import router as models_router
 from core.routes.usage import router as usage_router
 from core.routes.v2 import router as v2_router
+from core.services.local_uri_service import persist_local_app_record
 from core.services.telemetry import TelemetryService
-from core.services_init import document_service, ingestion_service
+from core.services_init import database, document_service, ingestion_service
 from core.utils.folder_utils import normalize_folder_selector
 
 # Set up logging configuration for Docker environment
@@ -968,6 +969,7 @@ async def generate_local_uri(
     expiry_days: int = Form(5475),  # 15 years
     password_token: str = Form(...),
     server_mode: bool = Form(False),
+    redis_pool: Optional[arq.ArqRedis] = Depends(get_optional_redis_pool),
 ) -> Dict[str, str]:
     """Generate a development URI for running Morphik locally."""
     try:
@@ -981,12 +983,15 @@ async def generate_local_uri(
         # Clean name
         name = name.replace(" ", "_").lower()
 
+        app_id = str(uuid.uuid4())
+        token_version = 0
+
         # Create payload (keep entity_id for backward compatibility with old clients)
         payload = {
             "user_id": name,
             "entity_id": name,  # backward compat
-            "app_id": str(uuid.uuid4()),
-            "token_version": 0,
+            "app_id": app_id,
+            "token_version": token_version,
             "exp": datetime.now(UTC) + timedelta(days=expiry_days),
         }
 
@@ -1018,6 +1023,21 @@ async def generate_local_uri(
 
         # Generate URI
         uri = f"morphik://{name}:{token}@{base_url}"
+
+        try:
+            await persist_local_app_record(
+                database=database,
+                app_id=app_id,
+                user_name=name,
+                uri=uri,
+                token_version=token_version,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to persist local app record for app_id %s: %s", app_id, exc)
+            raise HTTPException(status_code=500, detail="Failed to persist generated URI") from exc
+
+        await mark_app_active(app_id, token_version, redis_pool=redis_pool)
+
         return {"uri": uri}
     except HTTPException:
         # Re-raise HTTP exceptions
