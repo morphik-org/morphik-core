@@ -428,6 +428,7 @@ class _MorphikClientLogic:
         completed_only: bool,
         sort_by: Optional[str],
         sort_direction: str,
+        fields: Optional[List[str]] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Prepare request for list_docs endpoint"""
         params = {}
@@ -450,6 +451,15 @@ class _MorphikClientLogic:
             "sort_by": sort_by,
             "sort_direction": sort_direction,
         }
+        if fields:
+            # Always include the fields required to reconstruct a Document client-side, so
+            # projected responses still parse into Document objects. When any metadata field
+            # is requested, also pull metadata_types so typed values (datetime/date/decimal)
+            # are reconstructed instead of returned as raw strings.
+            projected = ["external_id", "content_type", *fields]
+            if any(field.split(".", 1)[0] == "metadata" for field in fields):
+                projected.append("metadata_types")
+            data["fields"] = list(dict.fromkeys(projected))
         return params, data
 
     def _prepare_batch_get_documents_request(

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-06-18
+
+### Added
+- `list_documents(fields=[...])` on sync, async, folder, and user-scoped clients: request only
+  the document fields you need (e.g. `["metadata"]`). The server reads and returns only those
+  columns, so listing metadata never downloads the full document text. `external_id` and
+  `content_type` are always included; `metadata_types` is included automatically when a metadata
+  field is requested so typed values (datetime/date/decimal) are reconstructed rather than
+  returned as raw strings. Nested fields are supported (e.g. `["metadata.client"]`).
+
 ## [1.2.2] - 2026-02-09
 
 ### Added

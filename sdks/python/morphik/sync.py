@@ -283,9 +283,16 @@ class _ScopedClientOps:
         completed_only: bool = False,
         sort_by: Optional[str] = "updated_at",
         sort_direction: str = "desc",
+        fields: Optional[List[str]] = None,
     ) -> ListDocsResponse:
         """
         List documents within this scope.
+
+        Args:
+            fields: Optional list of fields to return for each document (e.g.
+                ["metadata"]). Only those fields are read and returned, so the full
+                document text is never downloaded. external_id and content_type are
+                always included.
         """
         effective_folder = self._merge_folders(additional_folders)
         return self._client._scoped_list_documents(
@@ -301,6 +308,7 @@ class _ScopedClientOps:
             completed_only=completed_only,
             sort_by=sort_by,
             sort_direction=sort_direction,
+            fields=fields,
         )
 
     def batch_get_documents(
@@ -1270,6 +1278,7 @@ class Morphik(_ScopedOperationsMixin):
         completed_only: bool = False,
         sort_by: Optional[str] = "updated_at",
         sort_direction: str = "desc",
+        fields: Optional[List[str]] = None,
     ) -> ListDocsResponse:
         """
         List accessible documents.
@@ -1286,6 +1295,9 @@ class Morphik(_ScopedOperationsMixin):
             completed_only: Only return completed documents
             sort_by: Field to sort by (created_at, updated_at, filename, external_id)
             sort_direction: Sort direction (asc, desc)
+            fields: Optional list of fields to return for each document (e.g. ["metadata"]).
+                Only those fields are read and returned, so the full document text is never
+                downloaded. external_id and content_type are always included.
         Returns:
             ListDocsResponse: Response with documents and metadata
 
@@ -1303,6 +1315,7 @@ class Morphik(_ScopedOperationsMixin):
             completed_only=completed_only,
             sort_by=sort_by,
             sort_direction=sort_direction,
+            fields=fields,
         )
 
     def get_document(self, document_id: str) -> Document:

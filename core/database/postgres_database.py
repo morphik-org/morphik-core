@@ -30,6 +30,42 @@ SUMMARY_METADATA_KEYS = {
     "summary_updated_at",
 }
 
+# Maps a public Document field name to the underlying table column. Used to SELECT
+# only the columns a projection needs, so listing metadata never reads the heavy
+# `system_metadata.content` (the full document text).
+DOCUMENT_PROJECTION_COLUMN_MAP = {
+    "external_id": DocumentModel.external_id,
+    "content_type": DocumentModel.content_type,
+    "filename": DocumentModel.filename,
+    "metadata": DocumentModel.doc_metadata,
+    "metadata_types": DocumentModel.metadata_types,
+    "storage_info": DocumentModel.storage_info,
+    "system_metadata": DocumentModel.system_metadata,
+    "additional_metadata": DocumentModel.additional_metadata,
+    "chunk_ids": DocumentModel.chunk_ids,
+    "folder_name": DocumentModel.folder_name,
+    "folder_path": DocumentModel.folder_path,
+    "folder_id": DocumentModel.folder_id,
+    "app_id": DocumentModel.app_id,
+    "end_user_id": DocumentModel.end_user_id,
+}
+DOCUMENT_PROJECTION_ORDER = [
+    "external_id",
+    "content_type",
+    "filename",
+    "metadata",
+    "metadata_types",
+    "storage_info",
+    "system_metadata",
+    "additional_metadata",
+    "chunk_ids",
+    "folder_name",
+    "folder_path",
+    "folder_id",
+    "app_id",
+    "end_user_id",
+]
+
 
 class PostgresDatabase:
     """PostgreSQL implementation for document metadata storage."""
@@ -403,10 +439,16 @@ class PostgresDatabase:
         include_status_counts: bool = False,
         include_folder_counts: bool = False,
         return_documents: bool = True,
+        fields: Optional[List[str]] = None,
         sort_by: Optional[str] = None,
         sort_direction: str = "desc",
     ) -> Dict[str, Any]:
-        """List documents with optional aggregate metadata. Field projection is handled at application layer."""
+        """List documents with optional aggregate metadata and projected document fields.
+
+        When ``fields`` is provided, only the underlying columns required to serve those
+        fields are selected from Postgres, so listing metadata never reads the full
+        document text stored in ``system_metadata.content``.
+        """
         limit = max(limit, 0) if limit is not None else None
         skip = max(skip, 0)
 
@@ -440,16 +482,24 @@ class PostgresDatabase:
 
                 final_where_clause = " AND ".join(where_clauses) if where_clauses else "TRUE"
 
-                documents: List[Document] = []
+                documents: List[Any] = []
                 returned_count = 0
                 has_more = False
 
                 fetch_documents = return_documents and (limit is None or limit > 0)
 
                 if fetch_documents:
-                    # Note: We always select all columns from the database
-                    # Field projection is handled at the application layer for simplicity
-                    base_query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
+                    projection_fields = self._resolve_document_projection_fields(fields)
+                    if projection_fields:
+                        # Select only the columns the projection needs (skips the heavy
+                        # system_metadata/content read entirely).
+                        selected_columns = self._document_projection_columns(projection_fields)
+                        base_query = select(*selected_columns).where(
+                            text(final_where_clause).bindparams(**filter_params)
+                        )
+                    else:
+                        base_query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
+
                     order_clause = self._resolve_document_sort_clause(sort_by, sort_direction)
                     if order_clause is not None:
                         base_query = base_query.order_by(order_clause, DocumentModel.external_id.asc())
@@ -462,13 +512,20 @@ class PostgresDatabase:
                         base_query = base_query.limit(fetch_limit)
 
                     result = await session.execute(base_query)
-                    doc_models = result.scalars().all()
 
-                    if fetch_limit is not None and len(doc_models) > limit:
-                        has_more = True
-                        doc_models = doc_models[:limit]
-
-                    documents = [Document(**_document_model_to_dict(doc_model)) for doc_model in doc_models]
+                    if projection_fields:
+                        documents = [
+                            self._document_projection_row_to_dict(row, projection_fields) for row in result.mappings()
+                        ]
+                        if fetch_limit is not None and len(documents) > limit:
+                            has_more = True
+                            documents = documents[:limit]
+                    else:
+                        doc_models = result.scalars().all()
+                        if fetch_limit is not None and len(doc_models) > limit:
+                            has_more = True
+                            doc_models = doc_models[:limit]
+                        documents = [Document(**_document_model_to_dict(doc_model)) for doc_model in doc_models]
                     returned_count = len(documents)
 
                 total_count: Optional[int] = None
@@ -567,6 +624,60 @@ class PostgresDatabase:
             "(system_metadata->>'created_at')::timestamptz) "
             f"{direction} NULLS LAST"
         )
+
+    @staticmethod
+    def _resolve_document_projection_fields(fields: Optional[List[str]]) -> Optional[set]:
+        """Resolve requested API fields to the document table columns needed to serve them.
+
+        Note: ``summary_*`` and ``page_count`` are derived from ``system_metadata``, so
+        projecting them reads that column (which also holds the full document text). Plain
+        ``metadata`` lives in its own column and stays lightweight.
+        """
+        if not fields:
+            return None
+
+        requested_roots = {field.strip().split(".", 1)[0] for field in fields if field and field.strip()}
+        if not requested_roots:
+            return None
+
+        # external_id is always needed to identify each document.
+        resolved_fields = {"external_id"}
+        for root in requested_roots:
+            if root in DOCUMENT_PROJECTION_COLUMN_MAP:
+                resolved_fields.add(root)
+            elif root in SUMMARY_METADATA_KEYS:
+                # summary_* values are derived from system_metadata.
+                resolved_fields.add("system_metadata")
+            elif root == "page_count":
+                resolved_fields.add("system_metadata")
+                resolved_fields.add("chunk_ids")
+
+        return resolved_fields
+
+    @staticmethod
+    def _document_projection_columns(fields: set):
+        """Return a stable list of labeled SQLAlchemy columns for a document projection."""
+        return [
+            DOCUMENT_PROJECTION_COLUMN_MAP[field].label(field) for field in DOCUMENT_PROJECTION_ORDER if field in fields
+        ]
+
+    @staticmethod
+    def _document_projection_row_to_dict(row: Any, fields: set) -> Dict[str, Any]:
+        """Convert a projected document row (a SQLAlchemy mapping) to the public document dict shape."""
+        document = dict(row)
+
+        for key in ("metadata", "metadata_types", "storage_info", "system_metadata", "additional_metadata"):
+            if key in document and document[key] is None:
+                document[key] = {}
+        if "chunk_ids" in document and document["chunk_ids"] is None:
+            document["chunk_ids"] = []
+
+        system_metadata = document.get("system_metadata") or {}
+        if "system_metadata" in fields and isinstance(system_metadata, dict):
+            for key in SUMMARY_METADATA_KEYS:
+                document[key] = system_metadata.get(key)
+
+        return document
 
     async def update_document(
         self,
