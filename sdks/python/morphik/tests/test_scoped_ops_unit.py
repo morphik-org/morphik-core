@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import jwt
 import pytest
@@ -301,6 +303,59 @@ def test_sync_get_document_by_filename_scoped_params_and_encoding():
         assert call["endpoint"] == "documents/filename/folder%2Ffile%20name.txt"
         assert call["params"] == {"folder_name": "/team/docs", "folder_depth": 2, "end_user_id": "user-1"}
         assert doc.external_id == "doc-123"
+    finally:
+        client.close()
+
+
+def test_sync_ingest_migrated_document_posts_migration_payload():
+    client = Morphik()
+    calls = []
+
+    def fake_request(method, endpoint, data=None, files=None, params=None):
+        calls.append({"method": method, "endpoint": endpoint, "data": data, "files": files, "params": params})
+        return {
+            "status": "created",
+            "document": {
+                "external_id": "source-doc-1",
+                "content_type": "application/pdf",
+                "filename": "report.pdf",
+            },
+        }
+
+    client._request = fake_request  # type: ignore[attr-defined]
+    try:
+        status, doc = client._ingest_migrated_document(
+            source_document_id="source-doc-1",
+            file_content=b"pdf-bytes",
+            filename="report.pdf",
+            content_type="application/pdf",
+            metadata={"category": "finance", "_morphik_migration": {"source_document_id": "source-doc-1"}},
+            metadata_types={"category": "string", "_morphik_migration": "object"},
+            folder_name="/finance/reports",
+            end_user_id="customer-1",
+            use_colpali=True,
+            on_conflict="skip",
+        )
+        call = calls.pop()
+        assert call["method"] == "POST"
+        assert call["endpoint"] == "migrate/document"
+        assert call["data"]["source_document_id"] == "source-doc-1"
+        assert call["data"]["folder_name"] == "/finance/reports"
+        assert call["data"]["end_user_id"] == "customer-1"
+        assert call["data"]["use_colpali"] == "true"
+        assert call["data"]["on_conflict"] == "skip"
+        assert json.loads(call["data"]["metadata"]) == {
+            "category": "finance",
+            "_morphik_migration": {"source_document_id": "source-doc-1"},
+        }
+        assert json.loads(call["data"]["metadata_types"]) == {
+            "category": "string",
+            "_morphik_migration": "object",
+        }
+        assert call["files"]["file"][0] == "report.pdf"
+        assert call["files"]["file"][2] == "application/pdf"
+        assert status == "created"
+        assert doc.external_id == "source-doc-1"
     finally:
         client.close()
 

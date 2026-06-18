@@ -78,6 +78,12 @@ response = db.query(
 )
 
 print(response.completion)
+
+# Migrate this app's documents into another Morphik deployment.
+# Run this from a machine that can reach both source and target, such as
+# inside a customer's VPN for on-prem targets.
+result = db.migrate(target_uri="morphik://owner_id:token@onprem.example.com", target_is_local=True)
+print(result.created_count, result.skipped_count, result.failed_count)
 ```
 
 ### Nested Folders & Folder Depth

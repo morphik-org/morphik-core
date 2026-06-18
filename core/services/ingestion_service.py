@@ -561,6 +561,7 @@ class IngestionService:
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         use_colpali: Optional[bool] = False,
+        external_id: Optional[str] = None,
     ) -> Document:
         """
         Ingests file content from bytes. Saves to storage, creates document record,
@@ -583,6 +584,7 @@ class IngestionService:
         )
 
         doc = Document(
+            external_id=external_id or str(uuid.uuid4()),
             filename=filename,
             content_type=resolved_content_type,
             metadata=metadata or {},

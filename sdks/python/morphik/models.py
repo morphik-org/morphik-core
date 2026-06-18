@@ -415,6 +415,27 @@ class ListDocsResponse(BaseModel):
     folder_counts: Optional[List[FolderCount]] = Field(None, description="Document counts by folder")
 
 
+class MigrationDocumentResult(BaseModel):
+    """Per-document result from a migration run."""
+
+    source_document_id: str = Field(..., description="Document ID in the source Morphik app")
+    target_document_id: Optional[str] = Field(None, description="Document ID in the target Morphik app")
+    filename: Optional[str] = Field(None, description="Migrated filename")
+    status: Literal["created", "skipped", "failed"] = Field(..., description="Migration outcome")
+    error: Optional[str] = Field(None, description="Error message when status is failed")
+
+
+class MigrationResult(BaseModel):
+    """Summary returned by client.migrate."""
+
+    documents: List[MigrationDocumentResult] = Field(default_factory=list)
+    total_source_count: Optional[int] = Field(None, description="Total matching source documents, when available")
+    attempted_count: int = Field(..., description="Number of source documents attempted")
+    created_count: int = Field(..., description="Number of target documents created")
+    skipped_count: int = Field(..., description="Number of target documents skipped because they already existed")
+    failed_count: int = Field(..., description="Number of documents that failed migration")
+
+
 class IngestTextRequest(BaseModel):
     """Request model for ingesting text content"""
 
