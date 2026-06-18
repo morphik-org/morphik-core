@@ -117,6 +117,39 @@ def test_sync_list_documents_payloads_across_scopes():
         client.close()
 
 
+def test_sync_list_documents_fields_projection():
+    client, calls = _make_sync_client()
+    try:
+        # external_id + content_type are always added so the response parses into a Document;
+        # metadata_types is added so typed metadata values are reconstructed, not left as strings.
+        client.list_documents(fields=["metadata"])
+        assert calls.pop()["data"]["fields"] == ["external_id", "content_type", "metadata", "metadata_types"]
+
+        # Already-included required fields are not duplicated; order is preserved.
+        client.list_documents(fields=["external_id", "filename", "metadata"])
+        assert calls.pop()["data"]["fields"] == [
+            "external_id",
+            "content_type",
+            "filename",
+            "metadata",
+            "metadata_types",
+        ]
+
+        # Nested metadata paths also trigger metadata_types.
+        client.list_documents(fields=["metadata.client"])
+        assert calls.pop()["data"]["fields"] == ["external_id", "content_type", "metadata.client", "metadata_types"]
+
+        # Non-metadata projection does not pull metadata_types.
+        client.list_documents(fields=["filename"])
+        assert calls.pop()["data"]["fields"] == ["external_id", "content_type", "filename"]
+
+        # No fields -> no projection requested (full documents).
+        client.list_documents()
+        assert "fields" not in calls.pop()["data"]
+    finally:
+        client.close()
+
+
 def test_async_client_http2_toggle(monkeypatch):
     captured = []
 

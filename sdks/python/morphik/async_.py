@@ -267,8 +267,15 @@ class _AsyncScopedClientOps:
         completed_only: bool = False,
         sort_by: Optional[str] = "updated_at",
         sort_direction: str = "desc",
+        fields: Optional[List[str]] = None,
     ) -> ListDocsResponse:
-        """List documents within this scope (async)."""
+        """List documents within this scope (async).
+
+        Args:
+            fields: Optional list of fields to return for each document (e.g. ["metadata"]).
+                Only those fields are read and returned, so the full document text is never
+                downloaded. external_id and content_type are always included.
+        """
         effective_folder = self._merge_folders(additional_folders)
         return await self._client._scoped_list_documents(
             skip=skip,
@@ -283,6 +290,7 @@ class _AsyncScopedClientOps:
             completed_only=completed_only,
             sort_by=sort_by,
             sort_direction=sort_direction,
+            fields=fields,
         )
 
     async def batch_get_documents(
@@ -1231,6 +1239,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
         completed_only: bool = False,
         sort_by: Optional[str] = "updated_at",
         sort_direction: str = "desc",
+        fields: Optional[List[str]] = None,
     ) -> ListDocsResponse:
         """
         List accessible documents.
@@ -1247,6 +1256,9 @@ class AsyncMorphik(_ScopedOperationsMixin):
             completed_only: Only return completed documents
             sort_by: Field to sort by (created_at, updated_at, filename, external_id)
             sort_direction: Sort direction (asc, desc)
+            fields: Optional list of fields to return for each document (e.g. ["metadata"]).
+                Only those fields are read and returned, so the full document text is never
+                downloaded. external_id and content_type are always included.
         Returns:
             ListDocsResponse: Response with documents and metadata
 
@@ -1264,6 +1276,7 @@ class AsyncMorphik(_ScopedOperationsMixin):
             completed_only=completed_only,
             sort_by=sort_by,
             sort_direction=sort_direction,
+            fields=fields,
         )
 
     async def get_document(self, document_id: str) -> Document:
