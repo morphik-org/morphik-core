@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `list_documents_metadata()` for sync, async, folder, and user-scoped clients. It returns a lightweight paginated metadata response and supports the same filters, folder scoping, aggregates, and sorting arguments as `list_documents()`.
+
 ## [1.2.2] - 2026-02-09
 
 ### Added

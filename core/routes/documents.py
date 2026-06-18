@@ -102,6 +102,7 @@ async def list_docs(
             include_status_counts=request.include_status_counts,
             include_folder_counts=request.include_folder_counts,
             return_documents=request.return_documents,
+            fields=request.fields,
             sort_by=request.sort_by,
             sort_direction=request.sort_direction,
         )

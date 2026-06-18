@@ -40,6 +40,7 @@ from .models import (
     FolderSummary,
     GroupedChunkResponse,
     IngestTextRequest,
+    ListDocumentMetadataResponse,
     ListDocsResponse,
     LogResponse,
     QueryPromptOverrides,
@@ -301,6 +302,41 @@ class _ScopedClientOps:
             completed_only=completed_only,
             sort_by=sort_by,
             sort_direction=sort_direction,
+        )
+
+    def list_documents_metadata(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        additional_folders: Optional[List[str]] = None,
+        folder_depth: Optional[int] = None,
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        completed_only: bool = False,
+        sort_by: Optional[str] = "updated_at",
+        sort_direction: str = "desc",
+        fields: Optional[List[str]] = None,
+    ) -> ListDocumentMetadataResponse:
+        """
+        List lightweight document metadata within this scope.
+        """
+        effective_folder = self._merge_folders(additional_folders)
+        return self._client._scoped_list_documents_metadata(
+            skip=skip,
+            limit=limit,
+            filters=filters,
+            folder_name=effective_folder,
+            folder_depth=folder_depth,
+            end_user_id=self._scope_end_user_id(),
+            include_total_count=include_total_count,
+            include_status_counts=include_status_counts,
+            include_folder_counts=include_folder_counts,
+            completed_only=completed_only,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+            fields=fields,
         )
 
     def batch_get_documents(
@@ -1303,6 +1339,58 @@ class Morphik(_ScopedOperationsMixin):
             completed_only=completed_only,
             sort_by=sort_by,
             sort_direction=sort_direction,
+        )
+
+    def list_documents_metadata(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
+        include_total_count: bool = False,
+        include_status_counts: bool = False,
+        include_folder_counts: bool = False,
+        completed_only: bool = False,
+        sort_by: Optional[str] = "updated_at",
+        sort_direction: str = "desc",
+        fields: Optional[List[str]] = None,
+    ) -> ListDocumentMetadataResponse:
+        """
+        List accessible document metadata without large document fields.
+
+        Args:
+            skip: Number of documents to skip
+            limit: Maximum number of documents to return
+            filters: Optional filters (use key "filename" to filter the filename column via $and/$or)
+            folder_name: Optional folder name (or list of names) to scope the request
+            folder_depth: Optional folder scope depth (None/0 exact, -1 descendants, n>0 include up to n levels)
+            include_total_count: Include total count of matching documents
+            include_status_counts: Include counts grouped by status
+            include_folder_counts: Include counts grouped by folder
+            completed_only: Only return completed documents
+            sort_by: Field to sort by (created_at, updated_at, filename, external_id)
+            sort_direction: Sort direction (asc, desc)
+            fields: Optional projected fields. Defaults to common metadata fields.
+
+        Returns:
+            ListDocumentMetadataResponse: Response with lightweight document metadata and pagination
+
+        """
+        return self._scoped_list_documents_metadata(
+            skip=skip,
+            limit=limit,
+            filters=filters,
+            folder_name=folder_name,
+            folder_depth=folder_depth,
+            end_user_id=None,
+            include_total_count=include_total_count,
+            include_status_counts=include_status_counts,
+            include_folder_counts=include_folder_counts,
+            completed_only=completed_only,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+            fields=fields,
         )
 
     def get_document(self, document_id: str) -> Document:

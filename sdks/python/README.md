@@ -97,6 +97,18 @@ docs = db.list_documents(folder_name="/projects/alpha", folder_depth=-1)
 
 `Folder.full_path` is exposed on folder objects, and `Document.folder_path` mirrors server responses for tracing scope.
 
+### Listing Document Metadata
+
+Use `list_documents_metadata()` when you need a fast paginated inventory without large document fields such as chunk IDs or generated additional metadata:
+
+```python
+response = db.list_documents_metadata(limit=100, include_total_count=True)
+for doc in response.documents:
+    print(doc.external_id, doc.filename, doc.metadata)
+```
+
+The method accepts the same filters, folder scoping, pagination, aggregates, and sorting arguments as `list_documents()`. Pass `fields=["external_id", "metadata.source"]` to request a smaller custom projection.
+
 ### Asynchronous Usage
 
 ```python

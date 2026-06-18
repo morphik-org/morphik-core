@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import httpx
 import jwt
 import pytest
@@ -34,6 +36,23 @@ def _make_sync_client():
             return []
         if isinstance(endpoint, str) and endpoint.startswith("documents/filename/"):
             return _mock_document_response()
+        if endpoint == "documents/list_docs" and isinstance(data, dict) and data.get("fields") is not None:
+            return {
+                "documents": [
+                    {
+                        "external_id": "doc-meta-1",
+                        "content_type": "text/plain",
+                        "filename": "metadata.txt",
+                        "metadata": {"created_at": "2024-01-02T03:04:05"},
+                        "metadata_types": {"created_at": "datetime"},
+                        "system_metadata": {"status": "completed"},
+                    }
+                ],
+                "skip": data.get("skip", 0),
+                "limit": data.get("limit", 100),
+                "returned_count": 1,
+                "has_more": False,
+            }
         # Return mock ListDocsResponse format
         return {
             "documents": [],
@@ -68,6 +87,23 @@ async def _make_async_client():
             return []
         if isinstance(endpoint, str) and endpoint.startswith("documents/filename/"):
             return _mock_document_response()
+        if endpoint == "documents/list_docs" and isinstance(data, dict) and data.get("fields") is not None:
+            return {
+                "documents": [
+                    {
+                        "external_id": "doc-meta-1",
+                        "content_type": "text/plain",
+                        "filename": "metadata.txt",
+                        "metadata": {"created_at": "2024-01-02T03:04:05"},
+                        "metadata_types": {"created_at": "datetime"},
+                        "system_metadata": {"status": "completed"},
+                    }
+                ],
+                "skip": data.get("skip", 0),
+                "limit": data.get("limit", 100),
+                "returned_count": 1,
+                "has_more": False,
+            }
         # Return mock ListDocsResponse format
         return {
             "documents": [],
@@ -113,6 +149,44 @@ def test_sync_list_documents_payloads_across_scopes():
         assert folder_user_call["params"]["folder_name"] == ["alpha", "shared"]
         assert folder_user_call["params"]["end_user_id"] == "user-2"
         assert folder_user_call["data"]["document_filters"] is None
+    finally:
+        client.close()
+
+
+def test_sync_list_documents_metadata_payloads_and_response():
+    client, calls = _make_sync_client()
+    try:
+        response = client.list_documents_metadata(
+            skip=1,
+            limit=2,
+            filters={"department": "ops"},
+            include_total_count=True,
+        )
+        base_call = calls.pop()
+        assert base_call["method"] == "POST"
+        assert base_call["endpoint"] == "documents/list_docs"
+        assert base_call["params"] == {}
+        assert base_call["data"]["skip"] == 1
+        assert base_call["data"]["limit"] == 2
+        assert base_call["data"]["document_filters"] == {"department": "ops"}
+        assert base_call["data"]["return_documents"] is True
+        assert "metadata" in base_call["data"]["fields"]
+        assert "system_metadata" in base_call["data"]["fields"]
+        assert "chunk_ids" not in base_call["data"]["fields"]
+        assert response.documents[0].external_id == "doc-meta-1"
+        assert isinstance(response.documents[0].metadata["created_at"], datetime)
+
+        folder = Folder(client, "alpha", full_path="/projects/alpha")
+        folder.list_documents_metadata(fields=["metadata.source"], additional_folders=["/shared"])
+        folder_call = calls.pop()
+        assert folder_call["params"]["folder_name"] == ["/projects/alpha", "/shared"]
+        assert folder_call["data"]["fields"] == ["metadata.source"]
+
+        user = client.signin("user-1")
+        user.list_documents_metadata(limit=7)
+        user_call = calls.pop()
+        assert user_call["params"]["end_user_id"] == "user-1"
+        assert user_call["data"]["limit"] == 7
     finally:
         client.close()
 
@@ -363,6 +437,40 @@ async def test_async_list_documents_payloads_across_scopes():
         assert folder_user_call["params"]["folder_name"] == ["ops", "shared"]
         assert folder_user_call["params"]["end_user_id"] == "usr-7"
         assert folder_user_call["data"]["document_filters"] is None
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_list_documents_metadata_payloads_across_scopes():
+    client, calls = await _make_async_client()
+    try:
+        response = await client.list_documents_metadata(
+            skip=3,
+            limit=6,
+            filters={"region": "na"},
+            fields=["external_id", "metadata.owner"],
+        )
+        base_call = calls.pop()
+        assert base_call["params"] == {}
+        assert base_call["data"]["skip"] == 3
+        assert base_call["data"]["limit"] == 6
+        assert base_call["data"]["document_filters"] == {"region": "na"}
+        assert base_call["data"]["fields"] == ["external_id", "metadata.owner"]
+        assert response.documents[0].external_id == "doc-meta-1"
+
+        folder = client.get_folder_by_name("ops")
+        await folder.list_documents_metadata(additional_folders=["archive"])
+        folder_call = calls.pop()
+        assert folder_call["params"]["folder_name"] == ["ops", "archive"]
+        assert "metadata" in folder_call["data"]["fields"]
+        assert "chunk_ids" not in folder_call["data"]["fields"]
+
+        user = client.signin("usr-5")
+        await user.list_documents_metadata(filters={"tag": "beta"})
+        user_call = calls.pop()
+        assert user_call["params"]["end_user_id"] == "usr-5"
+        assert user_call["data"]["document_filters"] == {"tag": "beta"}
     finally:
         await client.close()
 
