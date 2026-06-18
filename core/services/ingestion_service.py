@@ -607,7 +607,14 @@ class IngestionService:
         doc.metadata_types = metadata_bundle.types
 
         # 1. Create initial document record in DB
-        await self.db.store_document(doc, auth, metadata_bundle=metadata_bundle)
+        stored = await self.db.store_document(doc, auth, metadata_bundle=metadata_bundle)
+        if not stored:
+            if external_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Document {external_id} already exists or could not be created",
+                )
+            raise HTTPException(status_code=500, detail="Failed to create document metadata")
         logger.info(f"Initial document record created for {filename} (doc_id: {doc.external_id})")
 
         try:
