@@ -428,6 +428,8 @@ class _MorphikClientLogic:
         completed_only: bool,
         sort_by: Optional[str],
         sort_direction: str,
+        return_documents: bool = True,
+        fields: Optional[List[str]] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Prepare request for list_docs endpoint"""
         params = {}
@@ -442,7 +444,7 @@ class _MorphikClientLogic:
             "skip": skip,
             "limit": limit,
             "document_filters": filters,
-            "return_documents": True,
+            "return_documents": return_documents,
             "include_total_count": include_total_count,
             "include_status_counts": include_status_counts,
             "include_folder_counts": include_folder_counts,
@@ -450,6 +452,8 @@ class _MorphikClientLogic:
             "sort_by": sort_by,
             "sort_direction": sort_direction,
         }
+        if fields is not None:
+            data["fields"] = fields
         return params, data
 
     def _prepare_batch_get_documents_request(

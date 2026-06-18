@@ -401,10 +401,53 @@ class FolderCount(BaseModel):
     count: int = Field(..., description="Number of documents in folder")
 
 
+class DocumentMetadata(BaseModel):
+    """Lightweight document metadata returned by list_documents_metadata."""
+
+    external_id: str = Field(..., description="Unique document identifier")
+    content_type: Optional[str] = Field(None, description="Content type of the document")
+    filename: Optional[str] = Field(None, description="Original filename if available")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
+    metadata_types: Dict[str, str] = Field(default_factory=dict, description="Per-field metadata type hints")
+    system_metadata: Dict[str, Any] = Field(default_factory=dict, description="System-managed metadata")
+    page_count: Optional[int] = Field(None, description="Number of pages derived during ingestion")
+    folder_name: Optional[str] = Field(None, description="Folder scope for the document")
+    folder_path: Optional[str] = Field(None, description="Canonical folder path for the document")
+    folder_id: Optional[str] = Field(None, description="Folder identifier for the document")
+    end_user_id: Optional[str] = Field(None, description="End-user scope for the document")
+    app_id: Optional[str] = Field(None, description="App identifier for the document")
+    summary_storage_key: Optional[str] = Field(None, description="Pointer to the stored summary blob")
+    summary_version: Optional[int] = Field(None, description="Version number of the stored summary")
+    summary_bucket: Optional[str] = Field(None, description="Bucket or container that stores the summary")
+    summary_updated_at: Optional[str] = Field(None, description="Timestamp when the summary was last updated")
+
+    @model_validator(mode="after")
+    def _reconstruct_types(self) -> "DocumentMetadata":
+        """Reconstruct typed metadata values from stored string representations."""
+        if self.metadata and self.metadata_types:
+            reconstructed = _reconstruct_metadata_types(self.metadata, self.metadata_types)
+            object.__setattr__(self, "metadata", reconstructed)
+        return self
+
+
 class ListDocsResponse(BaseModel):
     """Response model for list_documents with pagination and aggregates"""
 
     documents: List[Document] = Field(default_factory=list, description="List of documents")
+    skip: int = Field(..., description="Pagination offset used")
+    limit: int = Field(..., description="Limit used")
+    returned_count: int = Field(..., description="Number of documents in this response")
+    total_count: Optional[int] = Field(None, description="Total matching documents (if include_total_count=True)")
+    has_more: bool = Field(False, description="Whether more documents exist beyond this page")
+    next_skip: Optional[int] = Field(None, description="Skip value for next page")
+    status_counts: Optional[Dict[str, int]] = Field(None, description="Document counts by status")
+    folder_counts: Optional[List[FolderCount]] = Field(None, description="Document counts by folder")
+
+
+class ListDocumentMetadataResponse(BaseModel):
+    """Response model for list_documents_metadata with pagination and aggregates."""
+
+    documents: List[DocumentMetadata] = Field(default_factory=list, description="List of document metadata")
     skip: int = Field(..., description="Pagination offset used")
     limit: int = Field(..., description="Limit used")
     returned_count: int = Field(..., description="Number of documents in this response")

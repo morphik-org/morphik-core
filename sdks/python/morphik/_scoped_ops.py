@@ -10,6 +10,23 @@ from ._internal import FinalChunkResult
 T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
+DEFAULT_DOCUMENT_METADATA_FIELDS = [
+    "external_id",
+    "content_type",
+    "filename",
+    "metadata",
+    "metadata_types",
+    "system_metadata",
+    "folder_name",
+    "folder_path",
+    "folder_id",
+    "end_user_id",
+    "app_id",
+    "summary_storage_key",
+    "summary_version",
+    "summary_bucket",
+    "summary_updated_at",
+]
 
 
 class _ScopedOperationsMixin:
@@ -301,6 +318,51 @@ class _ScopedOperationsMixin:
             parser=self._parse_list_docs_response,
         )
 
+    def _scoped_list_documents_metadata(
+        self,
+        *,
+        skip: int,
+        limit: int,
+        filters: Optional[Dict[str, Any]],
+        folder_name: Optional[Union[str, List[str]]],
+        folder_depth: Optional[int],
+        end_user_id: Optional[str],
+        include_total_count: bool,
+        include_status_counts: bool,
+        include_folder_counts: bool,
+        completed_only: bool,
+        sort_by: Optional[str],
+        sort_direction: str,
+        fields: Optional[List[str]],
+    ):
+        selected_fields = fields if fields is not None else DEFAULT_DOCUMENT_METADATA_FIELDS
+        if not selected_fields:
+            selected_fields = ["external_id"]
+
+        params, data = self._logic._prepare_list_documents_request(
+            skip,
+            limit,
+            filters,
+            folder_name,
+            folder_depth,
+            end_user_id,
+            include_total_count,
+            include_status_counts,
+            include_folder_counts,
+            completed_only,
+            sort_by,
+            sort_direction,
+            fields=selected_fields,
+        )
+
+        return self._execute_scoped_operation(
+            "POST",
+            "documents/list_docs",
+            data=data,
+            params=params,
+            parser=self._parse_list_document_metadata_response,
+        )
+
     # ------------------------------------------------------------------
     # Parsers shared across clients
     # ------------------------------------------------------------------
@@ -322,3 +384,8 @@ class _ScopedOperationsMixin:
         for doc in result.documents:
             doc._client = self
         return result
+
+    def _parse_list_document_metadata_response(self, response: Dict[str, Any]):
+        from .models import ListDocumentMetadataResponse
+
+        return ListDocumentMetadataResponse(**response)
