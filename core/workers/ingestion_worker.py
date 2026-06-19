@@ -167,19 +167,22 @@ async def update_document_progress(ingestion_service, document_id, auth, current
         step_name: Human-readable name of the current step
     """
     try:
-        updates = {
-            "system_metadata": {
-                "status": "processing",
-                "progress": {
-                    "current_step": current_step,
-                    "total_steps": total_steps,
-                    "step_name": step_name,
-                    "percentage": round((current_step / total_steps) * 100),
-                },
-                "updated_at": datetime.now(UTC),
-            }
+        patch = {
+            "status": "processing",
+            "progress": {
+                "current_step": current_step,
+                "total_steps": total_steps,
+                "step_name": step_name,
+                "percentage": round((current_step / total_steps) * 100),
+            },
+            "updated_at": datetime.now(UTC),
         }
-        await ingestion_service.db.update_document(document_id, updates, auth)
+        db = ingestion_service.db
+        # Merge progress server-side without reading the document's full system_metadata.
+        if hasattr(db, "update_document_system_metadata_fields"):
+            await db.update_document_system_metadata_fields(document_id, patch, auth)
+        else:
+            await db.update_document(document_id, {"system_metadata": patch}, auth)
         logger.debug(f"Updated progress: {step_name} ({current_step}/{total_steps})")
     except Exception as e:
         logger.warning(f"Failed to update progress for document {document_id}: {e}")
@@ -191,19 +194,21 @@ async def update_document_progress_v2(database, document_id, auth, current_step,
     Update progress metadata for v2 ingestion without requiring IngestionService.
     """
     try:
-        updates = {
-            "system_metadata": {
-                "status": "processing",
-                "progress": {
-                    "current_step": current_step,
-                    "total_steps": total_steps,
-                    "step_name": step_name,
-                    "percentage": round((current_step / total_steps) * 100),
-                },
-                "updated_at": datetime.now(UTC),
-            }
+        patch = {
+            "status": "processing",
+            "progress": {
+                "current_step": current_step,
+                "total_steps": total_steps,
+                "step_name": step_name,
+                "percentage": round((current_step / total_steps) * 100),
+            },
+            "updated_at": datetime.now(UTC),
         }
-        await database.update_document(document_id, updates, auth)
+        # Merge progress server-side without reading the document's full system_metadata.
+        if hasattr(database, "update_document_system_metadata_fields"):
+            await database.update_document_system_metadata_fields(document_id, patch, auth)
+        else:
+            await database.update_document(document_id, {"system_metadata": patch}, auth)
         logger.debug("Updated v2 progress: %s (%s/%s)", step_name, current_step, total_steps)
     except Exception as e:
         logger.warning("Failed to update v2 progress for document %s: %s", document_id, e)
