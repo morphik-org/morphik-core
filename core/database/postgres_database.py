@@ -30,6 +30,47 @@ SUMMARY_METADATA_KEYS = {
     "summary_updated_at",
 }
 
+# Maps a public Document field name to the underlying table column. Used to SELECT
+# only the columns a projection needs, so listing metadata never reads the heavy
+# `system_metadata.content` (the full document text).
+DOCUMENT_PROJECTION_COLUMN_MAP = {
+    "external_id": DocumentModel.external_id,
+    "content_type": DocumentModel.content_type,
+    "filename": DocumentModel.filename,
+    "metadata": DocumentModel.doc_metadata,
+    "metadata_types": DocumentModel.metadata_types,
+    "storage_info": DocumentModel.storage_info,
+    "system_metadata": DocumentModel.system_metadata,
+    "additional_metadata": DocumentModel.additional_metadata,
+    "chunk_ids": DocumentModel.chunk_ids,
+    "folder_name": DocumentModel.folder_name,
+    "folder_path": DocumentModel.folder_path,
+    "folder_id": DocumentModel.folder_id,
+    "app_id": DocumentModel.app_id,
+    "end_user_id": DocumentModel.end_user_id,
+}
+DOCUMENT_PROJECTION_ORDER = [
+    "external_id",
+    "content_type",
+    "filename",
+    "metadata",
+    "metadata_types",
+    "storage_info",
+    "system_metadata",
+    "additional_metadata",
+    "chunk_ids",
+    "folder_name",
+    "folder_path",
+    "folder_id",
+    "app_id",
+    "end_user_id",
+]
+# Lightweight scalar keys inside system_metadata that can be projected cheaply via a
+# JSON-path read (system_metadata->>'<key>'), without materializing the full
+# system_metadata blob (which holds the document text). Returned in a slim
+# system_metadata dict so the SDK can read e.g. doc status locally with no extra call.
+DOCUMENT_STATUS_PROJECTION_KEYS = {"status", "error", "created_at", "updated_at", "progress", "version"}
+
 
 class PostgresDatabase:
     """PostgreSQL implementation for document metadata storage."""
@@ -336,6 +377,7 @@ class PostgresDatabase:
         document_ids: List[str],
         auth: AuthContext,
         system_filters: Optional[Dict[str, Any]] = None,
+        fields: Optional[List[str]] = None,
     ) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
@@ -346,6 +388,9 @@ class PostgresDatabase:
             document_ids: List of document IDs to retrieve
             auth: Authentication context
             system_filters: Optional filters for system metadata fields
+            fields: Optional list of fields to project. When provided, only those columns are
+                read from Postgres (e.g. metadata listing avoids the full document text in
+                system_metadata.content).
 
         Returns:
             List of Document objects that were found and user has access to
@@ -372,17 +417,26 @@ class PostgresDatabase:
                 final_where_clause = " AND ".join(where_clauses)
 
                 # Query documents with document IDs, access check, and system filters in a single query
-                query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
+                projection_fields = self._resolve_document_projection_fields(fields)
+                if projection_fields:
+                    selected_columns = self._document_projection_columns(projection_fields)
+                    query = select(*selected_columns).where(text(final_where_clause).bindparams(**filter_params))
+                else:
+                    query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
 
                 logger.info(f"Batch retrieving {len(document_ids)} documents with a single query")
 
                 # Execute batch query
                 result = await session.execute(query)
-                doc_models = result.scalars().all()
 
-                documents = []
-                for doc_model in doc_models:
-                    documents.append(Document(**_document_model_to_dict(doc_model)))
+                if projection_fields:
+                    documents = [
+                        Document(**self._document_projection_row_to_dict(row, projection_fields))
+                        for row in result.mappings()
+                    ]
+                else:
+                    doc_models = result.scalars().all()
+                    documents = [Document(**_document_model_to_dict(doc_model)) for doc_model in doc_models]
 
                 logger.info(f"Found {len(documents)} documents in batch retrieval")
                 return documents
@@ -403,10 +457,16 @@ class PostgresDatabase:
         include_status_counts: bool = False,
         include_folder_counts: bool = False,
         return_documents: bool = True,
+        fields: Optional[List[str]] = None,
         sort_by: Optional[str] = None,
         sort_direction: str = "desc",
     ) -> Dict[str, Any]:
-        """List documents with optional aggregate metadata. Field projection is handled at application layer."""
+        """List documents with optional aggregate metadata and projected document fields.
+
+        When ``fields`` is provided, only the underlying columns required to serve those
+        fields are selected from Postgres, so listing metadata never reads the full
+        document text stored in ``system_metadata.content``.
+        """
         limit = max(limit, 0) if limit is not None else None
         skip = max(skip, 0)
 
@@ -440,16 +500,24 @@ class PostgresDatabase:
 
                 final_where_clause = " AND ".join(where_clauses) if where_clauses else "TRUE"
 
-                documents: List[Document] = []
+                documents: List[Any] = []
                 returned_count = 0
                 has_more = False
 
                 fetch_documents = return_documents and (limit is None or limit > 0)
 
                 if fetch_documents:
-                    # Note: We always select all columns from the database
-                    # Field projection is handled at the application layer for simplicity
-                    base_query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
+                    projection_fields = self._resolve_document_projection_fields(fields)
+                    if projection_fields:
+                        # Select only the columns the projection needs (skips the heavy
+                        # system_metadata/content read entirely).
+                        selected_columns = self._document_projection_columns(projection_fields)
+                        base_query = select(*selected_columns).where(
+                            text(final_where_clause).bindparams(**filter_params)
+                        )
+                    else:
+                        base_query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
+
                     order_clause = self._resolve_document_sort_clause(sort_by, sort_direction)
                     if order_clause is not None:
                         base_query = base_query.order_by(order_clause, DocumentModel.external_id.asc())
@@ -462,13 +530,20 @@ class PostgresDatabase:
                         base_query = base_query.limit(fetch_limit)
 
                     result = await session.execute(base_query)
-                    doc_models = result.scalars().all()
 
-                    if fetch_limit is not None and len(doc_models) > limit:
-                        has_more = True
-                        doc_models = doc_models[:limit]
-
-                    documents = [Document(**_document_model_to_dict(doc_model)) for doc_model in doc_models]
+                    if projection_fields:
+                        documents = [
+                            self._document_projection_row_to_dict(row, projection_fields) for row in result.mappings()
+                        ]
+                        if fetch_limit is not None and len(documents) > limit:
+                            has_more = True
+                            documents = documents[:limit]
+                    else:
+                        doc_models = result.scalars().all()
+                        if fetch_limit is not None and len(doc_models) > limit:
+                            has_more = True
+                            doc_models = doc_models[:limit]
+                        documents = [Document(**_document_model_to_dict(doc_model)) for doc_model in doc_models]
                     returned_count = len(documents)
 
                 total_count: Optional[int] = None
@@ -567,6 +642,84 @@ class PostgresDatabase:
             "(system_metadata->>'created_at')::timestamptz) "
             f"{direction} NULLS LAST"
         )
+
+    @staticmethod
+    def _resolve_document_projection_fields(fields: Optional[List[str]]) -> Optional[set]:
+        """Resolve requested API fields to the document table columns needed to serve them.
+
+        Lightweight status keys (``status``, ``error``, timestamps) are projected via a cheap
+        JSON-path read of ``system_metadata`` rather than the full column, so they do not pull
+        the document text. ``summary_*`` and ``page_count`` are derived from the full
+        ``system_metadata`` column. Plain ``metadata`` lives in its own column and stays light.
+        """
+        if not fields:
+            return None
+
+        requested_roots = {field.strip().split(".", 1)[0] for field in fields if field and field.strip()}
+        if not requested_roots:
+            return None
+
+        # external_id is always needed to identify each document.
+        resolved_fields = {"external_id"}
+        for root in requested_roots:
+            if root in DOCUMENT_PROJECTION_COLUMN_MAP:
+                resolved_fields.add(root)
+            elif root in DOCUMENT_STATUS_PROJECTION_KEYS:
+                # Cheap JSON-path read of a single system_metadata key (no full blob).
+                resolved_fields.add(f"sm:{root}")
+            elif root in SUMMARY_METADATA_KEYS:
+                # summary_* values are derived from the full system_metadata column.
+                resolved_fields.add("system_metadata")
+            elif root == "page_count":
+                resolved_fields.add("system_metadata")
+                resolved_fields.add("chunk_ids")
+
+        return resolved_fields
+
+    @staticmethod
+    def _document_projection_columns(fields: set):
+        """Return a stable list of labeled SQLAlchemy columns for a document projection."""
+        columns = [
+            DOCUMENT_PROJECTION_COLUMN_MAP[field].label(field) for field in DOCUMENT_PROJECTION_ORDER if field in fields
+        ]
+        # Cheap per-key JSON-path reads for lightweight system_metadata scalars.
+        for field in sorted(f for f in fields if isinstance(f, str) and f.startswith("sm:")):
+            key = field[len("sm:") :]
+            columns.append(DocumentModel.system_metadata[key].astext.label(f"__sm_{key}"))
+        return columns
+
+    @staticmethod
+    def _document_projection_row_to_dict(row: Any, fields: set) -> Dict[str, Any]:
+        """Convert a projected document row (a SQLAlchemy mapping) to the public document dict shape."""
+        document = dict(row)
+
+        # Reassemble cheaply-projected system_metadata scalars (labeled __sm_<key>) into a
+        # slim system_metadata dict so the public shape matches a full document.
+        status_keys = {f[len("sm:") :] for f in fields if isinstance(f, str) and f.startswith("sm:")}
+        if status_keys:
+            slim = {}
+            for key in status_keys:
+                label = f"__sm_{key}"
+                if label in document:
+                    slim[key] = document.pop(label)
+            existing = document.get("system_metadata")
+            if isinstance(existing, dict):
+                existing.update(slim)
+            else:
+                document["system_metadata"] = slim
+
+        for key in ("metadata", "metadata_types", "storage_info", "system_metadata", "additional_metadata"):
+            if key in document and document[key] is None:
+                document[key] = {}
+        if "chunk_ids" in document and document["chunk_ids"] is None:
+            document["chunk_ids"] = []
+
+        system_metadata = document.get("system_metadata") or {}
+        if "system_metadata" in fields and isinstance(system_metadata, dict):
+            for key in SUMMARY_METADATA_KEYS:
+                document[key] = system_metadata.get(key)
+
+        return document
 
     async def update_document(
         self,
@@ -1231,6 +1384,46 @@ class PostgresDatabase:
             select(DocumentModel).where(DocumentModel.external_id == document_id).with_for_update()
         )
         return result.scalar_one_or_none()
+
+    async def update_document_system_metadata_fields(
+        self, document_id: str, fields: Dict[str, Any], auth: AuthContext
+    ) -> bool:
+        """Shallow-merge top-level keys into ``system_metadata`` server-side.
+
+        Used by hot, high-frequency writes (e.g. ingestion progress). Unlike ``update_document``
+        this never reads the row's full ``system_metadata`` (which holds the document text) into
+        the application: the merge runs in Postgres via the jsonb ``||`` operator. ``fields`` are
+        merged at the top level (existing keys with the same name are replaced). Write access
+        mirrors :meth:`_has_document_access`.
+        """
+        if not fields:
+            return True
+
+        # Mirror _has_document_access: scope by app_id when present, else by owner_id.
+        if auth.app_id:
+            access_clause = "app_id = :access_val"
+            access_val = auth.app_id
+        else:
+            access_clause = "owner_id = :access_val"
+            access_val = auth.user_id
+
+        params = {"patch": json.dumps(fields, default=str), "doc_id": document_id, "access_val": access_val}
+        try:
+            async with self.async_session() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        text(
+                            "UPDATE documents "
+                            "SET system_metadata = COALESCE(system_metadata, '{}'::jsonb) || CAST(:patch AS jsonb) "
+                            f"WHERE external_id = :doc_id AND {access_clause}"
+                        ),
+                        params,
+                    )
+                    updated = result.rowcount
+            return bool(updated and updated > 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to merge system_metadata fields for %s: %s", document_id, exc)
+            return False
 
     async def _fetch_folder_locked(self, session: AsyncSession, folder_id: str) -> Optional[FolderModel]:
         """Fetch a folder row with a FOR UPDATE lock."""

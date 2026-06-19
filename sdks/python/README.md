@@ -78,6 +78,12 @@ response = db.query(
 )
 
 print(response.completion)
+
+# Migrate this app's documents into another Morphik deployment.
+# Run this from a machine that can reach both source and target, such as
+# inside a customer's VPN for on-prem targets.
+result = db.migrate(target_uri="morphik://owner_id:token@onprem.example.com", target_is_local=True)
+print(result.created_count, result.skipped_count, result.failed_count)
 ```
 
 ### Nested Folders & Folder Depth
@@ -93,6 +99,11 @@ renamed = moved.rename("specs-v2")
 # Scope queries to a path and include descendants with folder_depth=-1
 chunks = folder.retrieve_chunks(query="design notes", folder_depth=-1)
 docs = db.list_documents(folder_name="/projects/alpha", folder_depth=-1)
+
+# List only the fields you need. The server reads and returns just those columns, so
+# the full document text is never downloaded — fast for large corpora.
+for doc in db.list_documents(fields=["metadata"]).documents:
+    print(doc.external_id, doc.metadata)
 ```
 
 `Folder.full_path` is exposed on folder objects, and `Document.folder_path` mirrors server responses for tracing scope.

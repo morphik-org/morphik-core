@@ -277,6 +277,7 @@ class _ScopedOperationsMixin:
         completed_only: bool,
         sort_by: Optional[str],
         sort_direction: str,
+        fields: Optional[List[str]] = None,
     ):
         params, data = self._logic._prepare_list_documents_request(
             skip,
@@ -291,6 +292,7 @@ class _ScopedOperationsMixin:
             completed_only,
             sort_by,
             sort_direction,
+            fields,
         )
 
         return self._execute_scoped_operation(

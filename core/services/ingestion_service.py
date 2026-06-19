@@ -45,7 +45,7 @@ from core.utils.fast_ops import bytes_to_data_uri, encode_base64
 from core.utils.folder_utils import normalize_folder_path, normalize_ingest_folder_inputs
 from core.utils.arq_jobs import enqueue_job_clearing_stale_result
 from core.utils.storage_usage import extract_storage_bytes
-from core.utils.typed_metadata import MetadataBundle, merge_metadata, normalize_metadata
+from core.utils.typed_metadata import MetadataBundle, canonicalize_type_name, merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,10 @@ class IngestionService:
         "owner_id",
         "end_user_id",
     }
+    _FOLDER_PATH_UPDATE_ERROR = (
+        "folder_path is managed by Morphik and cannot be changed using the update metadata endpoint. "
+        "Use the folder endpoints to move the document or folder instead."
+    )
 
     def __init__(
         self,
@@ -124,18 +128,46 @@ class IngestionService:
         extra_fields: Optional[Dict[str, Any]] = None,
         metadata_types: Optional[Dict[str, Any]] = None,
         context: str = "ingest",
+        existing_doc: Optional[Document] = None,
+        allow_unchanged_metadata: bool = False,
     ) -> None:
         """Prevent users from setting reserved system fields directly."""
+        if self._has_folder_path_field(metadata, extra_fields, metadata_types):
+            if context == "update":
+                raise ValueError(self._FOLDER_PATH_UPDATE_ERROR)
+            raise ValueError(
+                f"folder_path is managed by Morphik and cannot be set directly during {context}. "
+                "Use folder parameters or folder endpoints to manage document placement."
+            )
+
         invalid_fields = set()
 
         if isinstance(metadata, dict):
-            invalid_fields.update({key for key in metadata.keys() if key in self._USER_IMMUTABLE_FIELDS})
+            for key, value in metadata.items():
+                if key not in self._USER_IMMUTABLE_FIELDS:
+                    continue
+                if (
+                    allow_unchanged_metadata
+                    and existing_doc is not None
+                    and self._is_unchanged_managed_metadata_value(existing_doc, key, value)
+                ):
+                    continue
+                invalid_fields.add(key)
 
         if isinstance(extra_fields, dict):
             invalid_fields.update({key for key in extra_fields.keys() if key in self._USER_IMMUTABLE_FIELDS})
 
         if isinstance(metadata_types, dict):
-            invalid_fields.update({key for key in metadata_types.keys() if key in self._USER_IMMUTABLE_FIELDS})
+            for key, value in metadata_types.items():
+                if key not in self._USER_IMMUTABLE_FIELDS:
+                    continue
+                if (
+                    allow_unchanged_metadata
+                    and existing_doc is not None
+                    and self._is_unchanged_managed_metadata_type(existing_doc, key, value)
+                ):
+                    continue
+                invalid_fields.add(key)
 
         if invalid_fields:
             fields_str = ", ".join(sorted(invalid_fields))
@@ -143,6 +175,44 @@ class IngestionService:
                 f"The following fields are managed by Morphik and cannot be set during {context}: {fields_str}. "
                 "Remove them from the request."
             )
+
+    def _current_managed_metadata_values(self, doc: Document) -> Dict[str, Any]:
+        """Return managed metadata values as currently exposed on a document."""
+        current_values = dict(doc.metadata or {})
+        current_values.setdefault("external_id", doc.external_id)
+
+        folder_metadata_value = doc.folder_path or doc.folder_name
+        if folder_metadata_value is not None:
+            current_values.setdefault("folder_name", folder_metadata_value)
+
+        if doc.folder_id is not None:
+            current_values.setdefault("folder_id", doc.folder_id)
+
+        return current_values
+
+    @staticmethod
+    def _has_folder_path_field(*payloads: Optional[Dict[str, Any]]) -> bool:
+        return any(isinstance(payload, dict) and "folder_path" in payload for payload in payloads)
+
+    def _is_unchanged_managed_metadata_value(self, doc: Document, key: str, value: Any) -> bool:
+        current_values = self._current_managed_metadata_values(doc)
+        return key in current_values and current_values[key] == value
+
+    def _is_unchanged_managed_metadata_type(self, doc: Document, key: str, value: Any) -> bool:
+        current_types = dict(doc.metadata_types or {})
+        if doc.external_id:
+            current_types.setdefault("external_id", "string")
+        for metadata_key, metadata_value in self._current_managed_metadata_values(doc).items():
+            if isinstance(metadata_value, str):
+                current_types.setdefault(metadata_key, "string")
+
+        if key not in current_types:
+            return False
+
+        try:
+            return canonicalize_type_name(str(value)) == canonicalize_type_name(str(current_types[key]))
+        except ValueError:
+            return value == current_types[key]
 
     @classmethod
     def _clean_system_metadata(cls, metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -492,6 +562,7 @@ class IngestionService:
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         use_colpali: Optional[bool] = False,
+        external_id: Optional[str] = None,
     ) -> Document:
         """
         Ingests file content from bytes. Saves to storage, creates document record,
@@ -514,6 +585,7 @@ class IngestionService:
         )
 
         doc = Document(
+            external_id=external_id or str(uuid.uuid4()),
             filename=filename,
             content_type=resolved_content_type,
             metadata=metadata or {},
@@ -536,7 +608,14 @@ class IngestionService:
         doc.metadata_types = metadata_bundle.types
 
         # 1. Create initial document record in DB
-        await self.db.store_document(doc, auth, metadata_bundle=metadata_bundle)
+        stored = await self.db.store_document(doc, auth, metadata_bundle=metadata_bundle)
+        if not stored:
+            if external_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Document {external_id} already exists or could not be created",
+                )
+            raise HTTPException(status_code=500, detail="Failed to create document metadata")
         logger.info(f"Initial document record created for {filename} (doc_id: {doc.external_id})")
 
         try:
@@ -644,14 +723,22 @@ class IngestionService:
         """
         Update a document by replacing its content and re-queueing ingestion.
         """
-        self._enforce_no_user_mutable_fields(metadata, metadata_types=metadata_types, context="update")
+        metadata_only_update = content is None and file is None and metadata is not None
+        if not metadata_only_update:
+            self._enforce_no_user_mutable_fields(metadata, metadata_types=metadata_types, context="update")
 
         doc = await self._validate_update_access(document_id, auth)
         if not doc:
             return None
 
-        metadata_only_update = content is None and file is None and metadata is not None
         if metadata_only_update:
+            self._enforce_no_user_mutable_fields(
+                metadata,
+                metadata_types=metadata_types,
+                context="update",
+                existing_doc=doc,
+                allow_unchanged_metadata=True,
+            )
             metadata_bundle = self._update_metadata(doc, metadata, metadata_types, None)
             return await self._update_document_metadata_only(doc, auth, metadata_bundle)
 
@@ -801,15 +888,24 @@ class IngestionService:
         Returns:
             Updated document if successful, None if failed
         """
+        metadata_only_update = content is None and file is None and metadata is not None
         # Prevent callers from modifying reserved fields
-        self._enforce_no_user_mutable_fields(metadata, metadata_types=metadata_types, context="update")
+        if not metadata_only_update:
+            self._enforce_no_user_mutable_fields(metadata, metadata_types=metadata_types, context="update")
 
         # Validate permissions and get document
         doc = await self._validate_update_access(document_id, auth)
         if not doc:
             return None
 
-        metadata_only_update = content is None and file is None and metadata is not None
+        if metadata_only_update:
+            self._enforce_no_user_mutable_fields(
+                metadata,
+                metadata_types=metadata_types,
+                context="update",
+                existing_doc=doc,
+                allow_unchanged_metadata=True,
+            )
 
         # Process content based on update type
         updated_content = None
@@ -1314,6 +1410,27 @@ class IngestionService:
         img_str, _ = self.img_to_base64_with_bytes(img)
         return img_str
 
+    @staticmethod
+    def _is_blank_image(img: PILImage.Image, tolerance: int = 2) -> bool:
+        """Return True when an image has no meaningful visual variation."""
+        grayscale = img.convert("L")
+        extrema = grayscale.getextrema()
+        if extrema is None:
+            return True
+        darkest, lightest = extrema
+        return lightest - darkest <= tolerance
+
+    def _is_blank_image_bytes(self, image_bytes: bytes, tolerance: int = 2) -> bool:
+        """Return True when image bytes decode to a visually blank image."""
+        if not image_bytes:
+            return True
+        try:
+            with PILImage.open(BytesIO(image_bytes)) as img:
+                return self._is_blank_image(img, tolerance=tolerance)
+        except Exception as e:
+            logger.warning("Unable to inspect rendered page image for blank-content detection: %s", e)
+            return False
+
     def _render_pdf_with_pymupdf(
         self, file_content: bytes, dpi: int, include_bytes: bool = False
     ) -> List[Union[str, Tuple[str, bytes]]]:
@@ -1321,15 +1438,28 @@ class IngestionService:
         pdf_document = fitz.open("pdf", file_content)
         try:
             images: List[Union[str, Tuple[str, bytes]]] = []
-            for page in pdf_document:
-                mat = fitz.Matrix(dpi / 72, dpi / 72)
-                pix = page.get_pixmap(matrix=mat)
-                png_bytes = pix.tobytes("png")
+            page_count = 0
+            render_failures = 0
+            for page_index, page in enumerate(pdf_document):
+                page_count += 1
+                try:
+                    mat = fitz.Matrix(dpi / 72, dpi / 72)
+                    pix = page.get_pixmap(matrix=mat)
+                    png_bytes = pix.tobytes("png")
+                except Exception as e:
+                    render_failures += 1
+                    logger.warning("Skipping PDF page %d because rendering failed: %s", page_index + 1, e)
+                    continue
+                if self._is_blank_image_bytes(png_bytes):
+                    logger.info("Skipping PDF page %d because it rendered as a blank image", page_index + 1)
+                    continue
                 b64 = bytes_to_data_uri(png_bytes, "image/png")
                 if include_bytes:
                     images.append((b64, png_bytes))
                 else:
                     images.append(b64)
+            if not images and page_count > 0 and render_failures == page_count:
+                raise RuntimeError("All PDF pages failed to render with PyMuPDF")
             return images
         finally:
             pdf_document.close()
@@ -1499,7 +1629,23 @@ class IngestionService:
 
             try:
                 images = pdf2image.convert_from_bytes(file_content, dpi=dpi)
-                image_payloads = [self.img_to_base64_with_bytes(image) for image in images]
+                image_payloads = []
+                for page_num, image in enumerate(images):
+                    try:
+                        if self._is_blank_image(image):
+                            logger.info(
+                                "Skipping PDF page %d because it rendered as a blank image",
+                                page_num + 1,
+                            )
+                            continue
+                        image_payloads.append(self.img_to_base64_with_bytes(image))
+                    except Exception as page_error:
+                        logger.warning(
+                            "Skipping PDF page %d because image conversion failed: %s",
+                            page_num + 1,
+                            page_error,
+                        )
+                        continue
                 logger.info(f"pdf2image fallback processed {len(image_payloads)} pages")
                 return [
                     self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
@@ -1530,6 +1676,7 @@ class IngestionService:
 
         try:
             total_pages = len(pdf_document)
+            render_failures = 0
             for batch_start in range(0, total_pages, batch_size):
                 batch_end = min(batch_start + batch_size, total_pages)
                 logger.debug(f"Rendering pages {batch_start + 1}-{batch_end} of {total_pages} (batched mode)")
@@ -1537,9 +1684,17 @@ class IngestionService:
                 # Render and convert this batch
                 for page_num in range(batch_start, batch_end):
                     page = pdf_document[page_num]
-                    mat = fitz.Matrix(dpi / 72, dpi / 72)
-                    pix = page.get_pixmap(matrix=mat)
-                    png_bytes = pix.tobytes("png")
+                    try:
+                        mat = fitz.Matrix(dpi / 72, dpi / 72)
+                        pix = page.get_pixmap(matrix=mat)
+                        png_bytes = pix.tobytes("png")
+                    except Exception as e:
+                        render_failures += 1
+                        logger.warning("Skipping PDF page %d because rendering failed: %s", page_num + 1, e)
+                        continue
+                    if self._is_blank_image_bytes(png_bytes):
+                        logger.info("Skipping PDF page %d because it rendered as a blank image", page_num + 1)
+                        continue
                     b64 = bytes_to_data_uri(png_bytes, "image/png")
 
                     # Create chunk immediately
@@ -1549,6 +1704,9 @@ class IngestionService:
                     # Explicitly release pixmap memory - this is the key memory optimization
                     del pix
                     del png_bytes
+
+            if not all_chunks and total_pages > 0 and render_failures == total_pages:
+                raise RuntimeError("All PDF pages failed to render with PyMuPDF")
 
             logger.info(f"PyMuPDF processed {total_pages} pages in batched mode")
             return all_chunks
@@ -1652,19 +1810,41 @@ class IngestionService:
             try:
                 pdf_document = fitz.open("pdf", pdf_content)
                 images_payload: List[Tuple[str, bytes]] = []
+                total_pages = len(pdf_document)
+                render_failures = 0
 
-                for page_num in range(len(pdf_document)):
-                    page = pdf_document[page_num]
-                    dpi = settings.COLPALI_PDF_DPI
-                    mat = fitz.Matrix(dpi / 72, dpi / 72)
-                    pix = page.get_pixmap(matrix=mat)
-                    img_data = pix.tobytes("png")
+                try:
+                    for page_num in range(total_pages):
+                        page = pdf_document[page_num]
+                        try:
+                            dpi = settings.COLPALI_PDF_DPI
+                            mat = fitz.Matrix(dpi / 72, dpi / 72)
+                            pix = page.get_pixmap(matrix=mat)
+                            img_data = pix.tobytes("png")
+                            img = PILImage.open(BytesIO(img_data))
+                            if self._is_blank_image(img):
+                                logger.info(
+                                    "Skipping %s page %d because it rendered as a blank image",
+                                    doc_type,
+                                    page_num + 1,
+                                )
+                                continue
+                            img_str, img_bytes = self.img_to_base64_with_bytes(img)
+                            images_payload.append((img_str, img_bytes))
+                        except Exception as page_error:
+                            render_failures += 1
+                            logger.warning(
+                                "Skipping %s page %d because rendering failed: %s",
+                                doc_type,
+                                page_num + 1,
+                                page_error,
+                            )
+                            continue
+                finally:
+                    pdf_document.close()
 
-                    img = PILImage.open(BytesIO(img_data))
-                    img_str, img_bytes = self.img_to_base64_with_bytes(img)
-                    images_payload.append((img_str, img_bytes))
-
-                pdf_document.close()
+                if not images_payload and total_pages > 0 and render_failures == total_pages:
+                    raise RuntimeError(f"All {doc_type} pages failed to render with PyMuPDF")
 
                 logger.info(f"{doc_type} successfully processed {len(images_payload)} pages as images")
                 return [
@@ -1676,7 +1856,25 @@ class IngestionService:
                 logger.warning(f"PyMuPDF failed for {doc_type} ({pymupdf_error}), trying pdf2image")
                 try:
                     images = pdf2image.convert_from_bytes(pdf_content)
-                    images_payload = [self.img_to_base64_with_bytes(image) for image in images]
+                    images_payload = []
+                    for page_num, image in enumerate(images):
+                        try:
+                            if self._is_blank_image(image):
+                                logger.info(
+                                    "Skipping %s page %d because it rendered as a blank image",
+                                    doc_type,
+                                    page_num + 1,
+                                )
+                                continue
+                            images_payload.append(self.img_to_base64_with_bytes(image))
+                        except Exception as page_error:
+                            logger.warning(
+                                "Skipping %s page %d because image conversion failed: %s",
+                                doc_type,
+                                page_num + 1,
+                                page_error,
+                            )
+                            continue
 
                     logger.info(f"{doc_type} processed {len(images_payload)} pages with pdf2image")
                     return [
