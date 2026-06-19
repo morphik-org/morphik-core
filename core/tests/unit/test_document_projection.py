@@ -53,6 +53,34 @@ class TestProjectionColumns:
         assert "system_metadata" not in sql
 
 
+class TestStatusProjection:
+    """Lightweight `status` projection reads only a JSON-path, not the full blob."""
+
+    def test_status_resolves_to_cheap_json_path(self):
+        resolved = PostgresDatabase._resolve_document_projection_fields(["status"])
+        assert "sm:status" in resolved
+        assert "external_id" in resolved
+        assert "system_metadata" not in resolved  # never the full column
+
+    def test_status_sql_uses_json_path(self):
+        resolved = PostgresDatabase._resolve_document_projection_fields(["external_id", "status"])
+        sql = str(select(*PostgresDatabase._document_projection_columns(resolved)))
+        assert "system_metadata ->>" in sql
+        assert "__sm_status" in sql
+
+    def test_row_reassembles_slim_system_metadata(self):
+        resolved = PostgresDatabase._resolve_document_projection_fields(["status", "error"])
+        row = {"external_id": "d1", "__sm_status": "completed", "__sm_error": None}
+        out = PostgresDatabase._document_projection_row_to_dict(row, resolved)
+        assert out["system_metadata"]["status"] == "completed"
+        assert "__sm_status" not in out
+
+    def test_app_layer_projection_keeps_status(self):
+        doc = {"external_id": "d1", "system_metadata": {"status": "completed"}}
+        out = project_document_fields(doc, ["external_id", "status"])
+        assert out["system_metadata"] == {"status": "completed"}
+
+
 class TestProjectionRowToDict:
     """PostgresDatabase._document_projection_row_to_dict."""
 

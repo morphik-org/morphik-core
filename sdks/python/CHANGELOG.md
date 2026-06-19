@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-06-19
+
+### Changed
+- `Document` status is now a local snapshot read instead of a per-access API call.
+  `Document.status` / `is_processing` / `is_ingested` / `is_failed` / `error` read the status
+  already carried on the document (`system_metadata`), eliminating an N+1 when iterating
+  documents (previously each `is_*` access made its own request). `status` now also returns
+  `as_of` (when the snapshot was pulled) and `source` (`"local"` / `"not_loaded"`). If status
+  was not fetched (e.g. projected away), `is_*` return `False` and make **no** network call.
+  Use `Document.refresh()` or `wait_for_completion()` for the current live status.
+
+### Added
+- `Document.refresh()` — re-fetch a document from the server to get its current status.
+- `status` is now a cheap, projectable field: `list_documents(fields=[..., "status"])` returns
+  the processing status (and `error`/timestamps) via a JSON-path read — without downloading the
+  full document text — so `is_*` resolve locally with zero extra calls.
+
 ## [1.2.5] - 2026-06-19
 
 ### Fixed
