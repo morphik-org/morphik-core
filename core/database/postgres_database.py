@@ -377,6 +377,7 @@ class PostgresDatabase:
         document_ids: List[str],
         auth: AuthContext,
         system_filters: Optional[Dict[str, Any]] = None,
+        fields: Optional[List[str]] = None,
     ) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
@@ -387,6 +388,9 @@ class PostgresDatabase:
             document_ids: List of document IDs to retrieve
             auth: Authentication context
             system_filters: Optional filters for system metadata fields
+            fields: Optional list of fields to project. When provided, only those columns are
+                read from Postgres (e.g. metadata listing avoids the full document text in
+                system_metadata.content).
 
         Returns:
             List of Document objects that were found and user has access to
@@ -413,17 +417,26 @@ class PostgresDatabase:
                 final_where_clause = " AND ".join(where_clauses)
 
                 # Query documents with document IDs, access check, and system filters in a single query
-                query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
+                projection_fields = self._resolve_document_projection_fields(fields)
+                if projection_fields:
+                    selected_columns = self._document_projection_columns(projection_fields)
+                    query = select(*selected_columns).where(text(final_where_clause).bindparams(**filter_params))
+                else:
+                    query = select(DocumentModel).where(text(final_where_clause).bindparams(**filter_params))
 
                 logger.info(f"Batch retrieving {len(document_ids)} documents with a single query")
 
                 # Execute batch query
                 result = await session.execute(query)
-                doc_models = result.scalars().all()
 
-                documents = []
-                for doc_model in doc_models:
-                    documents.append(Document(**_document_model_to_dict(doc_model)))
+                if projection_fields:
+                    documents = [
+                        Document(**self._document_projection_row_to_dict(row, projection_fields))
+                        for row in result.mappings()
+                    ]
+                else:
+                    doc_models = result.scalars().all()
+                    documents = [Document(**_document_model_to_dict(doc_model)) for doc_model in doc_models]
 
                 logger.info(f"Found {len(documents)} documents in batch retrieval")
                 return documents
@@ -1371,6 +1384,46 @@ class PostgresDatabase:
             select(DocumentModel).where(DocumentModel.external_id == document_id).with_for_update()
         )
         return result.scalar_one_or_none()
+
+    async def update_document_system_metadata_fields(
+        self, document_id: str, fields: Dict[str, Any], auth: AuthContext
+    ) -> bool:
+        """Shallow-merge top-level keys into ``system_metadata`` server-side.
+
+        Used by hot, high-frequency writes (e.g. ingestion progress). Unlike ``update_document``
+        this never reads the row's full ``system_metadata`` (which holds the document text) into
+        the application: the merge runs in Postgres via the jsonb ``||`` operator. ``fields`` are
+        merged at the top level (existing keys with the same name are replaced). Write access
+        mirrors :meth:`_has_document_access`.
+        """
+        if not fields:
+            return True
+
+        # Mirror _has_document_access: scope by app_id when present, else by owner_id.
+        if auth.app_id:
+            access_clause = "app_id = :access_val"
+            access_val = auth.app_id
+        else:
+            access_clause = "owner_id = :access_val"
+            access_val = auth.user_id
+
+        params = {"patch": json.dumps(fields, default=str), "doc_id": document_id, "access_val": access_val}
+        try:
+            async with self.async_session() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        text(
+                            "UPDATE documents "
+                            "SET system_metadata = COALESCE(system_metadata, '{}'::jsonb) || CAST(:patch AS jsonb) "
+                            f"WHERE external_id = :doc_id AND {access_clause}"
+                        ),
+                        params,
+                    )
+                    updated = result.rowcount
+            return bool(updated and updated > 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to merge system_metadata fields for %s: %s", document_id, exc)
+            return False
 
     async def _fetch_folder_locked(self, session: AsyncSession, folder_id: str) -> Optional[FolderModel]:
         """Fetch a folder row with a FOR UPDATE lock."""

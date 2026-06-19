@@ -861,6 +861,7 @@ class DocumentService:
         folder_name: Optional[Union[str, List[str]]] = None,
         folder_depth: Optional[int] = None,
         end_user_id: Optional[str] = None,
+        fields: Optional[List[str]] = None,
     ) -> List[Document]:
         """
         Retrieve multiple documents by their IDs in a single batch operation.
@@ -868,6 +869,8 @@ class DocumentService:
         Args:
             document_ids: List of document IDs to retrieve
             auth: Authentication context
+            fields: Optional list of fields to project (avoids reading the full document text
+                when only light metadata is needed, e.g. result hydration).
 
         Returns:
             List of Document objects that user has access to
@@ -882,7 +885,7 @@ class DocumentService:
         # Note: Don't add auth.app_id here - it's already handled in _build_access_filter_optimized
 
         # Use the database's batch retrieval method
-        documents = await self.db.get_documents_by_id(document_ids, auth, system_filters)
+        documents = await self.db.get_documents_by_id(document_ids, auth, system_filters, fields=fields)
         logger.info(f"Batch retrieved {len(documents)} documents out of {len(document_ids)} requested")
         return documents
 
@@ -1280,7 +1283,26 @@ class DocumentService:
         # Fetch any documents that weren't preloaded
         missing_doc_ids = [doc_id for doc_id in unique_doc_ids if doc_id not in doc_map]
         if missing_doc_ids:
-            docs = await self.batch_retrieve_documents(missing_doc_ids, auth)
+            # Hydration reads only light fields (filename/content_type/metadata/...), never the
+            # document text in system_metadata — project it away to avoid pulling large blobs.
+            docs = await self.batch_retrieve_documents(
+                missing_doc_ids,
+                auth,
+                fields=[
+                    "external_id",
+                    "content_type",
+                    "filename",
+                    "metadata",
+                    "metadata_types",
+                    "storage_info",
+                    "additional_metadata",
+                    "chunk_ids",
+                    "folder_name",
+                    "folder_path",
+                    "app_id",
+                    "end_user_id",
+                ],
+            )
             doc_map.update({doc.external_id: doc for doc in docs})
             logger.debug(f"Retrieved metadata for {len(docs)} additional documents in a single batch")
         else:
