@@ -35,6 +35,12 @@ def _add_derived_fields(document_dict: Dict[str, Any]) -> Dict[str, Any]:
     return enriched
 
 
+# Lightweight processing-state keys that live under system_metadata. When requested as a
+# top-level field (e.g. "status"), project the corresponding system_metadata.<key> so the
+# value survives in the slim system_metadata the SDK reads locally.
+_STATUS_ALIAS_KEYS = {"status", "error", "created_at", "updated_at", "progress", "version"}
+
+
 def project_document_fields(document_dict: Dict[str, Any], fields: Optional[List[str]]) -> Dict[str, Any]:
     """
     Project document data to a subset of fields, always including the external_id for reference.
@@ -45,7 +51,11 @@ def project_document_fields(document_dict: Dict[str, Any], fields: Optional[List
         return document_dict
 
     projected: Dict[str, Any] = {}
-    normalized_fields: List[str] = [field.strip() for field in fields if field and field.strip()]
+    normalized_fields: List[str] = [
+        f"system_metadata.{field.strip()}" if field.strip() in _STATUS_ALIAS_KEYS else field.strip()
+        for field in fields
+        if field and field.strip()
+    ]
     include_external_id = "external_id" in normalized_fields
 
     for field_path in normalized_fields:

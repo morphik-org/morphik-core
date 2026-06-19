@@ -1,9 +1,9 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 
 def _reconstruct_metadata_types(metadata: Dict[str, Any], metadata_types: Dict[str, str]) -> Dict[str, Any]:
@@ -74,6 +74,8 @@ class Document(BaseModel):
 
     # Client reference for update methods
     _client = None
+    # When this document snapshot was pulled from the server (UTC), set at construction.
+    _fetched_at: Optional[datetime] = PrivateAttr(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
     def _reconstruct_types(self) -> "Document":
@@ -85,37 +87,95 @@ class Document(BaseModel):
 
     @property
     def status(self) -> Dict[str, Any]:
-        """Get the latest processing status of the document from the API.
+        """Processing status of the document **as of when it was fetched** (a snapshot).
 
-        Returns:
-            Dict[str, Any]: Status information including current status, potential errors, and other metadata
+        This reads the status already carried on the document (in ``system_metadata``) and
+        does **not** make a network call. The returned dict includes:
+
+        - ``status``: ``processing`` / ``completed`` / ``failed`` (or ``unknown``)
+        - ``error``: error message when ``status == "failed"``
+        - ``created_at`` / ``updated_at``: server timestamps for the document
+        - ``as_of``: ISO-8601 timestamp of when this snapshot was pulled from the server
+        - ``source``: ``"local"`` (read from the document) or ``"not_loaded"``
+
+        If the document was fetched with a field projection that excluded the status
+        (e.g. ``list_documents(fields=["metadata"])`` without ``"status"``), there is no
+        local status and this returns ``status="unknown"`` / ``source="not_loaded"`` —
+        **it does not make a network call.** To include status cheaply in a projection,
+        add ``"status"`` to ``fields``; for the *current* live status, call :meth:`refresh`
+        or :meth:`wait_for_completion` instead of re-reading this property in a loop.
+        """
+        sm = self.system_metadata or {}
+        if "status" in sm:
+            return {
+                "document_id": self.external_id,
+                "status": sm.get("status"),
+                "error": sm.get("error"),
+                "created_at": sm.get("created_at"),
+                "updated_at": sm.get("updated_at"),
+                "as_of": self._fetched_at.isoformat() if self._fetched_at else sm.get("updated_at"),
+                "source": "local",
+            }
+        # Status was not fetched with this document (e.g. projected away). Do not silently
+        # make a per-document API call — report it as not loaded.
+        return {
+            "document_id": self.external_id,
+            "status": "unknown",
+            "error": None,
+            "as_of": self._fetched_at.isoformat() if self._fetched_at else None,
+            "source": "not_loaded",
+        }
+
+    @property
+    def is_processing(self) -> bool:
+        """True if the document was still processing **as of when it was fetched** (snapshot).
+
+        See :attr:`status`. Returns ``False`` if status was not loaded (projected away). Use
+        :meth:`refresh` / :meth:`wait_for_completion` for the current state.
+        """
+        return self.status.get("status") == "processing"
+
+    @property
+    def is_ingested(self) -> bool:
+        """True if the document had completed processing **as of when it was fetched** (snapshot).
+
+        See :attr:`status`. Returns ``False`` if status was not loaded (projected away). Use
+        :meth:`refresh` / :meth:`wait_for_completion` for the current state.
+        """
+        return self.status.get("status") == "completed"
+
+    @property
+    def is_failed(self) -> bool:
+        """True if document processing had failed **as of when it was fetched** (snapshot).
+
+        See :attr:`status`. Returns ``False`` if status was not loaded (projected away). Use
+        :meth:`refresh` for the current state.
+        """
+        return self.status.get("status") == "failed"
+
+    @property
+    def error(self) -> Optional[str]:
+        """Error message if processing had failed (snapshot; see :attr:`status`)."""
+        status_info = self.status
+        return status_info.get("error") if status_info.get("status") == "failed" else None
+
+    def refresh(self) -> "Document":
+        """Re-fetch this document from the server and return the updated snapshot.
+
+        Use this (or :meth:`wait_for_completion`) when you need the *current* status rather
+        than the snapshot carried on this object::
+
+            doc = doc.refresh()
+            if doc.is_ingested:
+                ...
+
+        Requires a document returned from a Morphik client method.
         """
         if self._client is None:
             raise ValueError(
                 "Document instance not connected to a client. Use a document returned from a Morphik client method."
             )
-        return self._client.get_document_status(self.external_id)
-
-    @property
-    def is_processing(self) -> bool:
-        """Check if the document is still being processed."""
-        return self.status.get("status") == "processing"
-
-    @property
-    def is_ingested(self) -> bool:
-        """Check if the document has completed processing."""
-        return self.status.get("status") == "completed"
-
-    @property
-    def is_failed(self) -> bool:
-        """Check if document processing has failed."""
-        return self.status.get("status") == "failed"
-
-    @property
-    def error(self) -> Optional[str]:
-        """Get the error message if processing failed."""
-        status_info = self.status
-        return status_info.get("error") if status_info.get("status") == "failed" else None
+        return self._client.get_document(self.external_id)
 
     def wait_for_completion(self, timeout_seconds=300, check_interval_seconds=2, progress_callback=None):
         """Wait for document processing to complete.
@@ -413,6 +473,27 @@ class ListDocsResponse(BaseModel):
     next_skip: Optional[int] = Field(None, description="Skip value for next page")
     status_counts: Optional[Dict[str, int]] = Field(None, description="Document counts by status")
     folder_counts: Optional[List[FolderCount]] = Field(None, description="Document counts by folder")
+
+
+class MigrationDocumentResult(BaseModel):
+    """Per-document result from a migration run."""
+
+    source_document_id: str = Field(..., description="Document ID in the source Morphik app")
+    target_document_id: Optional[str] = Field(None, description="Document ID in the target Morphik app")
+    filename: Optional[str] = Field(None, description="Migrated filename")
+    status: Literal["created", "skipped", "failed"] = Field(..., description="Migration outcome")
+    error: Optional[str] = Field(None, description="Error message when status is failed")
+
+
+class MigrationResult(BaseModel):
+    """Summary returned by client.migrate."""
+
+    documents: List[MigrationDocumentResult] = Field(default_factory=list)
+    total_source_count: Optional[int] = Field(None, description="Total matching source documents, when available")
+    attempted_count: int = Field(..., description="Number of source documents attempted")
+    created_count: int = Field(..., description="Number of target documents created")
+    skipped_count: int = Field(..., description="Number of target documents skipped because they already existed")
+    failed_count: int = Field(..., description="Number of documents that failed migration")
 
 
 class IngestTextRequest(BaseModel):

@@ -413,22 +413,40 @@ async def requeue_ingest_jobs(
     if request.include_all:
         await _load_docs_by_status(statuses)
 
+    # Batch-fetch the requested documents in a single query rather than one round-trip per job.
+    pending_ids = [job.external_id for job in request.jobs if job.external_id not in processed_ids]
+    docs_by_id: Optional[Dict[str, Document]] = None
+    if pending_ids:
+        try:
+            fetched = await ingestion_service.db.get_documents_by_id(pending_ids, auth)
+            docs_by_id = {doc.external_id: doc for doc in fetched}
+        except Exception as exc:  # noqa: BLE001
+            # Wholesale batch failure: fall back to per-document fetches below.
+            logger.error(
+                "Batch document fetch failed during requeue; falling back per-document: %s", exc, exc_info=True
+            )
+            docs_by_id = None
+
     for job in request.jobs:
         ext_id = job.external_id
         if ext_id in processed_ids:
             continue
-        try:
-            doc = await ingestion_service.db.get_document(ext_id, auth)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to fetch document %s during requeue: %s", ext_id, exc, exc_info=True)
-            results.append(
-                RequeueIngestionResult(
-                    external_id=ext_id,
-                    status="error",
-                    message=str(exc),
+
+        if docs_by_id is not None:
+            doc = docs_by_id.get(ext_id)
+        else:
+            try:
+                doc = await ingestion_service.db.get_document(ext_id, auth)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Failed to fetch document %s during requeue: %s", ext_id, exc, exc_info=True)
+                results.append(
+                    RequeueIngestionResult(
+                        external_id=ext_id,
+                        status="error",
+                        message=str(exc),
+                    )
                 )
-            )
-            continue
+                continue
 
         if not doc:
             results.append(

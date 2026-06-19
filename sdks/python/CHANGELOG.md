@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-06-19
+
+### Changed
+- `Document` status is now a local snapshot read instead of a per-access API call.
+  `Document.status` / `is_processing` / `is_ingested` / `is_failed` / `error` read the status
+  already carried on the document (`system_metadata`), eliminating an N+1 when iterating
+  documents (previously each `is_*` access made its own request). `status` now also returns
+  `as_of` (when the snapshot was pulled) and `source` (`"local"` / `"not_loaded"`). If status
+  was not fetched (e.g. projected away), `is_*` return `False` and make **no** network call.
+  Use `Document.refresh()` or `wait_for_completion()` for the current live status.
+
+### Added
+- `Document.refresh()` — re-fetch a document from the server to get its current status.
+- `status` is now a cheap, projectable field: `list_documents(fields=[..., "status"])` returns
+  the processing status (and `error`/timestamps) via a JSON-path read — without downloading the
+  full document text — so `is_*` resolve locally with zero extra calls.
+
+## [1.2.5] - 2026-06-19
+
+### Fixed
+- Re-publish from a complete source tree. The 1.2.4 artifact on PyPI was built from a stale
+  checkout and was missing `list_documents(fields=[...])` (added in 1.2.3). 1.2.5 ships the full
+  source — field projection and the migration helpers together.
+
+## [1.2.4] - 2026-06-18
+
+### Added
+- Migration helpers for copying documents between Morphik deployments:
+  - `Morphik.migrate(target_uri=...)`
+  - `AsyncMorphik.migrate(target_uri=...)`
+- Migration result models with per-document created/skipped/failed status.
+
+### Fixed
+- Migration ingestion now aborts if the initial document metadata record cannot be created.
+
+## [1.2.3] - 2026-06-18
+
+### Added
+- `list_documents(fields=[...])` on sync, async, folder, and user-scoped clients: request only
+  the document fields you need (e.g. `["metadata"]`). The server reads and returns only those
+  columns, so listing metadata never downloads the full document text. `external_id` and
+  `content_type` are always included; `metadata_types` is included automatically when a metadata
+  field is requested so typed values (datetime/date/decimal) are reconstructed rather than
+  returned as raw strings. Nested fields are supported (e.g. `["metadata.client"]`).
+
 ## [1.2.2] - 2026-02-09
 
 ### Added

@@ -198,6 +198,9 @@ async def folder_details(
                         include_status_counts=request.include_status_counts,
                         include_folder_counts=False,
                         return_documents=request.include_documents,
+                        # Only read the fields the response keeps (the rows are trimmed to
+                        # document_fields below), so we don't pull the full document text.
+                        fields=request.document_fields,
                         sort_by=request.sort_by,
                         sort_direction=request.sort_direction,
                     )

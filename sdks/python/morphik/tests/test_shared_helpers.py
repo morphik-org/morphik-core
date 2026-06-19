@@ -7,6 +7,7 @@ from morphik._shared import (
     build_document_by_filename_params,
     build_list_apps_params,
     build_logs_params,
+    build_migration_metadata,
     build_rename_app_params,
     build_requeue_payload,
     build_rotate_app_params,
@@ -14,7 +15,7 @@ from morphik._shared import (
     merge_folders,
     normalize_additional_folders,
 )
-from morphik.models import RequeueIngestionJob
+from morphik.models import Document, RequeueIngestionJob
 
 
 def test_merge_folders_variants():
@@ -119,3 +120,37 @@ def test_normalize_additional_folders_alias():
     assert normalize_additional_folders(None, "b") == ["b"]
     assert normalize_additional_folders(["a"], "b") == ["a", "b"]
     assert normalize_additional_folders(["a"], ["b", "c"]) == ["a", "b", "c"]
+
+
+def test_build_migration_metadata_strips_managed_fields_and_records_source():
+    doc = Document(
+        external_id="source-doc-1",
+        content_type="application/pdf",
+        filename="report.pdf",
+        app_id="source-app",
+        folder_path="/finance/reports",
+        end_user_id="customer-1",
+        metadata={
+            "external_id": "source-doc-1",
+            "folder_name": "/finance/reports",
+            "end_user_id": "customer-1",
+            "category": "finance",
+        },
+        metadata_types={
+            "external_id": "string",
+            "folder_name": "string",
+            "end_user_id": "string",
+            "category": "string",
+        },
+        system_metadata={"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-02T00:00:00Z"},
+    )
+
+    metadata, metadata_types = build_migration_metadata(doc)
+
+    assert metadata["category"] == "finance"
+    assert "external_id" not in metadata
+    assert "folder_name" not in metadata
+    assert "end_user_id" not in metadata
+    assert metadata["_morphik_migration"]["source_document_id"] == "source-doc-1"
+    assert metadata["_morphik_migration"]["source_app_id"] == "source-app"
+    assert metadata_types == {"category": "string", "_morphik_migration": "object"}
