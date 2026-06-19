@@ -561,6 +561,7 @@ class IngestionService:
         folder_name: Optional[Union[str, List[str]]] = None,
         end_user_id: Optional[str] = None,
         use_colpali: Optional[bool] = False,
+        external_id: Optional[str] = None,
     ) -> Document:
         """
         Ingests file content from bytes. Saves to storage, creates document record,
@@ -583,6 +584,7 @@ class IngestionService:
         )
 
         doc = Document(
+            external_id=external_id or str(uuid.uuid4()),
             filename=filename,
             content_type=resolved_content_type,
             metadata=metadata or {},
@@ -605,7 +607,14 @@ class IngestionService:
         doc.metadata_types = metadata_bundle.types
 
         # 1. Create initial document record in DB
-        await self.db.store_document(doc, auth, metadata_bundle=metadata_bundle)
+        stored = await self.db.store_document(doc, auth, metadata_bundle=metadata_bundle)
+        if not stored:
+            if external_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Document {external_id} already exists or could not be created",
+                )
+            raise HTTPException(status_code=500, detail="Failed to create document metadata")
         logger.info(f"Initial document record created for {filename} (doc_id: {doc.external_id})")
 
         try:

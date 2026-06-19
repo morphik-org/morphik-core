@@ -6,6 +6,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from fastapi import HTTPException
 
 from core.models.auth import AuthContext
 from core.models.documents import Document
@@ -50,6 +51,22 @@ class FakeDatabase:
         return True
 
 
+class FakeStoreFailureDatabase(FakeDatabase):
+    def __init__(self, doc: Document):
+        super().__init__(doc)
+        self.store_calls = []
+
+    async def store_document(self, document: Document, auth: AuthContext, metadata_bundle=None):
+        self.store_calls.append(
+            {
+                "document": document,
+                "auth": auth,
+                "metadata_bundle": metadata_bundle,
+            }
+        )
+        return False
+
+
 def _auth() -> AuthContext:
     return AuthContext(user_id="user-1", app_id="app-1")
 
@@ -81,6 +98,37 @@ def _document() -> Document:
 def _service(doc: Document):
     db = FakeDatabase(doc)
     return IngestionService(db, None, None, None, None), db
+
+
+@pytest.mark.asyncio
+async def test_file_ingest_aborts_when_initial_document_store_fails():
+    doc = _document()
+    db = FakeStoreFailureDatabase(doc)
+    service = IngestionService(db, None, None, None, None)
+
+    async def noop_limit_check(auth, content_length, document_id):
+        return None
+
+    service._verify_ingest_and_storage_limits = noop_limit_check
+    service._resolve_content_type = lambda content, filename, content_type: "text/plain"
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.ingest_file_content(
+            file_content_bytes=b"hello",
+            filename="report.txt",
+            content_type="text/plain",
+            metadata={"custom": "value"},
+            auth=_auth(),
+            redis=None,
+            metadata_types={"custom": "string"},
+            use_colpali=False,
+            external_id="doc-1",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "doc-1" in exc_info.value.detail
+    assert len(db.store_calls) == 1
+    assert db.update_calls == []
 
 
 @pytest.mark.asyncio

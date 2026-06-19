@@ -1,7 +1,8 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from core.models.documents import Document
 from core.models.folders import Folder
 
 
@@ -74,6 +75,13 @@ class DocumentDownloadUrlResponse(BaseModel):
 
     download_url: str
     expires_in: int
+
+
+class MigrationIngestResponse(BaseModel):
+    """Response for a migration document ingest request."""
+
+    status: Literal["created", "skipped"]
+    document: Document
 
 
 class ChatTitleResponse(BaseModel):

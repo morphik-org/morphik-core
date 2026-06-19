@@ -3,7 +3,7 @@ Morphik Python SDK for document ingestion and querying.
 """
 
 from .async_ import AsyncMorphik
-from .models import Document, DocumentQueryResponse, Summary
+from .models import Document, DocumentQueryResponse, MigrationDocumentResult, MigrationResult, Summary
 from .sync import Morphik
 
 __all__ = [
@@ -12,6 +12,8 @@ __all__ = [
     "Document",
     "Summary",
     "DocumentQueryResponse",
+    "MigrationDocumentResult",
+    "MigrationResult",
 ]
 
 __version__ = "1.2.3"

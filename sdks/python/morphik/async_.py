@@ -1,3 +1,4 @@
+import inspect
 import json
 import logging
 import warnings
@@ -19,6 +20,7 @@ from ._shared import (
     build_folder_rename_path,
     build_list_apps_params,
     build_logs_params,
+    build_migration_metadata,
     build_rename_app_params,
     build_requeue_payload,
     build_rotate_app_params,
@@ -42,6 +44,8 @@ from .models import (
     IngestTextRequest,
     ListDocsResponse,
     LogResponse,
+    MigrationDocumentResult,
+    MigrationResult,
     QueryPromptOverrides,
     RequeueIngestionJob,
     RequeueIngestionResponse,
@@ -1277,6 +1281,234 @@ class AsyncMorphik(_ScopedOperationsMixin):
             sort_by=sort_by,
             sort_direction=sort_direction,
             fields=fields,
+        )
+
+    async def migrate(
+        self,
+        target_uri: str,
+        *,
+        filters: Optional[Dict[str, Any]] = None,
+        folder_name: Optional[Union[str, List[str]]] = None,
+        folder_depth: Optional[int] = None,
+        end_user_id: Optional[str] = None,
+        skip: int = 0,
+        limit: Optional[int] = None,
+        batch_size: int = 100,
+        completed_only: bool = True,
+        use_colpali: bool = True,
+        preserve_folders: bool = True,
+        preserve_end_user_id: bool = True,
+        preserve_summaries: bool = True,
+        include_source_metadata: bool = True,
+        on_conflict: Literal["skip", "fail"] = "skip",
+        continue_on_error: bool = True,
+        target_timeout: Optional[int] = None,
+        target_is_local: bool = False,
+        progress_callback: Optional[Callable[[MigrationDocumentResult], Any]] = None,
+    ) -> MigrationResult:
+        """Migrate documents from this client into another Morphik URI.
+
+        Set target_is_local=True for local/on-prem targets that should use HTTP
+        or skip TLS verification.
+        """
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than 0")
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be greater than or equal to 0")
+
+        target = AsyncMorphik(target_uri, timeout=target_timeout or self._logic._timeout, is_local=target_is_local)
+        results: List[MigrationDocumentResult] = []
+        total_source_count: Optional[int] = None
+        current_skip = max(skip, 0)
+        remaining = limit
+        page_size = min(batch_size, 500)
+
+        try:
+            while remaining is None or remaining > 0:
+                current_limit = page_size if remaining is None else min(page_size, remaining)
+                page = await self._scoped_list_documents(
+                    skip=current_skip,
+                    limit=current_limit,
+                    filters=filters,
+                    folder_name=folder_name,
+                    folder_depth=folder_depth,
+                    end_user_id=end_user_id,
+                    include_total_count=total_source_count is None,
+                    include_status_counts=False,
+                    include_folder_counts=False,
+                    completed_only=completed_only,
+                    sort_by="updated_at",
+                    sort_direction="desc",
+                )
+                if total_source_count is None:
+                    total_source_count = page.total_count
+                if not page.documents:
+                    break
+
+                for source_document in page.documents:
+                    try:
+                        result = await self._migrate_single_document(
+                            target=target,
+                            source_document=source_document,
+                            use_colpali=use_colpali,
+                            preserve_folders=preserve_folders,
+                            preserve_end_user_id=preserve_end_user_id,
+                            preserve_summaries=preserve_summaries,
+                            include_source_metadata=include_source_metadata,
+                            on_conflict=on_conflict,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        result = MigrationDocumentResult(
+                            source_document_id=source_document.external_id,
+                            filename=source_document.filename,
+                            status="failed",
+                            error=str(exc),
+                        )
+                        if not continue_on_error:
+                            results.append(result)
+                            await self._emit_migration_progress(progress_callback, result)
+                            raise
+
+                    results.append(result)
+                    await self._emit_migration_progress(progress_callback, result)
+
+                if remaining is not None:
+                    remaining -= len(page.documents)
+                if not page.has_more:
+                    break
+                next_skip = page.next_skip if page.next_skip is not None else current_skip + page.returned_count
+                if next_skip <= current_skip:
+                    break
+                current_skip = next_skip
+        finally:
+            await target.close()
+
+        return self._build_migration_result(results, total_source_count)
+
+    async def _migrate_single_document(
+        self,
+        *,
+        target: "AsyncMorphik",
+        source_document: Document,
+        use_colpali: bool,
+        preserve_folders: bool,
+        preserve_end_user_id: bool,
+        preserve_summaries: bool,
+        include_source_metadata: bool,
+        on_conflict: Literal["skip", "fail"],
+    ) -> MigrationDocumentResult:
+        metadata, metadata_types = build_migration_metadata(
+            source_document,
+            include_source_metadata=include_source_metadata,
+        )
+        file_bytes = await self.get_document_file(source_document.external_id)
+        folder = (source_document.folder_path or source_document.folder_name) if preserve_folders else None
+        end_user = source_document.end_user_id if preserve_end_user_id else None
+
+        status, target_document = await target._ingest_migrated_document(
+            source_document_id=source_document.external_id,
+            file_content=file_bytes,
+            filename=source_document.filename or source_document.external_id,
+            content_type=source_document.content_type,
+            metadata=metadata,
+            metadata_types=metadata_types,
+            folder_name=folder,
+            end_user_id=end_user,
+            use_colpali=use_colpali,
+            on_conflict=on_conflict,
+        )
+
+        if preserve_summaries and status == "created":
+            await self._copy_document_summary(source_document.external_id, target, target_document.external_id)
+
+        return MigrationDocumentResult(
+            source_document_id=source_document.external_id,
+            target_document_id=target_document.external_id,
+            filename=source_document.filename,
+            status=status,
+        )
+
+    async def _ingest_migrated_document(
+        self,
+        *,
+        source_document_id: str,
+        file_content: bytes,
+        filename: str,
+        content_type: Optional[str],
+        metadata: Dict[str, Any],
+        metadata_types: Optional[Dict[str, str]],
+        folder_name: Optional[str],
+        end_user_id: Optional[str],
+        use_colpali: bool,
+        on_conflict: Literal["skip", "fail"],
+    ) -> tuple[str, Document]:
+        serialized_metadata, inferred_types = self._logic._serialize_metadata_map(metadata)
+        metadata_type_payload = {**inferred_types, **(metadata_types or {})}
+        metadata_type_payload = {
+            key: value for key, value in metadata_type_payload.items() if key in serialized_metadata
+        }
+
+        form_data: Dict[str, Any] = {
+            "source_document_id": source_document_id,
+            "metadata": json.dumps(serialized_metadata),
+            "metadata_types": json.dumps(metadata_type_payload),
+            "use_colpali": str(use_colpali).lower(),
+            "on_conflict": on_conflict,
+        }
+        if folder_name:
+            form_data["folder_name"] = folder_name
+        if end_user_id:
+            form_data["end_user_id"] = end_user_id
+
+        file_obj = BytesIO(file_content)
+        files = {"file": (filename, file_obj, content_type or "application/octet-stream")}
+        response = await self._request("POST", "migrate/document", data=form_data, files=files)
+        document = self._logic._parse_document_response(response["document"])
+        document._client = self
+        return response.get("status", "created"), document
+
+    async def _copy_document_summary(
+        self,
+        source_document_id: str,
+        target: "AsyncMorphik",
+        target_document_id: str,
+    ) -> None:
+        try:
+            summary = await self.get_document_summary(source_document_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return
+            raise
+        await target.upsert_document_summary(
+            document_id=target_document_id,
+            content=summary.content,
+            versioning=False,
+            overwrite_latest=True,
+        )
+
+    @staticmethod
+    async def _emit_migration_progress(
+        progress_callback: Optional[Callable[[MigrationDocumentResult], Any]],
+        result: MigrationDocumentResult,
+    ) -> None:
+        if progress_callback is None:
+            return
+        callback_result = progress_callback(result)
+        if inspect.isawaitable(callback_result):
+            await callback_result
+
+    @staticmethod
+    def _build_migration_result(
+        results: List[MigrationDocumentResult],
+        total_source_count: Optional[int],
+    ) -> MigrationResult:
+        return MigrationResult(
+            documents=results,
+            total_source_count=total_source_count,
+            attempted_count=len(results),
+            created_count=sum(1 for item in results if item.status == "created"),
+            skipped_count=sum(1 for item in results if item.status == "skipped"),
+            failed_count=sum(1 for item in results if item.status == "failed"),
         )
 
     async def get_document(self, document_id: str) -> Document:

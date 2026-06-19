@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from urllib.parse import quote
 
 from pydantic import BaseModel
@@ -10,6 +10,17 @@ from pydantic import BaseModel
 MAX_LIMIT = 500
 MIN_LOG_HOURS = 0.1
 MAX_LOG_HOURS = 168.0
+MIGRATION_SOURCE_METADATA_KEY = "_morphik_migration"
+MIGRATION_RESERVED_METADATA_FIELDS = {
+    "app_id",
+    "end_user_id",
+    "external_id",
+    "filename",
+    "folder_id",
+    "folder_name",
+    "folder_path",
+    "owner_id",
+}
 
 
 def merge_folders(
@@ -197,3 +208,45 @@ def normalize_additional_folders(
     if additional_folders:
         return list(additional_folders) + folder_list
     return folder_list
+
+
+def build_migration_metadata(
+    document: Any,
+    *,
+    include_source_metadata: bool = True,
+) -> Tuple[Dict[str, Any], Dict[str, str]]:
+    """Prepare document metadata for migration ingestion.
+
+    The target API owns fields such as external_id, folder_name, and app_id, so
+    those values must travel through dedicated migration parameters instead of
+    user metadata.
+    """
+    metadata = dict(getattr(document, "metadata", None) or {})
+    metadata_types = dict(getattr(document, "metadata_types", None) or {})
+
+    for field in MIGRATION_RESERVED_METADATA_FIELDS:
+        metadata.pop(field, None)
+        metadata_types.pop(field, None)
+
+    if include_source_metadata:
+        system_metadata = getattr(document, "system_metadata", None) or {}
+        source_info = {
+            "source_document_id": getattr(document, "external_id", None),
+            "source_app_id": getattr(document, "app_id", None),
+            "source_filename": getattr(document, "filename", None),
+            "source_created_at": system_metadata.get("created_at") if isinstance(system_metadata, dict) else None,
+            "source_updated_at": system_metadata.get("updated_at") if isinstance(system_metadata, dict) else None,
+        }
+        source_info = {key: value for key, value in source_info.items() if value is not None}
+
+        existing_source_info = metadata.get(MIGRATION_SOURCE_METADATA_KEY)
+        if isinstance(existing_source_info, dict):
+            existing_source_info = dict(existing_source_info)
+            for key, value in source_info.items():
+                existing_source_info.setdefault(key, value)
+            metadata[MIGRATION_SOURCE_METADATA_KEY] = existing_source_info
+        else:
+            metadata[MIGRATION_SOURCE_METADATA_KEY] = source_info
+        metadata_types.setdefault(MIGRATION_SOURCE_METADATA_KEY, "object")
+
+    return metadata, metadata_types
