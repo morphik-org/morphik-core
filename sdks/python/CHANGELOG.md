@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-06-18
+
+### Added
+- Migration helpers for copying documents between Morphik deployments:
+  - `Morphik.migrate(target_uri=...)`
+  - `AsyncMorphik.migrate(target_uri=...)`
+- Migration result models with per-document created/skipped/failed status.
+
+### Fixed
+- Migration ingestion now aborts if the initial document metadata record cannot be created.
+
 ## [1.2.3] - 2026-06-18
 
 ### Added
