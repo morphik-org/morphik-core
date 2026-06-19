@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-06-19
+
+### Fixed
+- Re-publish from a complete source tree. The 1.2.4 artifact on PyPI was built from a stale
+  checkout and was missing `list_documents(fields=[...])` (added in 1.2.3). 1.2.5 ships the full
+  source — field projection and the migration helpers together.
+
 ## [1.2.4] - 2026-06-18
 
 ### Added
