@@ -65,6 +65,11 @@ DOCUMENT_PROJECTION_ORDER = [
     "app_id",
     "end_user_id",
 ]
+# Lightweight scalar keys inside system_metadata that can be projected cheaply via a
+# JSON-path read (system_metadata->>'<key>'), without materializing the full
+# system_metadata blob (which holds the document text). Returned in a slim
+# system_metadata dict so the SDK can read e.g. doc status locally with no extra call.
+DOCUMENT_STATUS_PROJECTION_KEYS = {"status", "error", "created_at", "updated_at", "progress", "version"}
 
 
 class PostgresDatabase:
@@ -629,9 +634,10 @@ class PostgresDatabase:
     def _resolve_document_projection_fields(fields: Optional[List[str]]) -> Optional[set]:
         """Resolve requested API fields to the document table columns needed to serve them.
 
-        Note: ``summary_*`` and ``page_count`` are derived from ``system_metadata``, so
-        projecting them reads that column (which also holds the full document text). Plain
-        ``metadata`` lives in its own column and stays lightweight.
+        Lightweight status keys (``status``, ``error``, timestamps) are projected via a cheap
+        JSON-path read of ``system_metadata`` rather than the full column, so they do not pull
+        the document text. ``summary_*`` and ``page_count`` are derived from the full
+        ``system_metadata`` column. Plain ``metadata`` lives in its own column and stays light.
         """
         if not fields:
             return None
@@ -645,8 +651,11 @@ class PostgresDatabase:
         for root in requested_roots:
             if root in DOCUMENT_PROJECTION_COLUMN_MAP:
                 resolved_fields.add(root)
+            elif root in DOCUMENT_STATUS_PROJECTION_KEYS:
+                # Cheap JSON-path read of a single system_metadata key (no full blob).
+                resolved_fields.add(f"sm:{root}")
             elif root in SUMMARY_METADATA_KEYS:
-                # summary_* values are derived from system_metadata.
+                # summary_* values are derived from the full system_metadata column.
                 resolved_fields.add("system_metadata")
             elif root == "page_count":
                 resolved_fields.add("system_metadata")
@@ -657,14 +666,34 @@ class PostgresDatabase:
     @staticmethod
     def _document_projection_columns(fields: set):
         """Return a stable list of labeled SQLAlchemy columns for a document projection."""
-        return [
+        columns = [
             DOCUMENT_PROJECTION_COLUMN_MAP[field].label(field) for field in DOCUMENT_PROJECTION_ORDER if field in fields
         ]
+        # Cheap per-key JSON-path reads for lightweight system_metadata scalars.
+        for field in sorted(f for f in fields if isinstance(f, str) and f.startswith("sm:")):
+            key = field[len("sm:") :]
+            columns.append(DocumentModel.system_metadata[key].astext.label(f"__sm_{key}"))
+        return columns
 
     @staticmethod
     def _document_projection_row_to_dict(row: Any, fields: set) -> Dict[str, Any]:
         """Convert a projected document row (a SQLAlchemy mapping) to the public document dict shape."""
         document = dict(row)
+
+        # Reassemble cheaply-projected system_metadata scalars (labeled __sm_<key>) into a
+        # slim system_metadata dict so the public shape matches a full document.
+        status_keys = {f[len("sm:") :] for f in fields if isinstance(f, str) and f.startswith("sm:")}
+        if status_keys:
+            slim = {}
+            for key in status_keys:
+                label = f"__sm_{key}"
+                if label in document:
+                    slim[key] = document.pop(label)
+            existing = document.get("system_metadata")
+            if isinstance(existing, dict):
+                existing.update(slim)
+            else:
+                document["system_metadata"] = slim
 
         for key in ("metadata", "metadata_types", "storage_info", "system_metadata", "additional_metadata"):
             if key in document and document[key] is None:
