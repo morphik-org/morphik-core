@@ -330,9 +330,9 @@ fi
 # 5.0.5 Now that morphik.toml exists, handle LOCAL_URI_PASSWORD configuration
 echo ""
 print_info "🔐 Setting up authentication for your Morphik deployment:"
-print_info "   • If you plan to access Morphik from outside this server, setting a LOCAL_URI_PASSWORD will secure your deployment"
+print_info "   • Set LOCAL_URI_PASSWORD when you want to protect local connection URI generation"
 print_info "   • For local-only access, you can skip this step (bypass_auth_mode will be enabled)"
-print_info "   • With a LOCAL_URI_PASSWORD set, you'll need to use /generate_local_uri endpoint for authorization tokens"
+print_info "   • With a LOCAL_URI_PASSWORD set, use POST /local/generate_uri with password_token in the form body to create an authorized local connection URI"
 echo ""
 read -p "Please enter a secure LOCAL_URI_PASSWORD (or press Enter to skip for local-only access): " local_uri_password < /dev/tty
 if [[ -z "$local_uri_password" ]]; then
@@ -346,8 +346,9 @@ if [[ -z "$local_uri_password" ]]; then
         print_warning "morphik.toml not found, cannot set bypass_auth_mode"
     fi
 else
-    print_success "LOCAL_URI_PASSWORD set - keeping production mode (bypass_auth_mode=false) with authentication enabled"
-    print_info "Use the /generate_local_uri endpoint with this password to create authorized connection URIs"
+    print_success "LOCAL_URI_PASSWORD set - keeping authenticated mode (bypass_auth_mode=false)"
+    print_info "Use POST /local/generate_uri with password_token in the form body to create authorized local connection URIs"
+    print_info "Treat generated local connection URIs as bearer credentials"
 fi
 
 # Only update .env if a password was provided
