@@ -19,6 +19,7 @@ import logging
 import os
 import tempfile
 import uuid
+from copy import copy
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -30,7 +31,7 @@ import pdf2image
 from fastapi import HTTPException, UploadFile
 from PIL import Image as PILImage
 
-from core.config import get_settings
+from core import config as config_module
 from core.database.postgres_database import PostgresDatabase
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
@@ -48,7 +49,58 @@ from core.utils.typed_metadata import MetadataBundle, canonicalize_type_name, me
 from core.vector_store.base_vector_store import BaseVectorStore
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
+
+
+def get_settings():
+    return config_module.get_settings()
+
+
+class _SettingsProxy:
+    """Lazily resolve app settings while preserving direct test overrides."""
+
+    def __init__(self):
+        self._overrides: Dict[str, Any] = {}
+
+    def __getattr__(self, name):
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(get_settings(), name)
+
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+            return
+        self._overrides[name] = value
+
+    def __delattr__(self, name):
+        if name in self._overrides:
+            del self._overrides[name]
+            return
+        raise AttributeError(name)
+
+    def apply_overrides(self, resolved_settings):
+        if not self._overrides:
+            return resolved_settings
+
+        overrides = dict(self._overrides)
+        if hasattr(resolved_settings, "model_dump"):
+            settings_data = resolved_settings.model_dump()
+            settings_data.update(overrides)
+            return type(resolved_settings)(**settings_data)
+
+        settings_copy = copy(resolved_settings)
+        for name, value in overrides.items():
+            setattr(settings_copy, name, value)
+        return settings_copy
+
+
+settings = _SettingsProxy()
+
+
+def _get_settings():
+    if isinstance(settings, _SettingsProxy):
+        return settings.apply_overrides(get_settings())
+    return settings
 
 
 class PdfConversionError(Exception):
@@ -96,6 +148,7 @@ class IngestionService:
         parser: BaseParser,
         colpali_embedding_model: Optional[BaseEmbeddingModel] = None,
         colpali_vector_store: Optional[BaseVectorStore] = None,
+        settings: Optional[Any] = None,
     ):
         """
         Initialize the IngestionService.
@@ -108,6 +161,7 @@ class IngestionService:
             parser: Document parser for text extraction
             colpali_embedding_model: Optional ColPali embedding model (local or API)
             colpali_vector_store: Optional ColPali vector store for multi-vector embeddings
+            settings: Optional pre-resolved settings object
         """
         self.db = database
         self.vector_store = vector_store
@@ -116,6 +170,7 @@ class IngestionService:
         self.parser = parser
         self.colpali_embedding_model = colpali_embedding_model
         self.colpali_vector_store = colpali_vector_store
+        self.settings = settings if settings is not None else _get_settings()
 
     # -------------------------------------------------------------------------
     # Validation helpers
@@ -466,7 +521,7 @@ class IngestionService:
         content_length: int,
         document_id: str,
     ) -> None:
-        if settings.MODE != "cloud" or not auth.user_id:
+        if self.settings.MODE != "cloud" or not auth.user_id:
             return
 
         num_pages = estimate_pages_by_chars(content_length)
@@ -492,7 +547,7 @@ class IngestionService:
         )
 
     async def _record_storage_usage(self, auth: AuthContext, content_length: int, document_id: str) -> None:
-        if settings.MODE != "cloud" or not auth.user_id:
+        if self.settings.MODE != "cloud" or not auth.user_id:
             return
 
         try:
@@ -1177,7 +1232,9 @@ class IngestionService:
         """Process colpali multi-vector embeddings if enabled."""
         chunk_objects_multivector = []
 
-        if not (use_colpali and settings.ENABLE_COLPALI and self.colpali_embedding_model and self.colpali_vector_store):
+        if not (
+            use_colpali and self.settings.ENABLE_COLPALI and self.colpali_embedding_model and self.colpali_vector_store
+        ):
             return chunk_objects_multivector
 
         mime_type = file_type if isinstance(file_type, str) else (file_type.mime if file_type is not None else None)
@@ -1577,7 +1634,7 @@ class IngestionService:
             logger.error("PDF file content is empty")
             raise PdfConversionError("PDF file content is empty")
 
-        dpi = settings.COLPALI_PDF_DPI
+        dpi = self.settings.COLPALI_PDF_DPI
 
         try:
             # Check document density to decide processing strategy
@@ -1799,12 +1856,12 @@ class IngestionService:
                 images_payload: List[Tuple[str, bytes]] = []
                 total_pages = len(pdf_document)
                 render_failures = 0
+                dpi = self.settings.COLPALI_PDF_DPI
 
                 try:
                     for page_num in range(total_pages):
                         page = pdf_document[page_num]
                         try:
-                            dpi = settings.COLPALI_PDF_DPI
                             mat = fitz.Matrix(dpi / 72, dpi / 72)
                             pix = page.get_pixmap(matrix=mat)
                             img_data = pix.tobytes("png")

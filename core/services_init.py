@@ -226,6 +226,7 @@ ingestion_service = IngestionService(
     embedding_model=embedding_model,
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
+    settings=settings,
 )
 logger.info("Ingestion service initialised")
 

@@ -509,6 +509,7 @@ async def process_ingestion_job(
                 parser=ctx["parser"],
                 colpali_embedding_model=ctx.get("colpali_embedding_model"),
                 colpali_vector_store=colpali_vector_store,
+                settings=settings,
             )
 
             # 3. Download the file from storage
