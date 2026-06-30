@@ -44,7 +44,9 @@ export function parseConnectionUri(uri: string): ConnectionInfo {
   if (uri.includes("://morphik://")) {
     // Remove the leading protocol if someone entered https://morphik://...
     cleanUri = uri.replace(/^https?:\/\//, "");
-    console.warn("Cleaning malformed URI:", uri, "→", cleanUri);
+    console.warn("Cleaning malformed connection URI", {
+      hadHttpProtocolPrefix: /^https?:\/\//.test(uri),
+    });
   }
 
   // Check if it's already a morphik:// URI
@@ -165,7 +167,7 @@ export function clearLocalConnectionFromStorage(): void {
   try {
     const stored = window.localStorage.getItem(CONNECTION_URI_STORAGE_KEY);
     if (stored && isLocalUri(stored)) {
-      console.log("Clearing local connection from storage:", stored);
+      console.log("Clearing local connection from storage");
       window.localStorage.removeItem(CONNECTION_URI_STORAGE_KEY);
     }
   } catch {

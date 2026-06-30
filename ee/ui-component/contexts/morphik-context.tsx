@@ -38,7 +38,9 @@ function getStoredConnectionUri(): string | null {
     if (stored && stored.includes("://morphik://")) {
       // Remove the leading protocol from malformed URIs like https://morphik://...
       const cleaned = stored.replace(/^https?:\/\//, "");
-      console.log("Cleaning malformed stored URI:", stored, "→", cleaned);
+      console.log("Cleaning malformed stored connection URI", {
+        hadHttpProtocolPrefix: /^https?:\/\//.test(stored),
+      });
       window.localStorage.setItem(CONNECTION_URI_STORAGE_KEY, cleaned);
       return cleaned;
     }
@@ -49,7 +51,10 @@ function getStoredConnectionUri(): string | null {
       const match = stored.match(/^morphik:\/\/local@(.+)$/);
       if (match && match[1]) {
         const migratedUri = match[1];
-        console.log("Migrating old URI format:", stored, "→", migratedUri);
+        console.log("Migrating stored local connection URI format", {
+          from: "morphik-local",
+          to: "host",
+        });
         // Update storage with migrated value
         window.localStorage.setItem(CONNECTION_URI_STORAGE_KEY, migratedUri);
         return migratedUri;
@@ -106,7 +111,7 @@ export function MorphikProvider({
 
     // Clear stored URI if it's a local connection (on app restart)
     if (storedUri && isLocalUri(storedUri)) {
-      console.log("Clearing stored local connection URI on app restart:", storedUri);
+      console.log("Clearing stored local connection URI on app restart");
       setStoredConnectionUri(null);
       // Use initial value or external prop for local connections
       return externalConnectionUri || initialConnectionUri;
@@ -133,7 +138,11 @@ export function MorphikProvider({
 
     // Safety check: ensure it's a proper HTTP(S) URL
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      console.error("[MorphikContext] Invalid apiBaseUrl:", url);
+      console.error("[MorphikContext] Invalid apiBaseUrl", {
+        hasValue: Boolean(connectionInfo.apiBaseUrl),
+        hasHttpProtocol: url.startsWith("http://"),
+        hasHttpsProtocol: url.startsWith("https://"),
+      });
       return DEFAULT_API_BASE_URL;
     }
 
@@ -161,7 +170,7 @@ export function MorphikProvider({
     } else if (connectionUri && connectionInfo && connectionInfo.type === "local") {
       // For local connections, we can optionally store temporarily
       // but it will be cleared on next app restart
-      console.log("Local connection - will be cleared on restart:", connectionUri);
+      console.log("Local connection will be cleared on restart");
       setStoredConnectionUri(connectionUri);
     } else {
       // Clear storage if no URI
@@ -171,21 +180,17 @@ export function MorphikProvider({
 
   const updateConnectionUri = (uri: string) => {
     if (!isReadOnlyUri) {
-      console.log("[MorphikContext] updateConnectionUri:", uri);
+      console.log("[MorphikContext] updateConnectionUri");
       setConnectionUri(uri);
     }
   };
 
   // Debug log when values change
   React.useEffect(() => {
-    console.log("[MorphikContext] Current values:", {
-      connectionUri,
-      connectionInfo,
-      apiBaseUrl,
-      authToken,
-      isLocal,
+    console.log("[MorphikContext] Connection state changed:", {
+      hasConnection: Boolean(connectionUri),
     });
-  }, [connectionUri, connectionInfo, apiBaseUrl, authToken, isLocal]);
+  }, [connectionUri]);
 
   return (
     <MorphikContext.Provider
