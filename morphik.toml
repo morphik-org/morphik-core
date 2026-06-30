@@ -19,6 +19,31 @@ dev_user_id = "dev_user"  # Default dev user ID
 openai_gpt4-1 = { model_name = "gpt-4.1" }
 openai_gpt4-1-mini = { model_name = "gpt-4.1-mini" }
 
+# LiteLLM proxy / OpenAI-compatible endpoints
+# - Put the proxy URL in api_base inside registered_models.
+# - Reference the registered model key from [completion].model or [embedding].model.
+# - Set OPENAI_API_KEY in your environment to the proxy key for
+#   LiteLLM/OpenAI-compatible calls.
+# - If an authenticated embedding proxy uses a local-looking URL such as
+#   localhost or 127.0.0.1, Morphik forwards LITELLM_DUMMY_API_KEY for local
+#   embedding calls, so set LITELLM_DUMMY_API_KEY to the proxy key too.
+# - If your local proxy has authentication disabled, LiteLLM may still require
+#   harmless placeholders such as OPENAI_API_KEY=dummy and
+#   LITELLM_DUMMY_API_KEY=dummy.
+#   Dummy values are only local client-compatibility placeholders; they do not
+#   secure the proxy.
+# - Keep real secrets out of registered_models.*.api_key; registered-model
+#   config can appear in application or worker logs and model metadata responses.
+# - Prefer environment or secret-manager handling for proxy credentials.
+# - Do not commit real proxy credentials in shared config files.
+# - Do not embed credentials or bearer tokens in api_base URLs.
+# - Use HTTPS for remote or shared-network proxy endpoints.
+# - [completion].model also covers query and agent traffic. If contextual
+#   chunking or parser vision traffic should use the proxy, update
+#   parser.contextual_chunking_model and [parser.vision].model separately.
+# litellm_proxy_chat = { model_name = "openai/gpt-4o-mini", api_base = "http://localhost:4000" }
+# litellm_proxy_embedding = { model_name = "openai/text-embedding-3-small", api_base = "http://localhost:4000" }
+
 # Azure OpenAI models
 azure_gpt4 = { model_name = "gpt-4", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-4-deployment" }
 azure_gpt35 = { model_name = "gpt-3.5-turbo", api_base = "YOUR_AZURE_URL_HERE", api_version = "2023-05-15", deployment_id = "gpt-35-turbo-deployment" }
@@ -59,6 +84,7 @@ azure_embedding = { model_name = "text-embedding-ada-002", api_base = "YOUR_AZUR
 #### Component configurations ####
 
 [completion]
+# LiteLLM proxy example: model = "litellm_proxy_chat"
 model = "ollama_qwen_vision" #"openai_gpt4-1-mini"  # Reference to a key in registered_models
 default_max_tokens = "1000"
 default_temperature = 0.3
@@ -75,6 +101,9 @@ max_retries = 3          # Number of retries for database operations
 retry_delay = 1.0        # Initial delay between retries in seconds
 
 [embedding]
+# LiteLLM proxy example: model = "litellm_proxy_embedding"
+# Keep dimensions compatible with existing vectors, or plan re-ingestion,
+# migration, a new collection/vector table, or a database reset.
 model = "ollama_embedding"  # Reference to registered model
 dimensions = 768
 similarity_metric = "cosine"
