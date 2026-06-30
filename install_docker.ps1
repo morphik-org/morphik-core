@@ -315,8 +315,9 @@ function Try-Extract-Config {
 
 function Update-AuthBypassOrPassword {
   Write-Host ""; Write-Info "Setting up authentication for your Morphik deployment:"
-  Write-Info " • For external access, set a LOCAL_URI_PASSWORD."
+  Write-Info " • Set a LOCAL_URI_PASSWORD when you want to protect local connection URI generation."
   Write-Info " • For local-only access, press Enter to enable bypass_auth_mode."
+  Write-Info " • With a LOCAL_URI_PASSWORD set, use POST /local/generate_uri with password_token in the form body to create an authorized local connection URI."
   $password = Read-Host "Enter a secure LOCAL_URI_PASSWORD (or press Enter to skip)"
   if ([string]::IsNullOrWhiteSpace($password)) {
     Write-Info "No password provided - enabling authentication bypass (bypass_auth_mode=true)."
@@ -324,7 +325,9 @@ function Update-AuthBypassOrPassword {
     $content = $content -replace '(?m)^bypass_auth_mode\s*=\s*false', 'bypass_auth_mode = true'
     Set-Content morphik.toml -Value $content
   } else {
-    Write-Ok "LOCAL_URI_PASSWORD set - keeping production mode (bypass_auth_mode=false)."
+    Write-Ok "LOCAL_URI_PASSWORD set - keeping authenticated mode (bypass_auth_mode=false)."
+    Write-Info "Use POST /local/generate_uri with password_token in the form body to create authorized local connection URIs."
+    Write-Info "Treat generated local connection URIs as bearer credentials."
     (Get-Content .env -Raw) -replace 'LOCAL_URI_PASSWORD=', "LOCAL_URI_PASSWORD=$password" |
       Set-Content .env
   }
