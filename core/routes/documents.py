@@ -3,7 +3,7 @@ import os
 from typing import Any, Dict, List, Optional, Union
 
 import arq
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, Request, UploadFile
 
 from core.auth_utils import verify_token
 from core.database.postgres_database import InvalidMetadataFilterError
@@ -12,6 +12,7 @@ from core.models.auth import AuthContext
 from core.models.documents import Document
 from core.models.request import DocumentPagesRequest, IngestTextRequest, ListDocsRequest, MetadataUpdateRequest
 from core.models.responses import (
+    BatchDeleteResponse,
     DocumentDeleteResponse,
     DocumentDownloadUrlResponse,
     DocumentPagesResponse,
@@ -254,7 +255,32 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
         raise HTTPException(status_code=403, detail=str(e))
     except TypedMetadataError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    
 
+@router.delete("/batch", response_model=BatchDeleteResponse)
+async def batch_delete_documents(
+    document_ids: List[str] = Body(..., embed=True),
+    auth: AuthContext = Depends(verify_token),
+):
+    if not document_ids:
+        raise HTTPException(status_code=400, detail="No document_ids provided for batch deletion")
+
+    deleted: List[str] = []
+    errors: List[Dict[str, str]] = []
+
+    for doc_id in document_ids:
+        try:
+            success = await document_service.delete_document(doc_id, auth)
+            if success:
+                deleted.append(doc_id)
+            else:
+                errors.append({"document_id": doc_id, "error": "Document not found or delete failed"})
+        except PermissionError as e:
+            errors.append({"document_id": doc_id, "error": str(e)})
+        except TypedMetadataError as exc:
+            errors.append({"document_id": doc_id, "error": str(exc)})
+
+    return BatchDeleteResponse(deleted=deleted, errors=errors)    
 
 @router.get("/filename/{filename}", response_model=Document)
 async def get_document_by_filename(
