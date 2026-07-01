@@ -58,29 +58,6 @@ class TelemetryEventReader:
         )
         return events
 
-    def events_between(
-        self,
-        *,
-        since: datetime,
-        until: Optional[datetime] = None,
-        user_id: Optional[str] = None,
-        app_id: Optional[str] = None,
-        operation_type: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> List[TelemetryEvent]:
-        """Return all events recorded between ``since`` (inclusive) and ``until`` (exclusive)."""
-        since_normalized = self._normalize_since(since)
-        until_normalized = self._normalize_since(until) if until else None
-        return self._collect_events(
-            limit=None,
-            user_id=user_id,
-            app_id=app_id,
-            operation_type=operation_type,
-            status=status,
-            since=since_normalized,
-            until=until_normalized,
-        )
-
     # ------------------------------------------------------------------ #
     def _ordered_log_files(self) -> List[Path]:
         if not self.log_dir.exists():

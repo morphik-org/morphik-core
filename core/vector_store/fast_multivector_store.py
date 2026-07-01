@@ -426,9 +426,6 @@ class FastMultiVectorStore(BaseVectorStore):
     def initialize(self):
         return True
 
-    def latest_store_metrics(self) -> Dict[str, Any]:
-        return dict(self._last_store_metrics) if self._last_store_metrics else {}
-
     async def store_embeddings(
         self, chunks: List[DocumentChunk], app_id: Optional[str] = None
     ) -> Tuple[bool, List[str], Dict[str, Any]]:

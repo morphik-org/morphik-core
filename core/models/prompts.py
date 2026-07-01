@@ -159,29 +159,6 @@ class QueryPromptOverride(BaseModel):
     )
 
 
-class PromptOverrides(BaseModel):
-    """
-    Generic container for all prompt overrides.
-
-    This is a base class that contains all possible override types.
-    For specific operations, use the more specialized QueryPromptOverrides class,
-    which enforces context-specific validation.
-    """
-
-    entity_extraction: Optional[EntityExtractionPromptOverride] = Field(
-        None,
-        description="Overrides for entity extraction prompts - controls how entities are identified in text",
-    )
-    entity_resolution: Optional[EntityResolutionPromptOverride] = Field(
-        None,
-        description="Overrides for entity resolution prompts - controls how variant forms are grouped",
-    )
-    query: Optional[QueryPromptOverride] = Field(
-        None,
-        description="Overrides for query prompts - controls response generation style and format",
-    )
-
-
 def validate_prompt_template_placeholders(prompt_type: str, template: str) -> None:
     """
     Validate that a prompt template contains all required placeholders.

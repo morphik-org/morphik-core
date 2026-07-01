@@ -1,11 +1,9 @@
 import asyncio
-import contextlib
 import inspect
 import json
 import logging
 import math
 import os
-import re
 import time
 import traceback
 import urllib.parse as up
@@ -32,6 +30,7 @@ from core.services.v2_document_service import V2DocumentService
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_content_type, is_colpali_native_format
+from core.utils.fast_ops import clean_control_chars
 from core.utils.folder_utils import normalize_ingest_folder_inputs
 from core.utils.storage_usage import extract_storage_bytes
 from core.vector_store.base_vector_store import BaseVectorStore
@@ -334,42 +333,6 @@ async def get_document_with_retry(ingestion_service, document_id, auth, max_retr
     return None
 
 
-# ---------------------------------------------------------------------------
-# Profiling helpers (worker-level)
-# ---------------------------------------------------------------------------
-
-if settings.ENABLE_PROFILING:
-    try:
-        import yappi  # type: ignore
-    except ImportError:
-        yappi = None
-else:
-    yappi = None
-
-
-@contextlib.asynccontextmanager
-async def _profile_ctx(label: str):  # type: ignore
-    if yappi is None:
-        yield
-        return
-
-    yappi.clear_stats()
-    yappi.set_clock_type("cpu")
-    yappi.start()
-    t0 = time.perf_counter()
-    try:
-        yield
-    finally:
-        duration = time.perf_counter() - t0
-        fname = f"logs/worker_{label}_{int(t0)}.prof"
-        yappi.stop()
-        try:
-            yappi.get_func_stats().save(fname, type="pstat")
-            logger.info("Saved worker profile %s (%.2fs) to %s", label, duration, fname)
-        except Exception as exc:
-            logger.warning("Could not save worker profile: %s", exc)
-
-
 async def process_ingestion_job(
     ctx: Dict[str, Any],
     document_id: str,
@@ -614,12 +577,9 @@ async def process_ingestion_job(
                 additional_metadata, text = await ingestion_service.parser.parse_file_to_text(
                     file_content, parse_filename
                 )
-                # Clean the extracted text to remove NULL and other problematic control characters
-                # Keep: tabs, newlines, carriage returns, and all printable characters (including Unicode)
-                # Remove NULL characters
-                text = re.sub(r"\x00", "", text)
-                # Remove control characters (0x00-0x08, 0x0B-0x0C, 0x0E-0x1F) but keep tab, newline, carriage return
-                text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)
+                # Clean the extracted text to remove NULL and other problematic control characters.
+                # Keeps tabs, newlines, carriage returns, and all printable (incl. Unicode) characters.
+                text = clean_control_chars(text)
 
             logger.debug(
                 f"Parsed file into {'XML chunks' if xml_processing else f'text of length {len(text)}'} (filename used: {parse_filename})"
@@ -813,8 +773,7 @@ async def process_ingestion_job(
                     file_content, parse_filename
                 )
 
-                fallback_text = re.sub(r"\x00", "", fallback_text)
-                fallback_text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", fallback_text)
+                fallback_text = clean_control_chars(fallback_text)
                 phase_times["fallback_parse_file"] = time.time() - fallback_parse_start
 
                 if fallback_text.strip():
@@ -870,8 +829,7 @@ async def process_ingestion_job(
                     )
                     deep_parse_start = time.time()
                     deep_metadata, deep_text = await deep_parse(file_content, parse_filename)
-                    deep_text = re.sub(r"\x00", "", deep_text)
-                    deep_text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", deep_text)
+                    deep_text = clean_control_chars(deep_text)
                     phase_times["deep_parse_file"] = time.time() - deep_parse_start
 
                     if deep_text.strip():

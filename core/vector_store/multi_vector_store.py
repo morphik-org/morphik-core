@@ -17,7 +17,7 @@ from core.storage.base_storage import BaseStorage
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 from core.storage.utils_file_extensions import detect_file_type
-from core.utils.fast_ops import binary_quantize, bytes_to_data_uri, encode_base64
+from core.utils.fast_ops import binary_quantize, binary_quantize_packed, bytes_to_data_uri, encode_base64
 
 from .base_vector_store import BaseVectorStore
 from .utils import (
@@ -134,9 +134,6 @@ class MultiVectorStore(BaseVectorStore):
         except Exception as e:
             logger.error(f"Failed to initialize external storage: {e}")
             return None
-
-    def latest_store_metrics(self) -> Dict[str, Any]:
-        return dict(self._last_store_metrics) if self._last_store_metrics else {}
 
     @contextmanager
     def get_connection(self):
@@ -339,7 +336,11 @@ class MultiVectorStore(BaseVectorStore):
         if isinstance(embeddings, list) and not isinstance(embeddings[0], np.ndarray):
             embeddings = np.array(embeddings)
 
-        # Use Rust-optimized quantization (returns List[List[bool]])
+        # Bit(bytes) infers the bit length as 8 * len(bytes), so the packed path
+        # is only valid when the dimension is byte-aligned (always true for ColPali's 128).
+        if np.shape(embeddings)[-1] % 8 == 0:
+            return [Bit(packed) for packed in binary_quantize_packed(embeddings)]
+
         binary_lists = binary_quantize(embeddings)
         return [Bit(bits) for bits in binary_lists]
 
