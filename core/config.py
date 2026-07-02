@@ -85,7 +85,6 @@ class Settings(BaseSettings):
     # Parser configuration
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
-    FRAME_SAMPLE_RATE: Optional[int] = None
     USE_CONTEXTUAL_CHUNKING: bool = False
     PARSER_XML: ParserXMLSettings = ParserXMLSettings()
 

@@ -1405,11 +1405,6 @@ class IngestionService:
         img_str = bytes_to_data_uri(img_bytes, mime)
         return img_str, img_bytes
 
-    def img_to_base64_str(self, img: PILImage.Image) -> str:
-        """Convert PIL Image to base64 string."""
-        img_str, _ = self.img_to_base64_with_bytes(img)
-        return img_str
-
     @staticmethod
     def _is_blank_image(img: PILImage.Image, tolerance: int = 2) -> bool:
         """Return True when an image has no meaningful visual variation."""

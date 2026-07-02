@@ -104,12 +104,6 @@ class PerformanceTracker:
         self.current_phase = phase_name
         self.phase_start = time.time()
 
-    def end_phase(self):
-        if self.current_phase and self.phase_start:
-            self.phases[self.current_phase] = time.time() - self.phase_start
-            self.current_phase = None
-            self.phase_start = None
-
     def add_suboperation(self, name: str, duration: float, parent_phase: Optional[str] = None):
         """Add a sub-operation timing that will be displayed under its parent phase"""
         if parent_phase:
