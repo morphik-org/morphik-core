@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     DB_MAX_RETRIES: int = 3
     DB_RETRY_DELAY: float = 1.0
 
+    # ColPali model configuration
+    COLPALI_MODEL_NAME: str = "vidore/colpali-v1.2-merged"
+
+
     # Embedding configuration
     EMBEDDING_PROVIDER: Literal["litellm"] = "litellm"
     EMBEDDING_MODEL: str
