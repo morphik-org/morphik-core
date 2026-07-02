@@ -287,32 +287,3 @@ async def generate_morphik_on_the_fly_content(
             raise MorphikOnTheFlyContentError(f"Failed to parse Morphik On-the-Fly JSON output: {exc}") from exc
 
     return MorphikOnTheFlyGenerationResult(text_output=text, structured_output=structured_output)
-
-
-async def extract_structured_metadata(
-    *,
-    prompt: str,
-    schema: Dict[str, Any],
-    document_bytes: Optional[bytes],
-    mime_type: Optional[str] = None,
-    model: Optional[str] = None,
-    api_key: Optional[str] = None,
-    api_base_url: Optional[str] = None,
-    timeout_seconds: float = 60,
-) -> Dict[str, Any]:
-    """Backwards-compatible helper that enforces structured output."""
-    result = await generate_morphik_on_the_fly_content(
-        prompt=prompt,
-        schema=schema,
-        document_bytes=document_bytes,
-        mime_type=mime_type,
-        model=model,
-        api_key=api_key,
-        api_base_url=api_base_url,
-        system_prompt=DEFAULT_SYSTEM_PROMPT,
-        timeout_seconds=timeout_seconds,
-    )
-
-    if result.structured_output is None:
-        raise MorphikOnTheFlyContentError("Morphik On-the-Fly did not return structured output")
-    return result.structured_output

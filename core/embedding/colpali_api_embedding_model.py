@@ -17,8 +17,8 @@ from core.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
 
-# Define alias for a multivector: a list of embedding vectors
-MultiVector = List[List[float]]
+# Define alias for a multivector: a (num_vectors, dim) array or list of embedding vectors
+MultiVector = Union[List[List[float]], np.ndarray]
 
 
 def partition_chunks(chunks: List[Chunk]) -> Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]:
@@ -299,11 +299,13 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
 
             logger.debug(f"Endpoint {endpoint}: received {count} embeddings for input_type: {returned_input_type}")
 
-            # Extract embeddings in order
+            # Extract embeddings in order, keeping them as float32 ndarrays: every
+            # consumer accepts ndarrays, and materializing ~130k PyFloats per page
+            # via .tolist() costs ~7ms CPU and 8x transient memory per page.
             embeddings = []
             for i in range(count):
                 embedding_array = npz_data[f"emb_{i}"]
-                embeddings.append(embedding_array.tolist())
+                embeddings.append(embedding_array.astype(np.float32, copy=False))
 
             return embeddings
 
@@ -339,11 +341,7 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
 
         if not data:
             raise RuntimeError("No embeddings returned from Morphik Embedding API")
-        return np.array(data[0])
-
-    async def call_api(self, inputs: List[str], input_type: str) -> List[MultiVector]:
-        """Backward-compatible API call using first endpoint."""
-        return await self._call_api_endpoint(self.endpoint, inputs, input_type)
+        return np.asarray(data[0])
 
     def latest_ingest_metrics(self) -> Dict[str, float]:
         """Return endpoint latency metrics from the most recent embed_for_ingestion call."""

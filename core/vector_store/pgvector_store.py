@@ -8,7 +8,7 @@ from typing import Any, AsyncContextManager, Dict, List, Optional, Tuple
 from sqlalchemy import Column, Index, Integer, String, select, text, tuple_
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, defer, sessionmaker
 from sqlalchemy.types import UserDefinedType
 
 from core.models.chunk import DocumentChunk
@@ -441,9 +441,6 @@ class PGVectorStore(BaseVectorStore):
         stored_ids = [f"{r['document_id']}-{r['chunk_number']}" for r in rows]
         return True, stored_ids, self._last_store_metrics
 
-    def latest_store_metrics(self) -> Dict[str, Any]:
-        return dict(self._last_store_metrics) if self._last_store_metrics else {}
-
     async def query_similar(
         self,
         query_embedding: List[float],
@@ -465,7 +462,9 @@ class PGVectorStore(BaseVectorStore):
                 # Build query with cosine distance calculation, which is normalized to [0, 2].
                 # A distance of 0 is perfect similarity.
                 distance = VectorEmbedding.embedding.op("<=>")(query_embedding)
-                query = select(VectorEmbedding, distance).order_by(distance)
+                # Don't fetch the embedding column: callers discard it (embedding=[]
+                # below), and hydrating it costs ~30KB/row wire + a float() per dim.
+                query = select(VectorEmbedding, distance).options(defer(VectorEmbedding.embedding)).order_by(distance)
 
                 if doc_ids:
                     query = query.filter(VectorEmbedding.document_id.in_(doc_ids))
@@ -531,7 +530,12 @@ class PGVectorStore(BaseVectorStore):
             async with self.get_session_with_retry() as session:
                 # Build query to find all matching chunks in a single query using tuple comparison
                 comparison_tuple = tuple_(VectorEmbedding.document_id, VectorEmbedding.chunk_number)
-                query = select(VectorEmbedding).where(comparison_tuple.in_(unique_identifiers))
+                # Embedding column deferred: callers discard it (embedding=[] below).
+                query = (
+                    select(VectorEmbedding)
+                    .options(defer(VectorEmbedding.embedding))
+                    .where(comparison_tuple.in_(unique_identifiers))
+                )
 
                 logger.debug(f"Batch retrieving {len(unique_identifiers)} chunks with a single query")
 
