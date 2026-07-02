@@ -40,10 +40,6 @@ SUMMARY_FILE_EXTENSION = ".md"
 SUMMARY_CONTENT_TYPE = "text/markdown"
 
 
-class PdfConversionError(Exception):
-    """Raised when the service cannot rasterize a PDF into images."""
-
-
 class DocumentService:
     """Service for document retrieval and query operations.
 
@@ -1341,9 +1337,17 @@ class DocumentService:
                     return header.split(":", 1)[1].split(";", 1)[0]
                 except Exception:
                     return None
-            # Raw base64 path – attempt to decode and inspect magic bytes
+            # Raw base64 path – attempt to decode and inspect magic bytes.
+            # Decode only a prefix: the checks below need at most 16 bytes, and
+            # payloads here can be multi-megabyte page images. The length gate
+            # keeps rejecting payloads whose full decode would fail on invalid
+            # padding (e.g. truncated image blobs inside text chunks), which the
+            # old full-payload decode caught implicitly.
             try:
-                raw = base64.b64decode(content_str, validate=False)
+                if len(content_str) % 4:
+                    return None
+                prefix = "".join(content_str[:96].split())[:64]
+                raw = base64.b64decode(prefix, validate=False)
             except Exception:
                 return None
             if raw.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -1900,11 +1904,6 @@ class DocumentService:
         img.save(buffered, format="PNG")
         buffered.seek(0)
         return buffered.getvalue()
-
-    def img_to_base64_str(self, img: PILImage.Image) -> str:
-        """Convert PIL Image to base64 string."""
-        img_bytes = self.img_to_png_bytes(img)
-        return "data:image/png;base64," + base64.b64encode(img_bytes).decode()
 
     def _render_pdf_pages_sync(
         self,

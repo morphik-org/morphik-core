@@ -349,9 +349,6 @@ class ChunkV2Store:
         stored_ids = [str(row["id"]) for row in rows]
         return True, stored_ids, self._last_store_metrics
 
-    def latest_store_metrics(self) -> Dict[str, Any]:
-        return dict(self._last_store_metrics) if self._last_store_metrics else {}
-
     async def query_similar(
         self,
         query_embedding: List[float],

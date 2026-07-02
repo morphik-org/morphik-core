@@ -12,11 +12,18 @@ Optimizations based on research from:
 
 import base64 as _base64
 import logging
+import re
 from typing import List, Union
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Control characters that break Postgres / downstream consumers: C0 controls
+# (except tab, newline, carriage return), DEL, and C1 controls. This mirrors the
+# Rust clean_control_chars implementation so the pure-Python fallback below
+# produces byte-identical output.
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
 # Try to import Rust extension
 try:
@@ -279,15 +286,15 @@ def split_sentences(text: str) -> List[str]:
 
 
 def clean_control_chars(text: str) -> str:
-    """Remove control characters (null bytes, etc.) that cause database issues."""
+    """Remove control characters (null bytes, etc.) that cause database issues.
+
+    Strips C0 controls (except tab/newline/carriage return), DEL, and C1 controls.
+    """
     if HAS_RUST:
         return morphik_rust.clean_control_chars(text)
 
-    # Python fallback - check if character is a control char (ASCII 0-31, 127)
-    # but keep newline, tab, carriage return
-    import unicodedata
-
-    return "".join(c for c in text if not (unicodedata.category(c).startswith("C") and c not in "\n\t\r"))
+    # Python fallback - regex matches the same character set as the Rust impl.
+    return _CONTROL_CHARS_RE.sub("", text)
 
 
 def clean_control_chars_batch(texts: List[str]) -> List[str]:

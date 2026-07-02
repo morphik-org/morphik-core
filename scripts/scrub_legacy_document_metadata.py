@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--postgres-uri",
         dest="postgres_uri",
         default=None,
-        help="Database URI (defaults to settings.POSTGRES_URL)",
+        help="Database URI (defaults to settings.POSTGRES_URI)",
     )
     parser.add_argument(
         "--drop-columns",
@@ -55,9 +55,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def create_engine(uri: Optional[str]) -> AsyncEngine:
     settings = get_settings()
-    postgres_uri = uri or settings.POSTGRES_URL
+    postgres_uri = uri or settings.POSTGRES_URI
     if not postgres_uri:
-        raise ValueError("Postgres URI must be provided via --postgres-uri or settings.POSTGRES_URL")
+        raise ValueError("Postgres URI must be provided via --postgres-uri or settings.POSTGRES_URI")
     logger.info("Connecting to %s", postgres_uri)
     return create_async_engine(postgres_uri, echo=False, pool_size=5, max_overflow=10)
 
