@@ -46,17 +46,19 @@ The best part? Morphik has a [free tier](https://www.morphik.ai/pricing)! Get st
 
 ## Table of Contents
 - [Getting Started with Morphik](#getting-started-with-morphik-recommended)
-- [Self-hosting Morphik](#self-hosting-the-open-source-version)
+- [Self-hosting Morphik](#self-hosting-morphik)
 - [Using Morphik](#using-morphik)
 - [Contributing](#contributing)
-- [Open source vs paid](#License)
+- [Open source vs paid](#license)
 
 ## Getting Started with Morphik (Recommended)
 
 The fastest and easiest way to get started with Morphik is by signing up for free at [Morphik](https://www.morphik.ai/signup). We have a generous free tier and transparent, compute-usage based pricing if you're looking to ingest a lot of data.
 
 ## Self-hosting Morphik
-If you'd like to self-host Morphik, you can find the dedicated instruction [here](https://morphik.ai/docs/getting-started). We offer options for direct installation and installation via docker.
+Self-hosted Morphik Core enables telemetry by default; set `TELEMETRY=false` before first start to opt out. See [Morphik telemetry](docs/telemetry.md) for recorded fields and upload destinations.
+
+If you'd like to self-host Morphik, you can find the dedicated instruction [here](https://morphik.ai/docs/getting-started). We offer options for direct installation and installation via docker. The repository-local Docker development workflow is also documented in [DOCKER.md](DOCKER.md).
 
 **Important**: Due to limited resources, we cannot provide full support for self-hosted deployments. We have an installation guide, and a [Discord community](https://discord.gg/BwMtv3Zaju) to help, but we can't guarantee full support.
 
