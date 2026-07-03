@@ -41,6 +41,19 @@ from core.vector_store.fast_multivector_store import FastMultiVectorStore
 from core.vector_store.multi_vector_store import MultiVectorStore
 from core.vector_store.pgvector_store import PGVectorStore
 
+# Optional infra-client exception types, imported defensively so a missing client
+# library can never break error classification. Used to recognise S3 / turbopuffer
+# backpressure (throttling, 5xx, connection blips) as transient-and-retryable.
+try:
+    from botocore.exceptions import BotoCoreError, ClientError as BotoClientError
+except Exception:  # noqa: BLE001
+    BotoCoreError = BotoClientError = None
+
+try:
+    import turbopuffer as _turbopuffer
+except Exception:  # noqa: BLE001
+    _turbopuffer = None
+
 logger = logging.getLogger(__name__)
 for noisy_logger in ("httpx", "httpcore", "aiohttp", "turbopuffer"):
     logging.getLogger(noisy_logger).setLevel(logging.WARNING)
@@ -288,13 +301,92 @@ _TRANSIENT_EXCEPTIONS = (
     ConnectionError,
 )
 
+# S3/botocore error codes that mean transient backpressure or a server-side blip.
+# Permanent errors (NoSuchBucket, AccessDenied, InvalidAccessKeyId, NoSuchKey, ...)
+# are deliberately excluded so genuine misconfiguration fails fast instead of
+# burning five retries.
+_S3_TRANSIENT_CODES = frozenset(
+    {
+        "Throttling",
+        "ThrottlingException",
+        "ThrottledException",
+        "RequestThrottled",
+        "RequestThrottledException",
+        "RequestLimitExceeded",
+        "SlowDown",
+        "RequestTimeout",
+        "RequestTimeoutException",
+        "PriorRequestNotComplete",
+        "InternalError",
+        "ServiceUnavailable",
+        "ServiceUnavailableException",
+    }
+)
+
+# botocore connection/timeout errors (subclasses of BotoCoreError, not ClientError).
+_S3_TRANSIENT_BOTOCORE_TYPES = frozenset(
+    {
+        "EndpointConnectionError",
+        "ConnectTimeoutError",
+        "ReadTimeoutError",
+        "ConnectionClosedError",
+        "ConnectionError",
+    }
+)
+
+
+def _build_turbopuffer_transient_types() -> tuple:
+    """Turbopuffer exception classes that indicate a retryable server condition."""
+    if _turbopuffer is None:
+        return ()
+    names = ("RateLimitError", "InternalServerError", "APITimeoutError", "APIConnectionError")
+    resolved = tuple(t for t in (getattr(_turbopuffer, n, None) for n in names) if isinstance(t, type))
+    return resolved
+
+
+_TURBOPUFFER_TRANSIENT_TYPES = _build_turbopuffer_transient_types()
+
+
+def _is_transient_s3_error(exc: BaseException) -> bool:
+    """True for S3 throttling / 5xx / connection blips; False for auth/not-found."""
+    if BotoClientError is not None and isinstance(exc, BotoClientError):
+        response = getattr(exc, "response", None)
+        if not isinstance(response, dict):
+            return False
+        code = response.get("Error", {}).get("Code")
+        if code in _S3_TRANSIENT_CODES:
+            return True
+        status = response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0
+        return int(status) >= 500
+    if BotoCoreError is not None and isinstance(exc, BotoCoreError):
+        return type(exc).__name__ in _S3_TRANSIENT_BOTOCORE_TYPES
+    return False
+
+
+def _is_transient_turbopuffer_error(exc: BaseException) -> bool:
+    """True for turbopuffer rate-limit / 5xx / connection / timeout errors."""
+    if _TURBOPUFFER_TRANSIENT_TYPES and isinstance(exc, _TURBOPUFFER_TRANSIENT_TYPES):
+        return True
+    if _turbopuffer is not None:
+        api_status = getattr(_turbopuffer, "APIStatusError", None)
+        if isinstance(api_status, type) and isinstance(exc, api_status):
+            return int(getattr(exc, "status_code", 0) or 0) >= 500
+    return False
+
 
 def _is_transient_error(exc: BaseException) -> bool:
-    """True when the error (or its direct cause) is transient infrastructure failure."""
-    if isinstance(exc, _TRANSIENT_EXCEPTIONS):
-        return True
-    cause = exc.__cause__ or exc.__context__
-    return isinstance(cause, _TRANSIENT_EXCEPTIONS)
+    """True when the error, or anything in its cause/context chain, is a transient
+    infrastructure failure (network, embedding server, or S3/turbopuffer backpressure)."""
+    seen: set = set()
+    current: Optional[BaseException] = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, _TRANSIENT_EXCEPTIONS):
+            return True
+        if _is_transient_s3_error(current) or _is_transient_turbopuffer_error(current):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 async def get_document_with_retry(ingestion_service, document_id, auth, max_retries=3, initial_delay=0.3):
@@ -687,8 +779,12 @@ async def process_ingestion_job(
             if not success:
                 raise ValueError(f"Failed to update document {document_id}")
 
-            # Refresh document object with updated data
-            doc = await ingestion_service.db.get_document(document_id, auth)
+            # No re-fetch here: the only fields this update touched (additional_metadata,
+            # system_metadata["content"], end_user_id) are never read back off `doc`
+            # downstream — only external_id/chunk_ids/folder_id are, and those are
+            # unchanged. The final completion write merges onto the locked DB row, so the
+            # persisted content survives regardless. Skipping this saves one full document
+            # read (with its projected columns) on every ingest.
             logger.debug("Updated document in database with parsed content")
 
             # 7. Split text into chunks
