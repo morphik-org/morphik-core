@@ -6,18 +6,19 @@ import math
 import os
 import time
 import traceback
-import urllib.parse as up
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from typing import Any, Dict, List, Optional
 
+import httpx
 from arq.connections import RedisSettings
+from arq.worker import Retry
 from opentelemetry.trace import Status, StatusCode, get_current_span
 from sqlalchemy import text
 
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
-from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
+from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel, EmbeddingUnavailableError
 from core.embedding.colpali_embedding_model import ColpaliEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.limits_utils import check_and_increment_limits, estimate_pages_by_chars
@@ -278,6 +279,24 @@ def _strip_none(values: Dict[str, Any]) -> Dict[str, Any]:
     return {key: value for key, value in values.items() if value is not None}
 
 
+# Infrastructure failures a retry can plausibly fix. Anything else (parse
+# errors, bad documents, permission failures) is permanent and fails the doc.
+_TRANSIENT_EXCEPTIONS = (
+    EmbeddingUnavailableError,
+    httpx.TransportError,  # includes timeouts and connection errors
+    asyncio.TimeoutError,
+    ConnectionError,
+)
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """True when the error (or its direct cause) is transient infrastructure failure."""
+    if isinstance(exc, _TRANSIENT_EXCEPTIONS):
+        return True
+    cause = exc.__cause__ or exc.__context__
+    return isinstance(cause, _TRANSIENT_EXCEPTIONS)
+
+
 async def get_document_with_retry(ingestion_service, document_id, auth, max_retries=3, initial_delay=0.3):
     """
     Helper function to get a document with retries to handle race conditions.
@@ -293,11 +312,12 @@ async def get_document_with_retry(ingestion_service, document_id, auth, max_retr
         Document if found and accessible, None otherwise
     """
     attempt = 0
-    retry_delay = initial_delay
+    retry_delay = initial_delay or 0.3
 
-    # Add initial delay to allow transaction to commit
-    if initial_delay > 0:
-        await asyncio.sleep(initial_delay)
+    # No unconditional pre-sleep: the enqueueing transaction has almost always
+    # committed by the time the worker picks the job up, and the retry loop
+    # below covers the rare race. The old 1.0s pre-sleep cost 1s of dead time
+    # on every document (~1.4h per 10k-doc bulk load at 2 job slots).
 
     while attempt < max_retries:
         try:
@@ -965,10 +985,20 @@ async def process_ingestion_job(
                 phase_times["generate_embeddings"] = 0
                 phase_times["create_chunk_objects"] = 0
 
-            # 11b. Delete old chunks if this is a re-ingestion (requeue)
-            # Must run before any new chunks are stored (both regular and ColPali)
-            if doc.chunk_ids:
-                logger.info(f"Re-ingestion detected for {document_id}, deleting {len(doc.chunk_ids)} old chunks")
+            # 11b. Delete old chunks if this is a re-ingestion (requeue) OR an
+            # arq retry attempt. Retries re-run the job from scratch, and a
+            # transient failure mid-store leaves committed rows behind that the
+            # insert-based stores (postgres multivector/pgvector) would
+            # duplicate; deletion is by document_id, so it works even though
+            # chunk_ids is only persisted on success.
+            is_retry_attempt = int(ctx.get("job_try") or 1) > 1
+            if doc.chunk_ids or is_retry_attempt:
+                logger.info(
+                    "Cleanup before storing for %s (%s): deleting existing chunks (%d tracked)",
+                    document_id,
+                    "arq retry" if is_retry_attempt and not doc.chunk_ids else "re-ingestion",
+                    len(doc.chunk_ids),
+                )
                 deletion_tasks = []
                 if hasattr(vector_store, "delete_chunks_by_document_id"):
                     deletion_tasks.append(vector_store.delete_chunks_by_document_id(document_id, auth.app_id))
@@ -1254,6 +1284,8 @@ async def process_ingestion_job(
                 "use_colpali": using_colpali,
                 "updated_at": doc.system_metadata["updated_at"],
                 "progress": None,
+                # Clear any transient-retry note left by a failed earlier attempt
+                "error": None,
             }
             if no_content_extracted:
                 completion_update["content_extraction_status"] = "no_content_extracted"
@@ -1442,10 +1474,6 @@ async def process_ingestion_job(
                 "timestamp": datetime.now(UTC).isoformat(),
             }
     except Exception as e:
-        logger.error(f"Error processing ingestion job for file {original_filename}: {str(e)}")
-        logger.error(traceback.format_exc())
-        progress_logger.error("ingest failed doc_id=%s file=%s error=%s", document_id, original_filename, e)
-
         # Reconstruct auth from auth_dict in case exception occurred before auth was defined
         try:
             auth
@@ -1454,6 +1482,56 @@ async def process_ingestion_job(
                 user_id=auth_dict.get("user_id") or auth_dict.get("entity_id", ""),
                 app_id=auth_dict.get("app_id"),
             )
+
+        # Transient infrastructure failures (embedding service unavailable,
+        # network blips) must NOT permanently fail the document: re-raise so
+        # arq retries the job (retry_jobs=True, max_tries). Only mark the
+        # document failed once retries are exhausted.
+        job_try = int(ctx.get("job_try") or 1)
+        max_tries = int(getattr(WorkerSettings, "max_tries", 5))
+        # Stop one try short of arq's limit: if job_try ever exceeds max_tries
+        # (e.g. a worker kill re-enqueues the final attempt), arq fails the job
+        # WITHOUT running this function, and nothing would mark the document
+        # failed. Keeping a buffer try guarantees the failed-status update runs.
+        if _is_transient_error(e) and job_try < max_tries - 1:
+            defer_s = min(30 * job_try, 120)
+            logger.warning(
+                "Transient error on ingestion job for %s (try %d/%d), retrying in %ss: %s",
+                original_filename,
+                job_try,
+                max_tries,
+                defer_s,
+                e,
+            )
+            progress_logger.warning(
+                "ingest retry doc_id=%s file=%s try=%d/%d error=%s",
+                document_id,
+                original_filename,
+                job_try,
+                max_tries,
+                e,
+            )
+            try:
+                database = ctx.get("database")
+                if database:
+                    await database.update_document(
+                        document_id=document_id,
+                        updates={
+                            "system_metadata": {
+                                "status": "processing",
+                                "error": f"transient: {e} (retry {job_try}/{max_tries})",
+                                "updated_at": datetime.now(UTC),
+                            }
+                        },
+                        auth=auth,
+                    )
+            except Exception as note_err:  # noqa: BLE001
+                logger.warning("Could not record retry note for %s: %s", document_id, note_err)
+            raise Retry(defer=defer_s) from e
+
+        logger.error(f"Error processing ingestion job for file {original_filename}: {str(e)}")
+        logger.error(traceback.format_exc())
+        progress_logger.error("ingest failed doc_id=%s file=%s error=%s", document_id, original_filename, e)
 
         try:
             database: Optional[PostgresDatabase] = ctx.get("database")
@@ -1533,6 +1611,14 @@ async def process_v2_ingestion_job(
             if not doc:
                 raise ValueError(f"Document {document_id} not found for v2 ingestion")
 
+            # arq retries re-run from scratch; v2 chunk ids are random UUIDs and
+            # the store is insert-based, so purge rows a failed attempt left behind.
+            if int(ctx.get("job_try") or 1) > 1:
+                try:
+                    await chunk_store.delete_chunks_by_document_id(document_id, auth)
+                except Exception as cleanup_err:  # noqa: BLE001
+                    logger.warning("v2 retry cleanup failed for %s: %s", document_id, cleanup_err)
+
             if not doc.filename and original_filename:
                 doc.filename = original_filename
                 await database.update_document(document_id, {"filename": doc.filename}, auth=auth)
@@ -1578,10 +1664,6 @@ async def process_v2_ingestion_job(
                 "timestamp": datetime.now(UTC).isoformat(),
             }
     except Exception as e:
-        logger.error("Error processing v2 ingestion job for file %s: %s", original_filename, e)
-        logger.error(traceback.format_exc())
-        progress_logger.error("v2 ingest failed doc_id=%s file=%s error=%s", document_id, original_filename, e)
-
         try:
             auth
         except NameError:
@@ -1589,6 +1671,42 @@ async def process_v2_ingestion_job(
                 user_id=auth_dict.get("user_id") or auth_dict.get("entity_id", ""),
                 app_id=auth_dict.get("app_id"),
             )
+
+        # Same transient-error policy as process_ingestion_job: let arq retry
+        # infrastructure failures instead of permanently failing the document.
+        job_try = int(ctx.get("job_try") or 1)
+        max_tries = int(getattr(WorkerSettings, "max_tries", 5))
+        if _is_transient_error(e) and job_try < max_tries - 1:
+            defer_s = min(30 * job_try, 120)
+            logger.warning(
+                "Transient error on v2 ingestion job for %s (try %d/%d), retrying in %ss: %s",
+                original_filename,
+                job_try,
+                max_tries,
+                defer_s,
+                e,
+            )
+            try:
+                database = ctx.get("database")
+                if database:
+                    await database.update_document(
+                        document_id=document_id,
+                        updates={
+                            "system_metadata": {
+                                "status": "processing",
+                                "error": f"transient: {e} (retry {job_try}/{max_tries})",
+                                "updated_at": datetime.now(UTC),
+                            }
+                        },
+                        auth=auth,
+                    )
+            except Exception as note_err:  # noqa: BLE001
+                logger.warning("Could not record v2 retry note for %s: %s", document_id, note_err)
+            raise Retry(defer=defer_s) from e
+
+        logger.error("Error processing v2 ingestion job for file %s: %s", original_filename, e)
+        logger.error(traceback.format_exc())
+        progress_logger.error("v2 ingest failed doc_id=%s file=%s error=%s", document_id, original_filename, e)
 
         try:
             database = ctx.get("database")
@@ -1793,23 +1911,32 @@ async def shutdown(ctx):
 
 def redis_settings_from_env() -> RedisSettings:
     """
-    Create RedisSettings from environment variables for ARQ worker.
+    Create RedisSettings from REDIS_URL for the ARQ worker.
+
+    Parses the full DSN (host, port, db, username/password, TLS) so workers on
+    other machines can point at an authenticated/managed Redis (e.g.
+    ElastiCache). The old host/port-only construction silently dropped
+    credentials from the URL.
 
     Returns:
         RedisSettings configured for Redis connection with optimized performance
     """
-    url = up.urlparse(settings.REDIS_URL)
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+
+    # Fall back to explicit host/port settings when the URL is the localhost
+    # default but morphik.toml overrides host and/or port separately.
+    if settings.REDIS_URL == "redis://localhost:6379/0" and (
+        settings.REDIS_HOST != "localhost" or settings.REDIS_PORT != 6379
+    ):
+        redis_settings.host = settings.REDIS_HOST
+        redis_settings.port = settings.REDIS_PORT
 
     # Use ARQ's supported parameters with optimized values for stability
     # For high-volume ingestion (100+ documents), these settings help prevent timeouts
-    return RedisSettings(
-        host=settings.REDIS_HOST,
-        port=settings.REDIS_PORT,
-        database=int(url.path.lstrip("/") or 0),
-        conn_timeout=5,  # Increased connection timeout (seconds)
-        conn_retries=15,  # More retries for transient connection issues
-        conn_retry_delay=1,  # Quick retry delay (seconds)
-    )
+    redis_settings.conn_timeout = 5  # Increased connection timeout (seconds)
+    redis_settings.conn_retries = 15  # More retries for transient connection issues
+    redis_settings.conn_retry_delay = 1  # Quick retry delay (seconds)
+    return redis_settings
 
 
 # ARQ Worker Settings

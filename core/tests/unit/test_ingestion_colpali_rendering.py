@@ -11,6 +11,11 @@ from core.services.ingestion_service import IngestionService
 class FakePixmap:
     def __init__(self, image_bytes: bytes):
         self._image_bytes = image_bytes
+        if image_bytes:
+            with Image.open(BytesIO(image_bytes)) as img:
+                self.samples = img.convert("RGB").tobytes()
+        else:
+            self.samples = b""
 
     def tobytes(self, format: str) -> bytes:
         assert format == "png"
@@ -97,12 +102,16 @@ def test_pdf_pdf2image_fallback_skips_blank_and_failed_pages(monkeypatch):
         "open",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("force pdf2image fallback")),
     )
-    monkeypatch.setattr(ingestion_module.pdf2image, "convert_from_bytes", lambda *args, **kwargs: [
-        good_page,
-        blank_page,
-        failing_page,
-        good_page,
-    ])
+    monkeypatch.setattr(
+        ingestion_module.pdf2image,
+        "convert_from_bytes",
+        lambda *args, **kwargs: [
+            good_page,
+            blank_page,
+            failing_page,
+            good_page,
+        ],
+    )
     monkeypatch.setattr(service, "img_to_base64_with_bytes", fake_img_to_base64_with_bytes)
 
     chunks = service._process_pdf_for_colpali(b"%PDF")

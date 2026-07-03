@@ -1,9 +1,7 @@
 import asyncio
 import base64
 import logging
-import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import BinaryIO, Optional, Tuple, Union
 
 import boto3
@@ -54,17 +52,22 @@ class S3Storage(BaseStorage):
         )
         # Cap concurrent uploads to avoid overwhelming the pool/S3 while still allowing parallelism.
         self._upload_semaphore = asyncio.Semaphore(max(1, upload_concurrency))
+        # Buckets verified to exist this process — buckets don't vanish mid-run,
+        # so one HeadBucket per bucket per process is enough (was 2 per upload).
+        self._buckets_verified: set = set()
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     def _ensure_bucket(self, bucket: str) -> None:
-        """Create *bucket* if it does not exist (idempotent).
+        """Create *bucket* if it does not exist (idempotent, cached per process).
 
         S3 returns an error if you try to create an existing bucket in the
         *same* region – we silently ignore that specific error code.
         """
+        if bucket in self._buckets_verified:
+            return
         try:
             # HeadBucket is the cheapest – if it succeeds the bucket exists.
             self.s3_client.head_bucket(Bucket=bucket)
@@ -85,6 +88,7 @@ class S3Storage(BaseStorage):
                 pass
             else:
                 raise
+        self._buckets_verified.add(bucket)
 
     async def upload_file(
         self,
@@ -105,18 +109,21 @@ class S3Storage(BaseStorage):
             self._ensure_bucket(target_bucket)
 
             if isinstance(file, (str, bytes)):
-                # Create temporary file for content
-                with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                    if isinstance(file, str):
-                        temp_file.write(file.encode())
-                    else:
-                        temp_file.write(file)
-                    temp_file_path = temp_file.name
+                body = file.encode() if isinstance(file, str) else file
+                if len(body) <= 32 * 1024 * 1024:
+                    # Small payloads (chunk images, text) upload directly; the
+                    # previous temp-file round trip cost a disk write + read +
+                    # unlink per chunk image.
+                    put_kwargs = {"Bucket": target_bucket, "Key": key, "Body": body}
+                    if content_type:
+                        put_kwargs["ContentType"] = content_type
+                    self.s3_client.put_object(**put_kwargs)
+                else:
+                    # Large payloads (raw documents) keep boto3's managed
+                    # transfer for multipart parallelism and retries.
+                    from io import BytesIO as _BytesIO
 
-                try:
-                    self.s3_client.upload_file(temp_file_path, target_bucket, key, ExtraArgs=extra_args)
-                finally:
-                    Path(temp_file_path).unlink(missing_ok=True)
+                    self.s3_client.upload_fileobj(_BytesIO(body), target_bucket, key, ExtraArgs=extra_args)
             else:
                 # File object
                 self.s3_client.upload_fileobj(file, target_bucket, key, ExtraArgs=extra_args)
@@ -182,10 +189,9 @@ class S3Storage(BaseStorage):
             # Prefer provided content_type; fall back to derived mime if available
             effective_content_type = content_type or derived_mime
 
-            # Choose bucket
+            # Choose bucket. Bucket existence is ensured inside upload_file's
+            # executor; checking here too ran a blocking HeadBucket on the event loop.
             target_bucket = bucket or self.default_bucket
-            # Ensure bucket exists
-            self._ensure_bucket(target_bucket)
 
             # Upload directly from bytes
             return await self.upload_file(

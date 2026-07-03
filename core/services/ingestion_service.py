@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import arq
 import fitz  # PyMuPDF
+import numpy as np
 import pdf2image
 from fastapi import HTTPException, UploadFile
 from PIL import Image as PILImage
@@ -1368,14 +1369,20 @@ class IngestionService:
         mime_type: str,
         base64_override: Optional[str] = None,
     ) -> Chunk:
-        """Build a Chunk that preserves raw image bytes alongside the data URI."""
+        """Build a Chunk for a page image.
+
+        Raw bytes are attached only in local ColPali mode, where the in-process
+        model reads them; in API mode they are dead weight (~5MB/page of RSS
+        held for the whole embed/store loop) and the data URI already carries
+        the image.
+        """
         content = base64_override
         if content is None:
             content = bytes_to_data_uri(image_bytes, mime_type)
-        return Chunk(
-            content=content,
-            metadata={"is_image": True, "_image_bytes": image_bytes, "mime_type": mime_type},
-        )
+        metadata: Dict[str, Any] = {"is_image": True, "mime_type": mime_type}
+        if settings.COLPALI_MODE == "local":
+            metadata["_image_bytes"] = image_bytes
+        return Chunk(content=content, metadata=metadata)
 
     def img_to_base64_with_bytes(
         self,
@@ -1413,6 +1420,22 @@ class IngestionService:
             logger.warning("Unable to inspect rendered page image for blank-content detection: %s", e)
             return False
 
+    @staticmethod
+    def _is_blank_pixmap(pix: "fitz.Pixmap", tolerance: int = 2) -> bool:
+        """Blank-detect on raw pixmap samples, BEFORE any image encoding.
+
+        ~100x cheaper than the old encode-PNG-then-PIL-decode round trip, and
+        blank pages skip the encode entirely. Conservative by construction:
+        it only flags pages whose every channel is flat within tolerance — a
+        subset of what the old grayscale-extrema check flagged (PNG encoding
+        is lossless, so the pixel values compared are identical).
+        """
+        samples = pix.samples
+        if not samples:
+            return True
+        arr = np.frombuffer(samples, dtype=np.uint8)
+        return int(arr.max()) - int(arr.min()) <= tolerance
+
     def _render_pdf_with_pymupdf(
         self, file_content: bytes, dpi: int, include_bytes: bool = False
     ) -> List[Union[str, Tuple[str, bytes]]]:
@@ -1427,13 +1450,15 @@ class IngestionService:
                 try:
                     mat = fitz.Matrix(dpi / 72, dpi / 72)
                     pix = page.get_pixmap(matrix=mat)
+                    # Blank-detect on raw pixmap samples before encoding, so blank
+                    # pages skip the PNG encode entirely.
+                    if self._is_blank_pixmap(pix):
+                        logger.info("Skipping PDF page %d because it rendered as a blank image", page_index + 1)
+                        continue
                     png_bytes = pix.tobytes("png")
                 except Exception as e:
                     render_failures += 1
                     logger.warning("Skipping PDF page %d because rendering failed: %s", page_index + 1, e)
-                    continue
-                if self._is_blank_image_bytes(png_bytes):
-                    logger.info("Skipping PDF page %d because it rendered as a blank image", page_index + 1)
                     continue
                 b64 = bytes_to_data_uri(png_bytes, "image/png")
                 if include_bytes:
@@ -1669,13 +1694,14 @@ class IngestionService:
                     try:
                         mat = fitz.Matrix(dpi / 72, dpi / 72)
                         pix = page.get_pixmap(matrix=mat)
+                        if self._is_blank_pixmap(pix):
+                            logger.info("Skipping PDF page %d because it rendered as a blank image", page_num + 1)
+                            del pix
+                            continue
                         png_bytes = pix.tobytes("png")
                     except Exception as e:
                         render_failures += 1
                         logger.warning("Skipping PDF page %d because rendering failed: %s", page_num + 1, e)
-                        continue
-                    if self._is_blank_image_bytes(png_bytes):
-                        logger.info("Skipping PDF page %d because it rendered as a blank image", page_num + 1)
                         continue
                     b64 = bytes_to_data_uri(png_bytes, "image/png")
 

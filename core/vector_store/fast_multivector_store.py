@@ -37,6 +37,16 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
+
+def _decoded_base64_size(content: str) -> int:
+    """Exact decoded byte size of a base64 payload (data URI or raw), without decoding."""
+    payload = content.split(",", 1)[1] if content.startswith("data:") else content
+    payload = payload.strip()
+    if not payload:
+        return 0
+    return (len(payload) * 3) // 4 - payload[-2:].count("=")
+
+
 # Attach a dedicated handler to capture multivector retrieval diagnostics once per process.
 _multivector_log_path = os.path.join("logs", "multivector.log")
 if not any(
@@ -694,11 +704,9 @@ class FastMultiVectorStore(BaseVectorStore):
             if isinstance(self.vector_storage, LocalStorage):
                 bucket = ""
 
-        stored_size = 0
-        try:
-            stored_size = await self.vector_storage.get_object_size(bucket, key)
-        except Exception as size_err:  # noqa: BLE001
-            logger.warning("Failed reading stored size for multivector %s: %s", key, size_err)
+        # The uploaded size is known locally; a HEAD round-trip per page tells us
+        # nothing new and was ~14% of all S3 requests on the ingest path.
+        stored_size = len(npy_bytes)
 
         # Cache on ingest so retrieval hits cache immediately
         cache_start = time.perf_counter()
@@ -901,18 +909,16 @@ class FastMultiVectorStore(BaseVectorStore):
                 await self.chunk_storage.upload_from_base64(
                     content=content_b64, key=storage_key, content_type="text/plain", bucket=self.chunk_bucket or ""
                 )
+                payload_bytes = len(content_bytes)
             else:
                 # For images, content should already be base64
                 await self.chunk_storage.upload_from_base64(
                     content=content, key=storage_key, bucket=self.chunk_bucket or ""
                 )
+                # Size is derivable from the base64 payload — no HEAD round-trip needed.
+                payload_bytes = _decoded_base64_size(content)
 
             logger.debug(f"Stored chunk content externally with key: {storage_key}")
-            payload_bytes = 0
-            try:
-                payload_bytes = await self.chunk_storage.get_object_size(self.chunk_bucket or "", storage_key)
-            except Exception as size_err:  # noqa: BLE001
-                logger.warning("Failed reading stored size for chunk %s: %s", storage_key, size_err)
             return storage_key, payload_bytes
 
         except Exception as e:
