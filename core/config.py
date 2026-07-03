@@ -12,6 +12,8 @@ from utils.env_loader import load_local_env
 # injecting variables.
 load_local_env(override=True)
 
+AUTH_SECRET_MIN_LENGTH = 32
+
 
 class ParserXMLSettings(BaseModel):
     max_tokens: int = 350
@@ -185,6 +187,72 @@ def get_settings() -> Settings:
     em = "'{missing_value}' needed if '{field}' is set to '{value}'"
     settings_dict = {}
 
+    def normalize_auth_secret(value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) >= 2 and (
+            (normalized[0] == '"' and normalized[-1] == '"')
+            or (normalized[0] == "'" and normalized[-1] == "'")
+        ):
+            normalized = normalized[1:-1].strip()
+        return normalized
+
+    def env_or_default(name: str, default: str) -> str:
+        value = os.environ.get(name)
+        if value is None:
+            return default
+        normalized = normalize_auth_secret(value)
+        return normalized or default
+
+    def validate_auth_secrets(secret_values: Dict[str, str], *, context: str) -> None:
+        insecure_values = {
+            "JWT_SECRET_KEY": {
+                "dev-secret-key",
+                "<replace-with-strong-random-secret>",
+                "your-secret-key-here",
+                "your-secure-jwt-key-here",
+                "your-super-secret-key-change-in-production",
+            },
+            "SESSION_SECRET_KEY": {
+                "<replace-with-another-strong-secret>",
+                "super-secret-dev-session-key",
+                "your-secure-session-key-here",
+                "your-session-secret-key-change-in-production",
+            },
+            "LOCAL_URI_PASSWORD": {
+                "<replace-with-local-uri-password>",
+                "change-me-local-uri-password",
+                "local-uri-password",
+                "your-local-uri-password-here",
+            },
+        }
+        missing = [name for name, value in secret_values.items() if not value]
+        if missing:
+            secret_names = ", ".join(missing)
+            verb = "is" if len(missing) == 1 else "are"
+            raise ValueError(f"{secret_names} {verb} required {context}")
+
+        placeholders = [
+            name
+            for name, value in secret_values.items()
+            if value in insecure_values[name] or (value.startswith("<") and value.endswith(">"))
+        ]
+        if placeholders:
+            secret_names = ", ".join(placeholders)
+            verb = "uses" if len(placeholders) == 1 else "use"
+            raise ValueError(
+                f"{secret_names} {verb} an example or development default value; "
+                f"set non-placeholder values {context}"
+            )
+
+        short = [name for name, value in secret_values.items() if len(value) < AUTH_SECRET_MIN_LENGTH]
+        if short:
+            secret_names = ", ".join(short)
+            verb = "is" if len(short) == 1 else "are"
+            raise ValueError(
+                f"{secret_names} {verb} too short; set values with at least "
+                f"{AUTH_SECRET_MIN_LENGTH} characters {context}"
+            )
+
     # Load API config
     settings_dict.update(
         {
@@ -207,19 +275,32 @@ def get_settings() -> Settings:
         )
 
     # Load auth config
+    local_uri_password = normalize_auth_secret(os.environ.get("LOCAL_URI_PASSWORD", ""))
     settings_dict.update(
         {
             "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
-            "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", "dev-secret-key"),  # Default for bypass mode
-            "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY", "super-secret-dev-session-key"),
+            "JWT_SECRET_KEY": env_or_default("JWT_SECRET_KEY", "dev-secret-key"),  # Default for bypass mode
+            "SESSION_SECRET_KEY": env_or_default("SESSION_SECRET_KEY", "super-secret-dev-session-key"),
+            "LOCAL_URI_PASSWORD": local_uri_password or None,
             "bypass_auth_mode": config["auth"].get("bypass_auth_mode", config["auth"].get("dev_mode", False)),
             "dev_user_id": config["auth"].get("dev_user_id", config["auth"].get("dev_entity_id", "dev_user")),
         }
     )
 
-    # Only require JWT_SECRET_KEY in non-dev mode
-    if not settings_dict["bypass_auth_mode"] and "JWT_SECRET_KEY" not in os.environ:
-        raise ValueError("JWT_SECRET_KEY is required when bypass_auth_mode is disabled")
+    # Authenticated mode must not start with missing, example, or weak signing secrets.
+    if not settings_dict["bypass_auth_mode"]:
+        signing_secret_values = {
+            "JWT_SECRET_KEY": normalize_auth_secret(os.environ.get("JWT_SECRET_KEY", "")),
+            "SESSION_SECRET_KEY": normalize_auth_secret(os.environ.get("SESSION_SECRET_KEY", "")),
+        }
+        validate_auth_secrets(signing_secret_values, context="when bypass_auth_mode is disabled")
+        settings_dict.update(signing_secret_values)
+
+    if settings_dict["LOCAL_URI_PASSWORD"]:
+        validate_auth_secrets(
+            {"LOCAL_URI_PASSWORD": settings_dict["LOCAL_URI_PASSWORD"]},
+            context="before using /local/generate_uri",
+        )
 
     # Load registered models if available
     if "registered_models" in config:
@@ -437,9 +518,6 @@ def get_settings() -> Settings:
         )
 
     settings_dict["TELEMETRY_ENABLED"] = os.getenv("TELEMETRY", "").strip().lower() != "false"
-
-    # Load LOCAL_URI_PASSWORD from environment
-    settings_dict["LOCAL_URI_PASSWORD"] = os.environ.get("LOCAL_URI_PASSWORD")
 
     # Load LiteLLM config (dummy API key for providers that don't need auth)
     settings_dict["LITELLM_DUMMY_API_KEY"] = os.environ.get("LITELLM_DUMMY_API_KEY", "ollama")

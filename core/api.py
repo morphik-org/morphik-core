@@ -31,6 +31,7 @@ from core.dependencies import get_optional_redis_pool, get_redis_pool
 from core.limits_utils import check_and_increment_limits
 from core.logging_config import setup_logging
 from core.middleware.profiling import ProfilingMiddleware
+from core.local_uri import require_local_uri_password_configured
 from core.models.auth import AuthContext
 from core.models.chat import ChatMessage
 from core.models.completion import CompletionResponse
@@ -970,14 +971,13 @@ async def get_available_models_for_selection(auth: AuthContext = Depends(verify_
 async def generate_local_uri(
     name: str = Form("admin"),
     expiry_days: int = Form(5475),  # 15 years
-    password_token: str = Form(...),
+    password_token: Optional[str] = Form(None),
     server_mode: bool = Form(False),
 ) -> Dict[str, str]:
     """Generate a development URI for running Morphik locally."""
     try:
         # Authenticate with LOCAL_URI_PASSWORD
-        if not settings.LOCAL_URI_PASSWORD:
-            raise HTTPException(status_code=500, detail="LOCAL_URI_PASSWORD not configured")
+        require_local_uri_password_configured(settings.LOCAL_URI_PASSWORD)
 
         if password_token != settings.LOCAL_URI_PASSWORD:
             raise HTTPException(status_code=401, detail="Invalid authentication token")

@@ -16,6 +16,8 @@ DIRECT_INSTALL_URL="https://www.morphik.ai/docs/getting-started#self-host-direct
 EMBEDDING_PROVIDER=""
 EMBEDDING_PROVIDER_LABEL=""
 MORPHIK_VERSION="latest"
+AUTH_SECRET_MIN_LENGTH=32
+MIN_COMPOSE_VERSION="2.24.0"
 
 # --- Parse Arguments ---
 while [[ $# -gt 0 ]]; do
@@ -58,6 +60,33 @@ check_command() {
     fi
 }
 
+compose_version_at_least() {
+    local version="${1#v}"
+    local minimum="${2#v}"
+
+    if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+        return 1
+    fi
+    local version_major="${BASH_REMATCH[1]}"
+    local version_minor="${BASH_REMATCH[2]}"
+    local version_patch="${BASH_REMATCH[3]}"
+
+    if [[ ! "$minimum" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+        return 1
+    fi
+    local minimum_major="${BASH_REMATCH[1]}"
+    local minimum_minor="${BASH_REMATCH[2]}"
+    local minimum_patch="${BASH_REMATCH[3]}"
+
+    (( version_major > minimum_major )) ||
+        (( version_major == minimum_major && version_minor > minimum_minor )) ||
+        (( version_major == minimum_major && version_minor == minimum_minor && version_patch >= minimum_patch ))
+}
+
+protect_env_file() {
+    chmod 600 .env || print_error "Failed to restrict '.env' permissions to the current user."
+}
+
 set_env_value() {
     local key="$1"
     local value="$2"
@@ -80,6 +109,57 @@ set_env_value() {
     fi
 
     echo "${key}=${value}" >> "$env_file"
+    protect_env_file
+}
+
+normalize_auth_secret() {
+    local value="$1"
+    value="$(printf '%s' "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    if [ "${#value}" -ge 2 ]; then
+        local first_char="${value:0:1}"
+        local last_char="${value:$((${#value} - 1)):1}"
+        if { [ "$first_char" = "\"" ] && [ "$last_char" = "\"" ]; } || \
+           { [ "$first_char" = "'" ] && [ "$last_char" = "'" ]; }; then
+            local inner_length=$((${#value} - 2))
+            value="${value:1:$inner_length}"
+            value="$(printf '%s' "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        fi
+    fi
+    printf '%s' "$value"
+}
+
+validate_local_uri_password() {
+    local password="$1"
+    case "$password" in
+        "change-me-local-uri-password"|"local-uri-password"|"your-local-uri-password-here")
+            print_error "LOCAL_URI_PASSWORD must not use an example or placeholder value."
+            ;;
+    esac
+
+    if [[ "$password" == \<*\> ]]; then
+        print_error "LOCAL_URI_PASSWORD must not use an example or placeholder value."
+    fi
+
+    if [ "${#password}" -lt "$AUTH_SECRET_MIN_LENGTH" ]; then
+        print_error "LOCAL_URI_PASSWORD must be at least ${AUTH_SECRET_MIN_LENGTH} characters before using /local/generate_uri."
+    fi
+}
+
+generate_auth_secret() {
+    local prefix="$1"
+    local random_hex=""
+
+    if command -v openssl &> /dev/null; then
+        random_hex="$(openssl rand -hex 32 2>/dev/null || true)"
+    elif [ -r /dev/urandom ]; then
+        random_hex="$(LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom | head -c 64 || true)"
+    fi
+
+    if [ "${#random_hex}" -lt 64 ]; then
+        print_error "Could not generate a secure auth secret. Install openssl or ensure /dev/urandom is readable."
+    fi
+
+    printf '%s-%s' "$prefix" "$random_hex"
 }
 
 ensure_compose_profile() {
@@ -146,6 +226,11 @@ check_command "docker"
 if ! docker compose version &> /dev/null; then
     print_error "Docker Compose V2 is required. Please ensure it's installed and accessible."
 fi
+compose_version_output=$(docker compose version --short 2>/dev/null || docker compose version 2>/dev/null || true)
+compose_version=$(printf '%s' "$compose_version_output" | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+if [[ -z "$compose_version" ]] || ! compose_version_at_least "$compose_version" "$MIN_COMPOSE_VERSION"; then
+    print_error "Docker Compose ${MIN_COMPOSE_VERSION} or newer is required because Morphik uses optional env_file support for .env."
+fi
 print_success "Prerequisites are satisfied."
 
 # 2. Apple Silicon Warning
@@ -170,19 +255,28 @@ fi
 
 # 4. Create .env and get User Input for API Key
 print_info "Creating '.env' file for your secrets..."
+jwt_secret="$(generate_auth_secret "morphik-jwt")"
+session_secret="$(generate_auth_secret "morphik-session")"
+previous_umask="$(umask)"
+umask 077
 cat > .env <<EOF
 # Your OpenAI API key (optional - you can configure other providers in morphik.toml)
 OPENAI_API_KEY=
 
 # A secret key for signing JWTs. A random one is generated for you.
-JWT_SECRET_KEY=your-super-secret-key-that-is-long-and-random-$(openssl rand -hex 16)
+JWT_SECRET_KEY=${jwt_secret}
 
-# Local URI password for secure URI generation (required for creating connection URIs)
+# A secret key for signing server-side sessions. A random one is generated for you.
+SESSION_SECRET_KEY=${session_secret}
+
+# Optional at startup; leave blank to disable /local/generate_uri, or set a 32+ character random value before using it
 LOCAL_URI_PASSWORD=
 
 # Morphik image version (use a date tag like 2025-02-01 to pin, or "latest" for newest)
 MORPHIK_VERSION=${MORPHIK_VERSION}
 EOF
+umask "$previous_umask"
+protect_env_file
 
 print_info "Morphik supports 100s of models including OpenAI, Anthropic (Claude), Google Gemini, local models, and even custom models!"
 read -p "Please enter your OpenAI API Key (or press Enter to skip and configure later): " openai_api_key < /dev/tty
@@ -332,9 +426,11 @@ echo ""
 print_info "🔐 Setting up authentication for your Morphik deployment:"
 print_info "   • If you plan to access Morphik from outside this server, setting a LOCAL_URI_PASSWORD will secure your deployment"
 print_info "   • For local-only access, you can skip this step (bypass_auth_mode will be enabled)"
-print_info "   • With a LOCAL_URI_PASSWORD set, you'll need to use /generate_local_uri endpoint for authorization tokens"
+print_info "   • With a LOCAL_URI_PASSWORD set, you'll need to use /local/generate_uri endpoint for authorization tokens"
 echo ""
-read -p "Please enter a secure LOCAL_URI_PASSWORD (or press Enter to skip for local-only access): " local_uri_password < /dev/tty
+read -r -s -p "Please enter a secure LOCAL_URI_PASSWORD (or press Enter to skip for local-only access): " local_uri_password < /dev/tty
+echo ""
+local_uri_password="$(normalize_auth_secret "$local_uri_password")"
 if [[ -z "$local_uri_password" ]]; then
     print_info "No LOCAL_URI_PASSWORD provided - enabling authentication bypass (bypass_auth_mode=true) for local access"
     print_info "This is suitable for local development and testing"
@@ -346,15 +442,14 @@ if [[ -z "$local_uri_password" ]]; then
         print_warning "morphik.toml not found, cannot set bypass_auth_mode"
     fi
 else
+    validate_local_uri_password "$local_uri_password" || exit 1
     print_success "LOCAL_URI_PASSWORD set - keeping production mode (bypass_auth_mode=false) with authentication enabled"
-    print_info "Use the /generate_local_uri endpoint with this password to create authorized connection URIs"
+    print_info "Use the /local/generate_uri endpoint with this password to create authorized connection URIs"
 fi
 
 # Only update .env if a password was provided
 if [[ -n "$local_uri_password" ]]; then
-    # Use sed to safely replace the password in the .env file.
-    sed -i.bak "s|LOCAL_URI_PASSWORD=|LOCAL_URI_PASSWORD=$local_uri_password|" .env
-    rm -f .env.bak
+    set_env_value "LOCAL_URI_PASSWORD" "$local_uri_password"
     print_success "'.env' file has been configured with your LOCAL_URI_PASSWORD."
 fi
 
