@@ -1,5 +1,6 @@
 """Shared utilities for vector store implementations."""
 
+import os
 from typing import Any, Dict, Optional
 
 import psycopg
@@ -8,7 +9,15 @@ from core.storage.base_storage import BaseStorage
 from core.storage.local_storage import LocalStorage
 from core.storage.s3_storage import S3Storage
 
-MULTIVECTOR_CHUNKS_BUCKET = "multivector-chunks"
+# Overridable so deployments/tests are not hardwired to one globally-named
+# bucket (self-hosted installs cannot create "multivector-chunks" — the name
+# is taken globally — and silently fall back to inline DB storage).
+#
+# WARNING: the postgres MultiVectorStore READS existing chunk images from this
+# bucket at query time. Never change this on a deployment that already has data
+# under the previous bucket name without migrating the objects first —
+# retrieval of existing images would break.
+MULTIVECTOR_CHUNKS_BUCKET = os.environ.get("MULTIVECTOR_CHUNKS_BUCKET", "multivector-chunks")
 
 
 def normalize_storage_key(key: str) -> str:
