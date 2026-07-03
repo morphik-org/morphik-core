@@ -26,7 +26,7 @@ from .models import (
 
 
 class FinalChunkResult(BaseModel):
-    content: str | PILImage = Field(..., description="Chunk content")
+    content: Union[str, PILImage] = Field(..., description="Chunk content")
     score: float = Field(..., description="Relevance score")
     document_id: str = Field(..., description="Parent document ID")
     chunk_number: int = Field(..., description="Chunk sequence number")
