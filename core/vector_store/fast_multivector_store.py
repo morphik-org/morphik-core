@@ -469,6 +469,15 @@ class FastMultiVectorStore(BaseVectorStore):
             *[self._save_chunk_to_storage(chunk, resolved_app_id) for chunk in chunks]
         )
         storage_keys = [result[0] for result in storage_results]
+        # Never persist a None content key: when external chunk storage is
+        # configured, a None key means an upload silently failed. Fail the
+        # batch (retryable) rather than committing a hole into turbopuffer.
+        if self.chunk_storage is not None and any(key is None for key in storage_keys):
+            missing = sum(1 for key in storage_keys if key is None)
+            raise RuntimeError(
+                f"{missing}/{len(storage_keys)} chunk-content uploads returned no storage key; "
+                "aborting batch to avoid storing null content"
+            )
         chunk_payload_bytes = sum(result[1] for result in storage_results if result[0])
         storage_metrics["chunk_payload_upload_s"] = time.perf_counter() - payload_start
         storage_metrics["chunk_payload_objects"] = sum(1 for key in storage_keys if key)
@@ -527,8 +536,10 @@ class FastMultiVectorStore(BaseVectorStore):
         elif isinstance(query_embedding, list):
             query_embedding = np.array(query_embedding)
 
-        # 1) Encode query embedding
-        encoded_query_embedding = fde.generate_query_encoding(query_embedding, self.fde_config).tolist()
+        # 1) Encode query embedding (off the event loop — this is CPU-bound FDE)
+        encoded_query_embedding = (
+            await asyncio.to_thread(fde.generate_query_encoding, query_embedding, self.fde_config)
+        ).tolist()
         t1 = time.perf_counter()
         logger.info(f"query_similar timing - encode_query: {(t1 - t0)*1000:.2f} ms")
 
@@ -555,22 +566,50 @@ class FastMultiVectorStore(BaseVectorStore):
         multivector_retrieval_tasks = [
             self.load_multivector_from_storage(r["multivector"][0], r["multivector"][1]) for r in result.rows
         ]
-        multivectors = await asyncio.gather(*multivector_retrieval_tasks)
+        loaded = await asyncio.gather(*multivector_retrieval_tasks, return_exceptions=True)
+        # A single missing/corrupt/lagging .npy (delete-reingest race, S3
+        # eventual consistency) must degrade one result, not 500 the whole
+        # query for every user of the app. Drop failed candidates, score the rest.
+        candidate_rows, multivectors = [], []
+        for row, mv in zip(result.rows, loaded):
+            if isinstance(mv, Exception):
+                # NB: turbopuffer Row is a pydantic model — it supports row["id"]
+                # (subscript) but NOT row.get(...). Using .get() here would raise
+                # AttributeError and 500 the whole query on exactly this degraded
+                # path, defeating the purpose of the fix.
+                logger.warning(
+                    "query_similar: skipping candidate %s — failed to load multivector: %s", row["id"], mv
+                )
+                continue
+            candidate_rows.append(row)
+            multivectors.append(mv)
+        if not multivectors:
+            logger.error(
+                "query_similar: all %d candidate multivectors failed to load; returning empty result",
+                len(result.rows),
+            )
+            return []
         t3 = time.perf_counter()
         logger.info(f"query_similar timing - load_multivectors: {(t3 - t2)*1000:.2f} ms")
 
-        # 4) Rerank using ColQwen2.5 processor
-        scores = self.processor.score_multi_vector(
-            [torch.from_numpy(query_embedding).float()], multivectors, device=self.device
+        # 4) Rerank using ColQwen2.5 processor (off the event loop — CPU-bound torch)
+        scores = (
+            await asyncio.to_thread(
+                self.processor.score_multi_vector,
+                [torch.from_numpy(query_embedding).float()],
+                multivectors,
+                device=self.device,
+            )
         )[0]
         scores, idx = torch.topk(scores, min(k, len(scores)))
         scores, top_k_indices = scores.tolist(), idx.tolist()
 
         # Log which positions from the initial store results were selected after reranking
         # This shows if top-k chunks are consistently near the top or scattered throughout candidates
-        num_candidates = len(result.rows)
+        num_candidates = len(candidate_rows)
         try:
-            selected_ids = [result.rows[i].get("id") for i in top_k_indices]
+            # Subscript, not .get() — turbopuffer Row has no .get() (see above).
+            selected_ids = [candidate_rows[i]["id"] for i in top_k_indices]
         except Exception:  # noqa: BLE001
             selected_ids = None
         logger.info(
@@ -586,7 +625,7 @@ class FastMultiVectorStore(BaseVectorStore):
         # 5) Retrieve chunk contents
         rows, storage_retrieval_tasks, parsed_metadata = [], [], []
         for i in top_k_indices:
-            row = result.rows[i]
+            row = candidate_rows[i]
             rows.append(row)
             metadata = json.loads(row["metadata"])
             parsed_metadata.append(metadata)
@@ -708,10 +747,12 @@ class FastMultiVectorStore(BaseVectorStore):
         # nothing new and was ~14% of all S3 requests on the ingest path.
         stored_size = len(npy_bytes)
 
-        # Cache on ingest so retrieval hits cache immediately
-        cache_start = time.perf_counter()
-        await self.cache.put("vectors", bucket, key, npy_bytes)
-        cache_write_time = time.perf_counter() - cache_start
+        # Do NOT cache on ingest: the vast majority of freshly-ingested pages are
+        # never queried before they age out of the LRU, so this write only evicts
+        # hot entries and adds a synchronous hop to every page's ingest. The read
+        # path (load_multivector_from_storage) already back-fills the cache on the
+        # first real miss, so retrieval latency is unaffected.
+        cache_write_time = 0.0
         return bucket, key, cache_write_time, stored_size
 
     async def save_multivector_to_storage(self, chunk: DocumentChunk) -> Tuple[str, str]:
@@ -922,8 +963,14 @@ class FastMultiVectorStore(BaseVectorStore):
             return storage_key, payload_bytes
 
         except Exception as e:
+            # Do NOT swallow: a swallowed upload failure previously returned
+            # (None, 0), which store_embeddings then wrote into turbopuffer's
+            # content column while still marking the document completed —
+            # silent, permanent per-page data loss. Re-raise so the batch fails
+            # loudly and the ingestion job is retried (S3 throttling is
+            # classified transient in the worker).
             logger.error(f"Failed to store content externally for {document_id}-{chunk_number}: {e}")
-            return None, 0
+            raise
 
     async def _save_chunk_to_storage(self, chunk: DocumentChunk, app_id: Optional[str] = None):
         return await self._store_content_externally(
