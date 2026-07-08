@@ -1,7 +1,9 @@
 import subprocess
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from PIL import Image
 
 from core.services import ingestion_service as ingestion_module
@@ -66,8 +68,13 @@ def _non_blank_png_bytes() -> bytes:
     return output.getvalue()
 
 
-def test_render_pdf_with_pymupdf_skips_blank_and_failed_pages(monkeypatch):
-    service = IngestionService(None, None, None, None, None)
+@pytest.fixture
+def colpali_rendering_settings():
+    return SimpleNamespace(COLPALI_PDF_DPI=150, ENABLE_COLPALI=True, MODE="cloud")
+
+
+def test_render_pdf_with_pymupdf_skips_blank_and_failed_pages(monkeypatch, colpali_rendering_settings):
+    service = IngestionService(None, None, None, None, None, settings=colpali_rendering_settings)
     fake_document = FakeDocument(
         [
             FakePage(_non_blank_png_bytes()),
@@ -86,8 +93,8 @@ def test_render_pdf_with_pymupdf_skips_blank_and_failed_pages(monkeypatch):
     assert fake_document.closed is True
 
 
-def test_pdf_pdf2image_fallback_skips_blank_and_failed_pages(monkeypatch):
-    service = IngestionService(None, None, None, None, None)
+def test_pdf_pdf2image_fallback_skips_blank_and_failed_pages(monkeypatch, colpali_rendering_settings):
+    service = IngestionService(None, None, None, None, None, settings=colpali_rendering_settings)
     good_page = Image.open(BytesIO(_non_blank_png_bytes()))
     blank_page = Image.open(BytesIO(_png_bytes((255, 255, 255))))
     failing_page = Image.open(BytesIO(_non_blank_png_bytes()))
@@ -121,8 +128,8 @@ def test_pdf_pdf2image_fallback_skips_blank_and_failed_pages(monkeypatch):
     assert all(chunk.content.startswith("data:image/png;base64,") for chunk in chunks)
 
 
-def test_office_conversion_skips_blank_and_failed_pages(monkeypatch):
-    service = IngestionService(None, None, None, None, None)
+def test_office_conversion_skips_blank_and_failed_pages(monkeypatch, colpali_rendering_settings):
+    service = IngestionService(None, None, None, None, None, settings=colpali_rendering_settings)
     fake_document = FakeDocument(
         [
             FakePage(_non_blank_png_bytes()),
