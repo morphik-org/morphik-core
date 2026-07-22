@@ -3,7 +3,6 @@
 Covers:
 - embed-client transient retry + EmbeddingUnavailableError semantics
 - worker transient-error classification
-- blank-page detection on raw pixmap samples (pre-encode)
 - _image_bytes omission in ColPali API mode
 - S3 bucket-check caching, direct byte upload, and HEAD elimination
 - base64 size arithmetic replacing HEAD-after-PUT
@@ -53,19 +52,6 @@ def _make_model(transport: httpx.MockTransport) -> ColpaliApiEmbeddingModel:
     model._latest_ingest_metrics = {}
     model._http_client = httpx.AsyncClient(transport=transport)
     return model
-
-
-def _render_pixmap(color=(255, 255, 255), dot=False) -> fitz.Pixmap:
-    doc = fitz.open()
-    page = doc.new_page(width=100, height=100)
-    if color != (255, 255, 255):
-        rgb = tuple(c / 255 for c in color)
-        page.draw_rect(fitz.Rect(0, 0, 100, 100), color=rgb, fill=rgb)
-    if dot:
-        page.draw_rect(fitz.Rect(40, 40, 60, 60), color=(0, 0, 0), fill=(0, 0, 0))
-    pix = page.get_pixmap()
-    doc.close()
-    return pix
 
 
 # ---------------------------------------------------------------------------
@@ -183,19 +169,8 @@ def test_transient_classification():
 
 
 # ---------------------------------------------------------------------------
-# render path: blank check + encoding
+# render path: encoding
 # ---------------------------------------------------------------------------
-
-
-def test_blank_pixmap_detection_matches_old_behavior():
-    svc = object.__new__(IngestionService)
-    blank = _render_pixmap()
-    content = _render_pixmap(dot=True)
-    assert svc._is_blank_pixmap(blank) is True
-    assert svc._is_blank_pixmap(content) is False
-    # agreement with the legacy bytes-based check on the encoded PNGs
-    assert svc._is_blank_image_bytes(blank.tobytes("png")) is True
-    assert svc._is_blank_image_bytes(content.tobytes("png")) is False
 
 
 def test_image_bytes_omitted_in_api_mode(monkeypatch):
@@ -299,14 +274,14 @@ def _small_pdf_with_blank() -> bytes:
     return doc.tobytes()
 
 
-def test_render_pdf_returns_png_pairs_and_skips_blank():
+def test_render_pdf_returns_png_pairs_and_keeps_blank():
     svc = object.__new__(IngestionService)
     pages = svc._render_pdf_with_pymupdf(_small_pdf_with_blank(), dpi=72, include_bytes=True)
-    assert len(pages) == 1  # blank page skipped
-    b64, raw = pages[0]
-    assert b64.startswith("data:image/png;base64,")
-    assert raw.startswith(b"\x89PNG")
-    assert base64.b64decode(b64.split(",", 1)[1]) == raw
+    assert len(pages) == 2, "blank pages must stay so chunk numbers keep matching page numbers"
+    for b64, raw in pages:
+        assert b64.startswith("data:image/png;base64,")
+        assert raw.startswith(b"\x89PNG")
+        assert base64.b64decode(b64.split(",", 1)[1]) == raw
 
 
 # ---------------------------------------------------------------------------
@@ -365,19 +340,17 @@ async def test_retry_after_is_capped(monkeypatch):
     assert max(sleeps) <= 30.0, f"Retry-After must be capped at 30s, slept {max(sleeps)}"
 
 
-def test_render_page_error_skips_page_not_document(monkeypatch):
+def test_render_page_error_becomes_placeholder_not_abort(monkeypatch):
     svc = object.__new__(IngestionService)
 
     calls = {"n": 0}
-    real_blank = IngestionService._is_blank_pixmap  # staticmethod -> plain function
+    real_matrix = fitz.Matrix
 
-    def flaky_blank(pix, tolerance=2):
+    def flaky_matrix(*args, **kwargs):
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("render step blew up on page 1")
-        return real_blank(pix, tolerance)
-
-    monkeypatch.setattr(svc, "_is_blank_pixmap", flaky_blank)
+        return real_matrix(*args, **kwargs)
 
     doc = fitz.open()
     for _ in range(3):
@@ -385,5 +358,9 @@ def test_render_page_error_skips_page_not_document(monkeypatch):
         page.draw_rect(fitz.Rect(20, 20, 80, 80), color=(0, 0, 0), fill=(0.3, 0.3, 0.3))
     pdf = doc.tobytes()
 
+    monkeypatch.setattr(ingestion_module.fitz, "Matrix", flaky_matrix)
+
     pages = svc._render_pdf_with_pymupdf(pdf, dpi=72, include_bytes=True)
-    assert len(pages) == 2, "one bad page must not abort the document"
+    assert len(pages) == 3, "one bad page must not abort the document or shift page numbering"
+    assert pages[0][1] == IngestionService._placeholder_page_png()
+    assert pages[1][1] != pages[0][1]

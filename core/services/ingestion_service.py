@@ -26,7 +26,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import arq
 import fitz  # PyMuPDF
-import numpy as np
 import pdf2image
 from fastapi import HTTPException, UploadFile
 from PIL import Image as PILImage
@@ -1400,46 +1399,20 @@ class IngestionService:
         return img_str, img_bytes
 
     @staticmethod
-    def _is_blank_image(img: PILImage.Image, tolerance: int = 2) -> bool:
-        """Return True when an image has no meaningful visual variation."""
-        grayscale = img.convert("L")
-        extrema = grayscale.getextrema()
-        if extrema is None:
-            return True
-        darkest, lightest = extrema
-        return lightest - darkest <= tolerance
+    def _placeholder_page_png() -> bytes:
+        """White stand-in for a page that fails to render.
 
-    def _is_blank_image_bytes(self, image_bytes: bytes, tolerance: int = 2) -> bool:
-        """Return True when image bytes decode to a visually blank image."""
-        if not image_bytes:
-            return True
-        try:
-            with PILImage.open(BytesIO(image_bytes)) as img:
-                return self._is_blank_image(img, tolerance=tolerance)
-        except Exception as e:
-            logger.warning("Unable to inspect rendered page image for blank-content detection: %s", e)
-            return False
-
-    @staticmethod
-    def _is_blank_pixmap(pix: "fitz.Pixmap", tolerance: int = 2) -> bool:
-        """Blank-detect on raw pixmap samples, BEFORE any image encoding.
-
-        ~100x cheaper than the old encode-PNG-then-PIL-decode round trip, and
-        blank pages skip the encode entirely. Conservative by construction:
-        it only flags pages whose every channel is flat within tolerance — a
-        subset of what the old grayscale-extrema check flagged (PNG encoding
-        is lossless, so the pixel values compared are identical).
+        Every page must produce exactly one chunk so chunk numbers stay aligned
+        with page numbers; dropping a page would shift all later chunks.
         """
-        samples = pix.samples
-        if not samples:
-            return True
-        arr = np.frombuffer(samples, dtype=np.uint8)
-        return int(arr.max()) - int(arr.min()) <= tolerance
+        buffer = BytesIO()
+        PILImage.new("RGB", (612, 792), "white").save(buffer, format="PNG")
+        return buffer.getvalue()
 
     def _render_pdf_with_pymupdf(
         self, file_content: bytes, dpi: int, include_bytes: bool = False
     ) -> List[Union[str, Tuple[str, bytes]]]:
-        """Render a PDF into base64-encoded PNG images using PyMuPDF."""
+        """Render a PDF into base64-encoded PNG images using PyMuPDF, one per page."""
         pdf_document = fitz.open("pdf", file_content)
         try:
             images: List[Union[str, Tuple[str, bytes]]] = []
@@ -1450,22 +1423,19 @@ class IngestionService:
                 try:
                     mat = fitz.Matrix(dpi / 72, dpi / 72)
                     pix = page.get_pixmap(matrix=mat)
-                    # Blank-detect on raw pixmap samples before encoding, so blank
-                    # pages skip the PNG encode entirely.
-                    if self._is_blank_pixmap(pix):
-                        logger.info("Skipping PDF page %d because it rendered as a blank image", page_index + 1)
-                        continue
                     png_bytes = pix.tobytes("png")
                 except Exception as e:
                     render_failures += 1
-                    logger.warning("Skipping PDF page %d because rendering failed: %s", page_index + 1, e)
-                    continue
+                    logger.warning(
+                        "Replacing PDF page %d with a placeholder because rendering failed: %s", page_index + 1, e
+                    )
+                    png_bytes = self._placeholder_page_png()
                 b64 = bytes_to_data_uri(png_bytes, "image/png")
                 if include_bytes:
                     images.append((b64, png_bytes))
                 else:
                     images.append(b64)
-            if not images and page_count > 0 and render_failures == page_count:
+            if page_count > 0 and render_failures == page_count:
                 raise RuntimeError("All PDF pages failed to render with PyMuPDF")
             return images
         finally:
@@ -1639,20 +1609,15 @@ class IngestionService:
                 image_payloads = []
                 for page_num, image in enumerate(images):
                     try:
-                        if self._is_blank_image(image):
-                            logger.info(
-                                "Skipping PDF page %d because it rendered as a blank image",
-                                page_num + 1,
-                            )
-                            continue
                         image_payloads.append(self.img_to_base64_with_bytes(image))
                     except Exception as page_error:
                         logger.warning(
-                            "Skipping PDF page %d because image conversion failed: %s",
+                            "Replacing PDF page %d with a placeholder because image conversion failed: %s",
                             page_num + 1,
                             page_error,
                         )
-                        continue
+                        png_bytes = self._placeholder_page_png()
+                        image_payloads.append((bytes_to_data_uri(png_bytes, "image/png"), png_bytes))
                 logger.info(f"pdf2image fallback processed {len(image_payloads)} pages")
                 return [
                     self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
@@ -1694,26 +1659,23 @@ class IngestionService:
                     try:
                         mat = fitz.Matrix(dpi / 72, dpi / 72)
                         pix = page.get_pixmap(matrix=mat)
-                        if self._is_blank_pixmap(pix):
-                            logger.info("Skipping PDF page %d because it rendered as a blank image", page_num + 1)
-                            del pix
-                            continue
                         png_bytes = pix.tobytes("png")
+                        # Explicitly release pixmap memory - this is the key memory optimization
+                        del pix
                     except Exception as e:
                         render_failures += 1
-                        logger.warning("Skipping PDF page %d because rendering failed: %s", page_num + 1, e)
-                        continue
+                        logger.warning(
+                            "Replacing PDF page %d with a placeholder because rendering failed: %s", page_num + 1, e
+                        )
+                        png_bytes = self._placeholder_page_png()
                     b64 = bytes_to_data_uri(png_bytes, "image/png")
 
                     # Create chunk immediately
                     chunk = self._image_bytes_to_chunk(png_bytes, mime_type="image/png", base64_override=b64)
                     all_chunks.append(chunk)
-
-                    # Explicitly release pixmap memory - this is the key memory optimization
-                    del pix
                     del png_bytes
 
-            if not all_chunks and total_pages > 0 and render_failures == total_pages:
+            if total_pages > 0 and render_failures == total_pages:
                 raise RuntimeError("All PDF pages failed to render with PyMuPDF")
 
             logger.info(f"PyMuPDF processed {total_pages} pages in batched mode")
@@ -1830,28 +1792,22 @@ class IngestionService:
                             pix = page.get_pixmap(matrix=mat)
                             img_data = pix.tobytes("png")
                             img = PILImage.open(BytesIO(img_data))
-                            if self._is_blank_image(img):
-                                logger.info(
-                                    "Skipping %s page %d because it rendered as a blank image",
-                                    doc_type,
-                                    page_num + 1,
-                                )
-                                continue
                             img_str, img_bytes = self.img_to_base64_with_bytes(img)
-                            images_payload.append((img_str, img_bytes))
                         except Exception as page_error:
                             render_failures += 1
                             logger.warning(
-                                "Skipping %s page %d because rendering failed: %s",
+                                "Replacing %s page %d with a placeholder because rendering failed: %s",
                                 doc_type,
                                 page_num + 1,
                                 page_error,
                             )
-                            continue
+                            img_bytes = self._placeholder_page_png()
+                            img_str = bytes_to_data_uri(img_bytes, "image/png")
+                        images_payload.append((img_str, img_bytes))
                 finally:
                     pdf_document.close()
 
-                if not images_payload and total_pages > 0 and render_failures == total_pages:
+                if total_pages > 0 and render_failures == total_pages:
                     raise RuntimeError(f"All {doc_type} pages failed to render with PyMuPDF")
 
                 logger.info(f"{doc_type} successfully processed {len(images_payload)} pages as images")
@@ -1867,22 +1823,16 @@ class IngestionService:
                     images_payload = []
                     for page_num, image in enumerate(images):
                         try:
-                            if self._is_blank_image(image):
-                                logger.info(
-                                    "Skipping %s page %d because it rendered as a blank image",
-                                    doc_type,
-                                    page_num + 1,
-                                )
-                                continue
                             images_payload.append(self.img_to_base64_with_bytes(image))
                         except Exception as page_error:
                             logger.warning(
-                                "Skipping %s page %d because image conversion failed: %s",
+                                "Replacing %s page %d with a placeholder because image conversion failed: %s",
                                 doc_type,
                                 page_num + 1,
                                 page_error,
                             )
-                            continue
+                            png_bytes = self._placeholder_page_png()
+                            images_payload.append((bytes_to_data_uri(png_bytes, "image/png"), png_bytes))
 
                     logger.info(f"{doc_type} processed {len(images_payload)} pages with pdf2image")
                     return [
