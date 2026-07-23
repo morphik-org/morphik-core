@@ -12,16 +12,17 @@
 <!-- add a roadmap! - <a href="https://morphik.ai/roadmap">Roadmap</a> - -->
 <!-- Add a changelog! - <a href="https://morphik.ai/changelog">Changelog</a> -->
 
+> **Morphik** ([morphik.ai](https://morphik.ai)) builds AI workers that run
+> back-office operations — AP, billing, collections, and payroll — for
+> skilled nursing and senior living operators. **Morphik Core** is the
+> open-source multimodal retrieval engine behind it, offered to developers
+> as a standalone platform at [dev.morphik.ai](https://dev.morphik.ai).
+
 <p align="center">
-  <a href="https://morphik.ai/docs">Docs</a> - <a href="https://discord.gg/BwMtv3Zaju">Community</a> - <a href="https://morphik.ai/docs/blogs/gpt-vs-morphik-multimodal">Why Morphik?</a> - <a href="https://github.com/morphik-org/morphik-core/issues/new?assignees=&labels=bug&template=bug_report.md">Bug reports</a>
+  <a href="https://dev.morphik.ai/docs">Docs</a> - <a href="https://discord.gg/BwMtv3Zaju">Community</a> - <a href="https://morphik.ai/docs/blogs/gpt-vs-morphik-multimodal">Why Morphik Core?</a> - <a href="https://github.com/morphik-org/morphik-core/issues/new?assignees=&labels=bug&template=bug_report.md">Bug reports</a>
 </p>
 
-> **Migration Required for Existing Installations**: If you installed Morphik before June 22nd, 2025, we've optimized our authentication system for 70-80% faster query performance. Please run the migration script before launching Morphik:
-> ```bash
-> python scripts/migrate_auth_columns_complete.py --postgres-uri "postgresql+asyncpg://user:pass@host:port/db"
-> ```
-
-## Morphik is a AI-native toolset for visually rich documents and multimodal data
+## Morphik Core is a AI-native toolset for visually rich documents and multimodal data
 
 We are building the best way for developers to integrate context (however complex and nuanced) into their AI applications. We offer a treasure chest of tools to store, represent, and search (shallow, and deep) unstructured data. End-to-End.
 
@@ -36,37 +37,37 @@ Even worse, these pipelines fundamentally fail at understanding visually rich do
 The result is AI applications that confidently return wrong answers because they never truly understood the documents. They miss crucial information embedded in images, misinterpret technical diagrams, and treat visual data as an afterthought. And performance? Watch your infrastructure costs explode as your LLM re-processes the same 500-page manual for every single query.
 
 ## What?
-[Morphik](https://morphik.ai) provides developers the tools to ingest, search (deep and shallow), transform, and manage unstructured and multimodal documents. Some of our features include:
+[Morphik Core](https://dev.morphik.ai) provides developers the tools to ingest, search (deep and shallow), transform, and manage unstructured and multimodal documents. Some of our features include:
 
-- [Multimodal Search](https://morphik.ai/docs/concepts/colpali): We employ techniques such as ColPali to build search that actually *understands* the visual content of documents you provide. Search over images, PDFs, videos, and more with a single endpoint.
+- [Multimodal Search](https://dev.morphik.ai/docs/concepts/colpali): We employ techniques such as ColPali to build search that actually *understands* the visual content of documents you provide. Search over images, PDFs, videos, and more with a single endpoint.
 - [Fast and Scalable Metadata Extraction](https://morphik.ai/docs/concepts/rules-processing): Extract metadata from documents - including bounding boxes, labeling, classification, and more.
 - [Integrations](https://morphik.ai/docs/integrations): Integrate with existing tools and workflows. Including (but not limited to) Google Suite, Slack, and Confluence.
 
-The best part? Morphik has a [free tier](https://www.morphik.ai/pricing)! Get started by signing up at [Morphik](https://www.morphik.ai/signup).
+The best part? Morphik Core has a [free tier](https://dev.morphik.ai/pricing)! Get started by signing up at [dev.morphik.ai](https://dev.morphik.ai/signup).
 
 ## Table of Contents
-- [Getting Started with Morphik](#getting-started-with-morphik-recommended)
-- [Self-hosting Morphik](#self-hosting-the-open-source-version)
-- [Using Morphik](#using-morphik)
+- [Getting Started with Morphik Core](#getting-started-with-morphik-core-recommended)
+- [Self-hosting Morphik Core](#self-hosting-morphik-core)
+- [Using Morphik Core](#using-morphik-core)
 - [Contributing](#contributing)
 - [Open source vs paid](#License)
 
-## Getting Started with Morphik (Recommended)
+## Getting Started with Morphik Core (Recommended)
 
-The fastest and easiest way to get started with Morphik is by signing up for free at [Morphik](https://www.morphik.ai/signup). We have a generous free tier and transparent, compute-usage based pricing if you're looking to ingest a lot of data.
+The fastest and easiest way to get started with Morphik Core is by signing up for free at [dev.morphik.ai](https://dev.morphik.ai/signup). We have a generous free tier and transparent, compute-usage based pricing if you're looking to ingest a lot of data.
 
-## Self-hosting Morphik
-If you'd like to self-host Morphik, you can find the dedicated instruction [here](https://morphik.ai/docs/getting-started). We offer options for direct installation and installation via docker.
+## Self-hosting Morphik Core
+If you'd like to self-host Morphik Core, you can find the dedicated instruction [here](https://dev.morphik.ai/docs/getting-started). We offer options for direct installation and installation via docker.
 
 **Important**: Due to limited resources, we cannot provide full support for self-hosted deployments. We have an installation guide, and a [Discord community](https://discord.gg/BwMtv3Zaju) to help, but we can't guarantee full support.
 
-## Using Morphik
+## Using Morphik Core
 
-Once you've signed up for Morphik, you can get started with ingesting and searching your data right away.
+Once you've signed up for Morphik Core, you can get started with ingesting and searching your data right away.
 
 
 ### Code (Example: Python SDK)
-For programmers, we offer a [Python SDK](https://morphik.ai/docs/python-sdk/morphik) and a [REST API](https://morphik.ai/docs/api-reference/health-check). Ingesting a file is as simple as:
+For programmers, we offer a [Python SDK](https://dev.morphik.ai/docs/python-sdk/morphik) and a [REST API](https://morphik.ai/docs/api-reference/health-check). Ingesting a file is as simple as:
 
 ```python
 from morphik import Morphik
@@ -83,11 +84,11 @@ morphik.query("What's the height of screw 14-A in the chair assembly instruction
 
 ### Morphik Console
 
-You can also interact with Morphik via the Morphik Console. This is a web-based interface that allows you to ingest, search, and query your data. You can upload files, connect to different data sources, and chat with your data all within the same place.
+You can also interact with Morphik Core via the Morphik Console. This is a web-based interface that allows you to ingest, search, and query your data. You can upload files, connect to different data sources, and chat with your data all within the same place.
 
 ### Model Context Protocol
 
-Finally, you can also access Morphik via MCP. Instructions are available [here](https://morphik.ai/docs/using-morphik/mcp).
+Finally, you can also access Morphik Core via MCP. Instructions are available [here](https://dev.morphik.ai/docs/using-morphik/mcp).
 
 
 ## Contributing
@@ -103,8 +104,8 @@ Currently, we're focused on improving speed, integrating with more tools, and fi
 Morphik Core is **source-available** under the [Business Source License 1.1](./LICENSE).
 
 - **Personal / Indie use**: free.
-- **Commercial production use**: free if your Morphik deployment generates < $2 000/month in gross revenue.
-  Otherwise purchase a commercial key at <https://morphik.ai/pricing>.
+- **Commercial production use**: free if your Morphik Core deployment generates < US $2,000/month in gross revenue.
+  Otherwise purchase a commercial key at <https://dev.morphik.ai/pricing>.
 - **Future open source**: each code version automatically re-licenses to Apache 2.0 exactly four years after its first release.
 
 See the full licence text for details.
@@ -112,4 +113,4 @@ See the full licence text for details.
 
 ## Contributors
 
-Visit our [special thanks page](https://morphik.ai/docs/special-thanks) dedicated to our contributors.
+Visit our [special thanks page](https://dev.morphik.ai/docs/special-thanks) dedicated to our contributors.

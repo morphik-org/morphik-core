@@ -5,10 +5,10 @@ import json
 import logging
 import time
 from collections import deque
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from httpx import AsyncClient, HTTPStatusError, Timeout
+from httpx import AsyncClient, HTTPStatusError, Limits, Timeout, TransportError
 from PIL.Image import Image
 
 from core.config import get_settings
@@ -19,6 +19,26 @@ logger = logging.getLogger(__name__)
 
 # Define alias for a multivector: a (num_vectors, dim) array or list of embedding vectors
 MultiVector = Union[List[List[float]], np.ndarray]
+
+# HTTP statuses worth retrying on the same endpoint before declaring it unhealthy.
+# 413 is deliberately excluded: it is handled upstream by batch splitting.
+_RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+_MAX_TRANSIENT_RETRIES = 3
+# Server-provided Retry-After is honored but capped so a misbehaving
+# server/proxy cannot park a worker (or a user query) for minutes.
+_MAX_RETRY_AFTER_S = 30.0
+# Total retry budget per endpoint call: with a 600s read timeout, unbounded
+# retries could otherwise spend ~40 minutes inside a single call.
+_RETRY_DEADLINE_S = 900.0
+
+
+class EmbeddingUnavailableError(RuntimeError):
+    """Raised when the embedding service cannot be reached after retries.
+
+    Subclasses RuntimeError for backward compatibility. The ingestion worker
+    treats this as transient and lets arq retry the job instead of marking the
+    document permanently failed.
+    """
 
 
 def partition_chunks(chunks: List[Chunk]) -> Tuple[List[Tuple[int, str]], List[Tuple[int, str]]]:
@@ -56,6 +76,21 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         self._endpoint_latencies: dict[str, float] = {}
         self.endpoint = self.endpoints[0]
         self._latest_ingest_metrics: Dict[str, float] = {}
+        self._http_client: Optional[AsyncClient] = None
+
+    def _get_client(self) -> AsyncClient:
+        """Return the shared HTTP client, creating it on first use.
+
+        A single client reuses connections across batches; the previous
+        per-call client paid a TCP+TLS handshake for every 16-page batch.
+        """
+        if self._http_client is None or self._http_client.is_closed:
+            timeout = Timeout(read=600.0, connect=30.0, write=600.0, pool=60.0)
+            self._http_client = AsyncClient(
+                timeout=timeout,
+                limits=Limits(max_connections=32, max_keepalive_connections=8),
+            )
+        return self._http_client
 
     def _recover_endpoints(self) -> None:
         """Re-include endpoints whose unhealthy cooldown has elapsed."""
@@ -198,11 +233,12 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
                 retry_results = await self._embed_inputs_distributed(failed_inputs, input_type)
                 merged.update(retry_results)
             else:
-                # All endpoints failed, reset health and raise
+                # All endpoints failed, reset health and raise a transient error
+                # so the ingestion job is retried by arq instead of failing the document.
                 logger.error("All ColPali endpoints failed, resetting health status")
                 self.healthy_endpoints = set(self.endpoints)
                 self._endpoint_unhealthy_since.clear()
-                raise RuntimeError(
+                raise EmbeddingUnavailableError(
                     f"All {len(self.endpoints)} ColPali endpoints failed for {len(failed_inputs)} {input_type} inputs"
                 )
 
@@ -270,50 +306,108 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
 
         return results
 
-    async def _call_api_endpoint(self, endpoint: str, inputs: List[str], input_type: str) -> List[MultiVector]:
+    async def _call_api_endpoint(
+        self, endpoint: str, inputs: List[str], input_type: str, max_retries: Optional[int] = None
+    ) -> List[MultiVector]:
         """
-        Call a specific ColPali API endpoint.
+        Call a specific ColPali API endpoint, retrying transient failures.
+
+        429/5xx responses, timeouts and transport errors are retried with
+        backoff before the endpoint is given up on; 413 and other 4xx raise
+        immediately (413 is handled upstream by batch splitting). Retrying
+        here keeps a brief GPU-server hiccup from cascading into an
+        all-endpoints-unhealthy state that permanently fails documents.
 
         Args:
             endpoint: The API endpoint URL.
             inputs: List of input payloads (base64 images or text).
             input_type: Either "text" or "image".
+            max_retries: Transient retries before giving up. Defaults to the
+                ingestion policy; latency-sensitive query paths pass 1.
 
         Returns:
             List of MultiVector embeddings.
         """
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        payload = {"input_type": input_type, "inputs": inputs}
-        timeout = Timeout(read=600.0, connect=30.0, write=600.0, pool=60.0)
+        if max_retries is None:
+            max_retries = _MAX_TRANSIENT_RETRIES
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        # Payloads reach tens of MB for image batches; serialize off the event
+        # loop so concurrent jobs are not stalled, and reuse the bytes across
+        # retries. Match httpx's json= encoding (compact, ensure_ascii=False).
+        body = await asyncio.to_thread(
+            json.dumps, {"input_type": input_type, "inputs": inputs}, separators=(",", ":"), ensure_ascii=False
+        )
 
-        async with AsyncClient(timeout=timeout) as client:
-            resp = await client.post(endpoint, json=payload, headers=headers)
-            resp.raise_for_status()
+        client = self._get_client()
+        last_exc: Optional[Exception] = None
+        resp = None
+        deadline = time.monotonic() + _RETRY_DEADLINE_S
+        for attempt in range(max_retries + 1):
+            if attempt:
+                if time.monotonic() >= deadline:
+                    break
+                delay = min(2 ** (attempt - 1), 8.0)
+                retry_after = getattr(getattr(last_exc, "response", None), "headers", {}).get("Retry-After")
+                if retry_after:
+                    try:
+                        delay = min(max(delay, float(retry_after)), _MAX_RETRY_AFTER_S)
+                    except ValueError:
+                        pass
+                logger.warning(
+                    "Retrying ColPali endpoint %s in %.1fs (attempt %d/%d) after: %s",
+                    endpoint,
+                    delay,
+                    attempt,
+                    max_retries,
+                    last_exc,
+                )
+                await asyncio.sleep(delay)
+            try:
+                candidate = await client.post(endpoint, content=body, headers=headers)
+                candidate.raise_for_status()
+                resp = candidate
+                break
+            except HTTPStatusError as exc:
+                if exc.response.status_code in _RETRYABLE_STATUSES:
+                    last_exc = exc
+                    continue
+                raise
+            except (TransportError, asyncio.TimeoutError) as exc:
+                last_exc = exc
+                continue
 
-            # Load .npz from response content
-            npz_data = np.load(io.BytesIO(resp.content))
+        if resp is None:
+            # Retries exhausted or deadline hit — surface as a transient,
+            # retryable-at-job-level error.
+            raise EmbeddingUnavailableError(
+                f"ColPali endpoint {endpoint} unavailable after retries: {last_exc}"
+            ) from last_exc
 
-            # Extract metadata
-            count = int(npz_data["count"])
-            returned_input_type = str(npz_data["input_type"])
+        # Load .npz from response content
+        npz_data = np.load(io.BytesIO(resp.content))
 
-            logger.debug(f"Endpoint {endpoint}: received {count} embeddings for input_type: {returned_input_type}")
+        # Extract metadata
+        count = int(npz_data["count"])
+        returned_input_type = str(npz_data["input_type"])
 
-            # Extract embeddings in order, keeping them as float32 ndarrays: every
-            # consumer accepts ndarrays, and materializing ~130k PyFloats per page
-            # via .tolist() costs ~7ms CPU and 8x transient memory per page.
-            embeddings = []
-            for i in range(count):
-                embedding_array = npz_data[f"emb_{i}"]
-                embeddings.append(embedding_array.astype(np.float32, copy=False))
+        logger.debug(f"Endpoint {endpoint}: received {count} embeddings for input_type: {returned_input_type}")
 
-            return embeddings
+        # Extract embeddings in order, keeping them as float32 ndarrays: every
+        # consumer accepts ndarrays, and materializing ~130k PyFloats per page
+        # via .tolist() costs ~7ms CPU and 8x transient memory per page.
+        embeddings = []
+        for i in range(count):
+            embedding_array = npz_data[f"emb_{i}"]
+            embeddings.append(embedding_array.astype(np.float32, copy=False))
+
+        return embeddings
 
     async def embed_for_query(self, text: str) -> MultiVector:
-        # Use first healthy endpoint for queries (single text, fast)
+        # Use first healthy endpoint for queries (single text, fast).
+        # Queries are user-facing: retry once, not the full ingestion ladder.
         self._recover_endpoints()
         endpoint = next(iter(self.healthy_endpoints), self.endpoints[0])
-        data = await self._call_api_endpoint(endpoint, [text], "text")
+        data = await self._call_api_endpoint(endpoint, [text], "text", max_retries=1)
         if not data:
             raise RuntimeError("No embeddings returned from Morphik Embedding API")
         return data[0]
@@ -331,13 +425,13 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         endpoint = next(iter(self.healthy_endpoints), self.endpoints[0])
 
         if isinstance(content, Image):
-            # Convert PIL Image to base64
+            # Convert PIL Image to base64. Query path: retry once only.
             buffer = io.BytesIO()
             content.save(buffer, format="PNG")
             image_b64 = base64.b64encode(buffer.getvalue()).decode()
-            data = await self._call_api_endpoint(endpoint, [image_b64], "image")
+            data = await self._call_api_endpoint(endpoint, [image_b64], "image", max_retries=1)
         else:
-            data = await self._call_api_endpoint(endpoint, [content], "text")
+            data = await self._call_api_endpoint(endpoint, [content], "text", max_retries=1)
 
         if not data:
             raise RuntimeError("No embeddings returned from Morphik Embedding API")
