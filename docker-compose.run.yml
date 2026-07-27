@@ -11,7 +11,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-}
+      - LOCAL_URI_PASSWORD=${LOCAL_URI_PASSWORD:-}
       - POSTGRES_URI=postgresql+asyncpg://morphik:morphik@postgres:5432/morphik
       - PGPASSWORD=morphik # Used by internal health checks in the container
       - REDIS_HOST=redis
@@ -34,7 +36,8 @@ services:
     networks:
       - morphik-network
     env_file:
-      - .env
+      - path: .env
+        required: false
 
   worker:
     image: ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION:-latest}
@@ -43,7 +46,9 @@ services:
     # The worker runs as a background job processor, so no ports are exposed.
     command: arq core.workers.ingestion_worker.WorkerSettings
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY:-}
+      - LOCAL_URI_PASSWORD=${LOCAL_URI_PASSWORD:-}
       - POSTGRES_URI=postgresql+asyncpg://morphik:morphik@postgres:5432/morphik
       - PGPASSWORD=morphik
       - REDIS_HOST=redis
@@ -63,7 +68,8 @@ services:
     networks:
       - morphik-network
     env_file:
-      - .env
+      - path: .env
+        required: false
 
   redis:
     image: redis:7-alpine

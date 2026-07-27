@@ -8,7 +8,7 @@
     ./install_docker.ps1
 
   Requirements:
-    - Docker Desktop running (Compose V2 included)
+    - Docker Desktop running with Docker Compose 2.24.0 or newer
     - Internet connectivity to pull the image or fetch config files
 #>
 
@@ -16,6 +16,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:EmbeddingSelection = $null
+$script:AuthSecretMinLength = 32
+$script:MinComposeVersion = [Version]'2.24.0'
 
 function Write-Info($msg)  { Write-Host "[INFO]  $msg" -ForegroundColor Cyan }
 function Write-Step($msg)  { Write-Host "[STEP]  $msg" -ForegroundColor Yellow }
@@ -38,9 +40,23 @@ function Assert-Docker {
     Write-Err "Docker is installed but not running. Start Docker Desktop and retry."
     throw "Docker not running"
   }
-  try { docker compose version | Out-Null } catch {
+  $composeVersionOutput = docker compose version --short 2>$null
+  if ($LASTEXITCODE -ne 0 -or -not $composeVersionOutput) {
+    $composeVersionOutput = docker compose version 2>$null
+  }
+  if ($LASTEXITCODE -ne 0 -or -not $composeVersionOutput) {
     Write-Err "Docker Compose V2 is required. Please update Docker Desktop."
     throw "Compose V2 missing"
+  }
+  $composeVersionText = ($composeVersionOutput | Out-String).Trim()
+  if ($composeVersionText -notmatch 'v?(\d+\.\d+\.\d+)') {
+    Write-Err "Could not determine Docker Compose version. Please update Docker Desktop."
+    throw "Compose version unknown"
+  }
+  $composeVersion = [Version]$Matches[1]
+  if ($composeVersion -lt $script:MinComposeVersion) {
+    Write-Err "Docker Compose $($script:MinComposeVersion) or newer is required because Morphik uses optional env_file support for .env."
+    throw "Compose too old"
   }
 }
 
@@ -65,6 +81,7 @@ function Set-EnvValue {
 
   if (-not (Test-Path '.env')) {
     Add-Content -Path .env -Value "$Key=$Value"
+    Protect-EnvFile
     return
   }
 
@@ -77,6 +94,77 @@ function Set-EnvValue {
   } else {
     Add-Content -Path .env -Value "$Key=$Value"
   }
+
+  Protect-EnvFile
+}
+
+function Protect-EnvFile {
+  if (-not (Test-Path '.env')) { return }
+
+  if ($env:OS -eq 'Windows_NT') {
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $acl = Get-Acl '.env'
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($accessRule in @($acl.Access)) {
+      [void]$acl.RemoveAccessRuleSpecific($accessRule)
+    }
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule -ArgumentList $identity, 'FullControl', 'Allow'
+    $acl.SetAccessRule($rule)
+    Set-Acl -Path '.env' -AclObject $acl
+  } else {
+    chmod 600 .env
+  }
+}
+
+function Normalize-AuthSecret {
+  param([Parameter(Mandatory)] [string] $Value)
+
+  $normalized = $Value.Trim()
+  if ($normalized.Length -ge 2) {
+    $first = $normalized.Substring(0, 1)
+    $last = $normalized.Substring($normalized.Length - 1, 1)
+    if (($first -eq '"' -and $last -eq '"') -or ($first -eq "'" -and $last -eq "'")) {
+      $normalized = $normalized.Substring(1, $normalized.Length - 2).Trim()
+    }
+  }
+
+  return $normalized
+}
+
+function ConvertFrom-SecureInput {
+  param([Parameter(Mandatory)] [System.Security.SecureString] $Value)
+
+  $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+  try {
+    return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+  } finally {
+    if ($bstr -ne [IntPtr]::Zero) {
+      [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+  }
+}
+
+function Assert-LocalUriPassword {
+  param([Parameter(Mandatory)] [string] $Value)
+
+  $normalized = Normalize-AuthSecret -Value $Value
+  $placeholders = @(
+    'change-me-local-uri-password',
+    'local-uri-password',
+    'your-local-uri-password-here'
+  )
+
+  if ($placeholders -contains $normalized -or ($normalized.StartsWith('<') -and $normalized.EndsWith('>'))) {
+    Write-Err "LOCAL_URI_PASSWORD must not use an example or placeholder value."
+    throw "Invalid LOCAL_URI_PASSWORD"
+  }
+
+  if ($normalized.Length -lt $script:AuthSecretMinLength) {
+    Write-Err "LOCAL_URI_PASSWORD must be at least $script:AuthSecretMinLength characters before using /local/generate_uri."
+    throw "Invalid LOCAL_URI_PASSWORD"
+  }
+
+  return $normalized
 }
 
 function Add-ComposeProfile {
@@ -84,6 +172,7 @@ function Add-ComposeProfile {
 
   if (-not (Test-Path '.env')) {
     Add-Content -Path .env -Value "COMPOSE_PROFILES=$Profile"
+    Protect-EnvFile
     return
   }
 
@@ -101,9 +190,11 @@ function Add-ComposeProfile {
       }
       $lines[$index] = "COMPOSE_PROFILES=$value"
       Set-Content -Path .env -Value $lines
+      Protect-EnvFile
     }
   } else {
     Add-Content -Path .env -Value "COMPOSE_PROFILES=$Profile"
+    Protect-EnvFile
   }
 }
 
@@ -166,7 +257,8 @@ function Ensure-ComposeFile {
 
 function Ensure-EnvFile {
   Write-Step "Creating '.env' file for secrets..."
-  $jwt = "your-super-secret-key-$(New-RandomHex 16)"
+  $jwt = "morphik-jwt-$(New-RandomHex 32)"
+  $session = "morphik-session-$(New-RandomHex 32)"
   $envContent = @(
     "# Your OpenAI API key (optional - you can configure other providers in morphik.toml)",
     "OPENAI_API_KEY=",
@@ -174,10 +266,14 @@ function Ensure-EnvFile {
     "# A secret key for signing JWTs. A random one is generated for you.",
     "JWT_SECRET_KEY=$jwt",
     "",
-    "# Local URI password for secure URI generation (required for creating connection URIs)",
+    "# A secret key for signing server-side sessions. A random one is generated for you.",
+    "SESSION_SECRET_KEY=$session",
+    "",
+    "# Optional at startup; leave blank to disable /local/generate_uri, or set a 32+ character random value before using it",
     "LOCAL_URI_PASSWORD="
   ) -join [Environment]::NewLine
   Set-Content -Path .env -Value $envContent
+  Protect-EnvFile
 
   $openai = Read-Host "Enter your OpenAI API Key (or press Enter to skip)"
   if ($openai) {
@@ -317,16 +413,17 @@ function Update-AuthBypassOrPassword {
   Write-Host ""; Write-Info "Setting up authentication for your Morphik deployment:"
   Write-Info " • For external access, set a LOCAL_URI_PASSWORD."
   Write-Info " • For local-only access, press Enter to enable bypass_auth_mode."
-  $password = Read-Host "Enter a secure LOCAL_URI_PASSWORD (or press Enter to skip)"
+  $password = ConvertFrom-SecureInput -Value (Read-Host -AsSecureString "Enter a secure LOCAL_URI_PASSWORD (or press Enter to skip)")
+  $password = Normalize-AuthSecret -Value $password
   if ([string]::IsNullOrWhiteSpace($password)) {
     Write-Info "No password provided - enabling authentication bypass (bypass_auth_mode=true)."
     $content = Get-Content morphik.toml -Raw
     $content = $content -replace '(?m)^bypass_auth_mode\s*=\s*false', 'bypass_auth_mode = true'
     Set-Content morphik.toml -Value $content
   } else {
+    $password = Assert-LocalUriPassword -Value $password
     Write-Ok "LOCAL_URI_PASSWORD set - keeping production mode (bypass_auth_mode=false)."
-    (Get-Content .env -Raw) -replace 'LOCAL_URI_PASSWORD=', "LOCAL_URI_PASSWORD=$password" |
-      Set-Content .env
+    Set-EnvValue -Key "LOCAL_URI_PASSWORD" -Value $password
   }
 }
 

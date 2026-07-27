@@ -4,7 +4,7 @@ Morphik Core provides a streamlined Docker-based setup that includes all necessa
 
 ## Prerequisites
 
-- Docker and Docker Compose installed on your system
+- Docker and Docker Compose 2.24.0 or newer installed on your system
 - At least 10GB of free disk space (for models and data)
 - 8GB+ RAM recommended
 
@@ -16,7 +16,19 @@ git clone https://github.com/morphik-org/morphik-core.git
 cd morphik-core
 ```
 
-2. First-time setup:
+2. Create a `.env` file for Docker secrets:
+```bash
+umask 077
+cat > .env <<EOF
+JWT_SECRET_KEY=$(openssl rand -hex 32)
+SESSION_SECRET_KEY=$(openssl rand -hex 32)
+LOCAL_URI_PASSWORD=
+EOF
+```
+
+If `openssl` is not available, set `JWT_SECRET_KEY` and `SESSION_SECRET_KEY` to separate non-placeholder random hex values with at least 32 characters. Leave `LOCAL_URI_PASSWORD` blank unless you need `/local/generate_uri`. Shell-exported values for these same variables are also supported for CI or scripted deployments.
+
+3. First-time setup:
 ```bash
 docker compose up --build
 ```
@@ -29,13 +41,13 @@ This command will:
 
 The initial setup may take 5-10 minutes depending on your internet speed, as it needs to download the AI models.
 
-3. For subsequent runs:
+4. For subsequent runs:
 ```bash
 docker compose up    # Start all services
 docker compose down  # Stop all services
 ```
 
-4. To completely reset (will delete all data and models):
+5. To completely reset (will delete all data and models):
 ```bash
 docker compose down -v
 ```
@@ -84,14 +96,20 @@ storage_path = "/app/storage"
 
 ### 3. Environment Variables
 
-Create a `.env` file to customize these settings:
+Create a `.env` file before starting Docker. Docker Compose loads this file for both the API and worker services:
 
 ```bash
-JWT_SECRET_KEY=your-secure-key-here  # Important: Change in production
+JWT_SECRET_KEY=<32+-character-random-hex-secret>      # Important: Change in production
+SESSION_SECRET_KEY=<32+-character-random-hex-secret>  # Important: Change in production
+LOCAL_URI_PASSWORD=<32+-character-random-hex-secret>  # Only needed for /local/generate_uri
 OPENAI_API_KEY=sk-...                # Only if using OpenAI
 HOST=0.0.0.0                         # Leave as is for Docker
 PORT=8000                            # Change if needed
 ```
+
+When `bypass_auth_mode = false`, `JWT_SECRET_KEY` and `SESSION_SECRET_KEY` must be non-empty, non-placeholder values with at least 32 characters. If `LOCAL_URI_PASSWORD` is unset or blank, `/local/generate_uri` is disabled; if you set it, use a non-placeholder value with at least 32 characters. When writing secrets to `.env`, use hex values such as `openssl rand -hex 32` so Docker Compose does not treat characters like `$`, quotes, or `#` as env-file syntax.
+
+Upgrade note: existing authenticated Docker deployments must verify that `JWT_SECRET_KEY` and `SESSION_SECRET_KEY` are both non-placeholder random values with at least 32 characters before pulling an image with this validation. Use the same values for both the `morphik` API service and the `worker` service through `.env` or shell-exported environment variables. If `LOCAL_URI_PASSWORD` is set, replace weak or placeholder values with a non-placeholder 32+ character value, or clear it to disable `/local/generate_uri`.
 
 ### 4. Custom Configuration
 
@@ -135,12 +153,17 @@ services:
    - Check PostgreSQL is healthy: `docker compose ps`
    - Verify database connection: `docker compose exec postgres psql -U morphik -d morphik`
 
-3. **Model Download Issues**
+3. **Auth Secret Issues**
+   - If startup fails with `JWT_SECRET_KEY` or `SESSION_SECRET_KEY` validation errors, set both values in `.env` to non-placeholder random strings with at least 32 characters and restart
+   - If startup fails with `LOCAL_URI_PASSWORD` validation errors, replace it with a non-placeholder value with at least 32 characters, or clear it to disable `/local/generate_uri`
+   - If `/local/generate_uri` returns HTTP `503` with `LOCAL_URI_PASSWORD is not configured; /local/generate_uri is disabled`, set `LOCAL_URI_PASSWORD` in `.env` to a non-placeholder value with at least 32 characters before using that endpoint
+
+4. **Model Download Issues**
    - Check Ollama logs: `docker compose logs ollama`
    - Ensure enough disk space for models
    - Try restarting Ollama: `docker compose restart ollama`
 
-4. **Performance Issues**
+5. **Performance Issues**
    - Monitor resources: `docker stats`
    - Ensure sufficient RAM (8GB+ recommended)
    - Check disk space: `df -h`
@@ -150,7 +173,8 @@ services:
 For production environments:
 
 1. **Security**:
-   - Change the default `JWT_SECRET_KEY`
+   - Use randomly generated `JWT_SECRET_KEY` and `SESSION_SECRET_KEY` values of at least 32 characters; do not rely on example or development defaults
+   - Set a randomly generated `LOCAL_URI_PASSWORD` of at least 32 characters before using `/local/generate_uri`
    - Use proper network security groups
    - Enable HTTPS (recommended: use a reverse proxy)
    - Regularly update containers and dependencies
