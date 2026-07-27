@@ -15,6 +15,7 @@ from core.config import get_settings
 from core.models.completion import CompletionRequest, CompletionResponse
 
 from .base_completion import BaseCompletionModel
+from .litellm_diagnostics import format_litellm_completion_error_context
 
 logger = logging.getLogger(__name__)
 
@@ -354,6 +355,11 @@ class LiteLLMCompletionModel(BaseCompletionModel):
         import instructor
         from instructor import Mode
 
+        # Extract model configuration
+        config = model_config or self.model_config
+        model = config.get("model", config.get("model_name", ""))
+        model_kwargs = {k: v for k, v in config.items() if k not in ["model", "model_name"]}
+
         try:
             # Use instructor with litellm
             client = instructor.from_litellm(litellm.acompletion, mode=Mode.JSON)
@@ -369,11 +375,6 @@ class LiteLLMCompletionModel(BaseCompletionModel):
 
             # Create messages for instructor
             messages = [system_message] + history_messages + [{"role": "user", "content": content_list}]
-
-            # Extract model configuration
-            config = model_config or self.model_config
-            model = config.get("model", config.get("model_name", ""))
-            model_kwargs = {k: v for k, v in config.items() if k not in ["model", "model_name"]}
 
             # Override with completion request parameters
             if request.temperature is not None:
@@ -407,7 +408,21 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             )
 
         except Exception as e:
-            logger.error(f"Error using instructor with LiteLLM: {e}")
+            context_str = format_litellm_completion_error_context(
+                model_key=self.model_key,
+                model_name=model,
+                api_base=config.get("api_base"),
+                streaming=False,
+                structured_output=True,
+                num_context_chunks=len(request.context_chunks) if request.context_chunks else 0,
+                num_images=len(image_urls),
+                temperature=model_kwargs.get("temperature"),
+                max_tokens=model_kwargs.get("max_tokens"),
+                num_retries=model_kwargs.get("num_retries"),
+            )
+            logger.error(
+                f"Error generating completion with LiteLLM (instructor/structured): {e}. Context: {context_str}"
+            )
             # Fall back to standard completion if instructor fails
             logger.warning("Falling back to standard LiteLLM completion without structured output")
             return None
@@ -507,7 +522,23 @@ class LiteLLMCompletionModel(BaseCompletionModel):
                 model_params[key] = value
 
         logger.debug(f"Calling LiteLLM with params: {model_params}")
-        response = await litellm.acompletion(**model_params)
+        try:
+            response = await litellm.acompletion(**model_params)
+        except Exception as e:
+            context_str = format_litellm_completion_error_context(
+                model_key=self.model_key,
+                model_name=model_name,
+                api_base=config.get("api_base"),
+                streaming=False,
+                structured_output=False,
+                num_context_chunks=len(request.context_chunks) if request.context_chunks else 0,
+                num_images=len(image_urls),
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                num_retries=model_params.get("num_retries"),
+            )
+            logger.error(f"Error generating completion with LiteLLM (instructor/standard): {e}. Context: {context_str}")
+            raise
 
         return CompletionResponse(
             completion=response.choices[0].message.content,
@@ -564,7 +595,25 @@ class LiteLLMCompletionModel(BaseCompletionModel):
                 model_params[key] = value
 
         logger.debug(f"Calling LiteLLM streaming with params: {model_params}")
-        response = await litellm.acompletion(**model_params)
+        try:
+            response = await litellm.acompletion(**model_params)
+        except Exception as e:
+            context_str = format_litellm_completion_error_context(
+                model_key=self.model_key,
+                model_name=model_name,
+                api_base=config.get("api_base"),
+                streaming=True,
+                structured_output=False,
+                num_context_chunks=len(request.context_chunks) if request.context_chunks else 0,
+                num_images=len(image_urls),
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                num_retries=model_params.get("num_retries"),
+            )
+            logger.error(
+                f"Error generating completion with LiteLLM (instructor/streaming): {e}. Context: {context_str}"
+            )
+            raise
 
         # Stream the response chunks
         async for chunk in response:
