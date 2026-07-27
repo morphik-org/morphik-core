@@ -69,6 +69,11 @@ class DocumentDeleteResponse(BaseModel):
     status: str
     message: str
 
+class BatchDeleteResponse(BaseModel):
+    """Response for batch document deletion endpoint"""
+    deleted: List[str]
+    errors: List[Dict[str, str]]
+
 
 class DocumentDownloadUrlResponse(BaseModel):
     """Response for document download URL endpoint"""
