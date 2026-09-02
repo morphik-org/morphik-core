@@ -9,10 +9,10 @@ executable test. A code path alone is not counted as a passing deployment check.
 
 | Finding | Status | Evidence | Owner |
 | --- | --- | --- | --- |
-| Routine stop deletes PostgreSQL data | Implemented; Docker proof pending | `test_normal_stop_preserves_volumes_and_stops_all_profiles` passes. The Docker recreation test is present but was skipped during this audit because the Docker daemon was not running. | Morphik Core |
+| Routine stop deletes PostgreSQL data | Verified in Docker | The recreation test calls `stop-morphik.sh` twice, restarts PostgreSQL, and reads the original document from the preserved volume. | Morphik Core |
 | Stop leaves optional containers behind | Implemented; runtime proof pending | `stop-morphik.sh` runs `down` with `--profile "*" --remove-orphans`. Static lifecycle tests pass. Runtime Docker verification is still pending. | Morphik Core |
 | Start rewrites Compose state and fixed container names collide | Implemented; static verification passed | The API port now uses `MORPHIK_API_PORT`; production services use Compose project-scoped names; static lifecycle tests and `docker compose config` pass. | Morphik Core |
-| Documents survive PostgreSQL container recreation | Test added, runtime result pending | `scripts/test_postgres_persistence.sh` inserts a document row, removes only the PostgreSQL container, recreates it, and checks the ID and metadata. Run it on a host with Docker running. | Morphik Core / iQor infrastructure |
+| Documents survive PostgreSQL container recreation | Verified in Docker | `scripts/test_postgres_persistence.sh` inserts a document row, recreates PostgreSQL, and checks the original ID and metadata. | Morphik Core / iQor infrastructure |
 | Text update preserves document identity and existing metadata | Verified in a unit test | `test_queued_text_update_preserves_identity_metadata_and_queues_reindex` passes. | Morphik Core |
 | Text update queues changed content for re-indexing and exposes processing status | Partially verified | The unit test proves the replacement object and `process_ingestion_job` payload use the same document ID and that the returned status is `processing`. Existing SDK status tests pass. No end-to-end test in this audit proves the changed text is retrievable after the worker finishes. | Morphik Core |
 | Text update prevents lost updates | Fails | There is no content revision precondition. Every update uses ARQ job ID `ingest:{document_id}`. A second update can receive a successful API response while `enqueue_job` returns `None`, and the first queued job may refer to an object the second update deleted. | Morphik Core, then iQor caller adoption |
@@ -57,8 +57,9 @@ Run this on a disposable Docker host or CI runner:
 ```
 
 The test uses a unique project name beginning with `morphik-persistence-test-`. It starts only PostgreSQL, creates a
-`documents` table with the Morphik identity and metadata fields, inserts the 47490 probe row, removes the container,
-starts a new container against the same volume, and checks for:
+`documents` table with the Morphik identity and metadata fields, inserts the 47490 probe row, and checks it after direct
+container recreation. It then calls `stop-morphik.sh` twice, starts PostgreSQL again against the same volume, and checks
+for:
 
 ```text
 iqor-persistence-probe|QA|47490
@@ -68,6 +69,13 @@ It deletes only its isolated test project and volume on exit. The pytest entry p
 
 ```bash
 .venv/bin/pytest -q core/tests/integration/test_docker_postgres_persistence.py
+```
+
+Captured on 2026-09-02 with Docker Engine 27.4.0:
+
+```text
+PASS: document identity and metadata survived container recreation and repeated stop/start.
+1 passed
 ```
 
 ## Document update contract
@@ -198,10 +206,10 @@ MORPHIK_AUTH_TOKEN='<token>' \
 ./scripts/verify_iqor_retrieval.sh
 ```
 
-The script saves the raw response to `iqor-retrieval-response.json`, validates the filters, exclusion, scores, and
-source fields, then prints five deduplicated items. Use `IQOR_WORK_ITEM_ID_JSON='"47490"'` if IDs are strings. The field
-names, backlog type value, candidate count, output path, and ColPali flag are also configurable through the variables
-listed at the top of the script.
+The script saves the raw response in the operating system's temporary directory unless `IQOR_RESPONSE_FILE` is set.
+It prints the chosen path to stderr, validates the filters, exclusion, scores, and source fields, then prints five
+deduplicated items. Use `IQOR_WORK_ITEM_ID_JSON='"47490"'` if IDs are strings. Set `IQOR_RESPONSE_FILE` only to an
+approved location outside the repository when iQor needs to retain the raw customer response.
 
 ## On-prem data boundary
 
@@ -260,6 +268,7 @@ The iQor MCP wrapper and existing UI are not present in this repository, so this
 - `stop-morphik.sh`: checked-in, repeatable stop that activates every profile and preserves volumes.
 - `install_docker.sh` and `install_docker.ps1`: generate the safe start/stop behavior and local LiteLLM cost map setting.
 - `.env.example`: project-name migration warning and local LiteLLM cost map setting.
+- `.gitignore`: defense-in-depth exclusion for explicitly named iQor retrieval captures.
 - `DOCKER.md`: safe stop and explicit destructive reset documentation.
 - `core/services/document_service.py`: enforce `min_score` after final scoring.
 - `core/tests/unit/test_docker_lifecycle.py`: lifecycle and installer guards.
@@ -301,7 +310,7 @@ LITELLM_LOCAL_MODEL_COST_MAP=True \
 .venv/bin/pytest -q sdks/python/morphik/tests/test_document_status.py
 ```
 
-Run the pending Docker proof on a host with its daemon running:
+Run the Docker proof on a host with its daemon running:
 
 ```bash
 .venv/bin/pytest -q core/tests/integration/test_docker_postgres_persistence.py

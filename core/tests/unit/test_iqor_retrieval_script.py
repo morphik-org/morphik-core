@@ -32,7 +32,8 @@ def _result(work_item_id: int, score: float, chunk_number: int = 0) -> dict:
     }
 
 
-def test_iqor_verifier_sends_contract_and_returns_five_distinct_items(tmp_path):
+@pytest.mark.parametrize("explicit_response_path", [True, False], ids=["explicit-path", "temporary-path"])
+def test_iqor_verifier_sends_contract_and_returns_five_distinct_items(tmp_path, explicit_response_path):
     if shutil.which("curl") is None or shutil.which("jq") is None:
         pytest.skip("curl and jq are required")
 
@@ -65,15 +66,19 @@ def test_iqor_verifier_sends_contract_and_returns_five_distinct_items(tmp_path):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
-    response_path = tmp_path / "response.json"
     env = os.environ.copy()
     env.update(
         {
             "IQOR_QUERY": "find related QA backlog work",
             "MORPHIK_BASE_URL": f"http://127.0.0.1:{server.server_port}",
-            "IQOR_RESPONSE_FILE": str(response_path),
+            "TMPDIR": str(tmp_path),
         }
     )
+    response_path = tmp_path / "response.json"
+    if explicit_response_path:
+        env["IQOR_RESPONSE_FILE"] = str(response_path)
+    else:
+        env.pop("IQOR_RESPONSE_FILE", None)
     try:
         completed = subprocess.run(
             [str(VERIFY_SCRIPT)],
@@ -104,6 +109,12 @@ def test_iqor_verifier_sends_contract_and_returns_five_distinct_items(tmp_path):
             ]
         },
     }
+
+    if not explicit_response_path:
+        saved_line = next(line for line in completed.stderr.splitlines() if line.startswith("Raw response saved to "))
+        response_path = Path(saved_line.removeprefix("Raw response saved to ").removesuffix("."))
+        assert response_path.parent == tmp_path
+        assert response_path.name.startswith("iqor-retrieval-response.")
 
     selected = json.loads(completed.stdout)
     assert len(selected) == 5

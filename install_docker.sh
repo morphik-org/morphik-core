@@ -477,7 +477,7 @@ cat > start-morphik.sh << 'EOF'
 set -euo pipefail
 
 # Purpose: Production startup script for Morphik
-# Automatically updates port mapping from morphik.toml and includes UI if installed
+# Passes the port from morphik.toml to Compose and includes UI if installed
 # Usage: ./start-morphik.sh [--version <tag>]
 
 # Color functions
@@ -512,7 +512,7 @@ done
 
 # Load MORPHIK_VERSION from .env if not set via flag
 if [ -z "${MORPHIK_VERSION:-}" ] && [ -f ".env" ]; then
-    MORPHIK_VERSION=$(grep "^MORPHIK_VERSION=" .env 2>/dev/null | tail -n1 | cut -d= -f2-)
+    MORPHIK_VERSION=$(sed -n 's/^MORPHIK_VERSION=//p' .env | tail -n1)
 fi
 export MORPHIK_VERSION="${MORPHIK_VERSION:-latest}"
 

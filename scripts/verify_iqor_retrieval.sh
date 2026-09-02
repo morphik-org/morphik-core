@@ -12,7 +12,9 @@ IQOR_TYPE_FIELD="${IQOR_TYPE_FIELD:-work_item_type}"
 IQOR_ID_FIELD="${IQOR_ID_FIELD:-work_item_id}"
 IQOR_CANDIDATE_K="${IQOR_CANDIDATE_K:-50}"
 IQOR_USE_COLPALI_JSON="${IQOR_USE_COLPALI_JSON:-false}"
-IQOR_RESPONSE_FILE="${IQOR_RESPONSE_FILE:-iqor-retrieval-response.json}"
+if [ -z "${IQOR_RESPONSE_FILE:-}" ]; then
+    IQOR_RESPONSE_FILE=$(mktemp "${TMPDIR:-/tmp}/iqor-retrieval-response.XXXXXX")
+fi
 
 for command in curl jq; do
     if ! command -v "$command" >/dev/null 2>&1; then

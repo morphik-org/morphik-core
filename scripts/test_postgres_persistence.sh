@@ -96,12 +96,29 @@ test "$volume_before" = "postgres_data"
 "${compose[@]}" up -d postgres
 wait_for_postgres
 
-persisted=$("${compose[@]}" exec -T postgres psql -At -v ON_ERROR_STOP=1 -U morphik -d morphik -c \
-    "SELECT external_id || '|' || doc_metadata->>'project' || '|' || doc_metadata->>'work_item_id' FROM documents WHERE external_id = 'iqor-persistence-probe';")
+read_probe() {
+    "${compose[@]}" exec -T postgres psql -At -v ON_ERROR_STOP=1 -U morphik -d morphik -c \
+        "SELECT external_id || '|' || (doc_metadata->>'project') || '|' || (doc_metadata->>'work_item_id') FROM documents WHERE external_id = 'iqor-persistence-probe';"
+}
+
+persisted=$(read_probe)
 
 if [ "$persisted" != "iqor-persistence-probe|QA|47490" ]; then
     echo "Document record did not survive PostgreSQL container recreation: $persisted" >&2
     exit 1
 fi
 
-echo "PASS: document identity and metadata survived PostgreSQL container recreation."
+# Exercise the checked-in lifecycle script twice to prove stop is idempotent and
+# does not delete the project-scoped PostgreSQL volume.
+(cd "$REPO_DIR" && COMPOSE_PROJECT_NAME="$TEST_PROJECT" ./stop-morphik.sh)
+(cd "$REPO_DIR" && COMPOSE_PROJECT_NAME="$TEST_PROJECT" ./stop-morphik.sh)
+"${compose[@]}" up -d postgres
+wait_for_postgres
+
+persisted=$(read_probe)
+if [ "$persisted" != "iqor-persistence-probe|QA|47490" ]; then
+    echo "Document record did not survive stop/start: $persisted" >&2
+    exit 1
+fi
+
+echo "PASS: document identity and metadata survived container recreation and repeated stop/start."
