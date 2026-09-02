@@ -31,16 +31,25 @@ The initial setup may take 5-10 minutes depending on your internet speed, as it 
 
 3. For subsequent runs:
 ```bash
-docker compose up    # Start all services
-docker compose down  # Stop all services
+./start-morphik.sh
+./stop-morphik.sh
 ```
+
+Both commands are idempotent. The stop script removes containers and the Compose network, including services in
+optional profiles, but preserves the named volumes that hold PostgreSQL, Redis, and model data.
 
 4. To completely reset (will delete all data and models):
 ```bash
 docker compose down -v
 ```
 
-> **Note:** If you enabled the optional UI profile (or any other compose profile), make sure to include `--profile ui` when stopping services (`docker compose --profile ui down --volumes --remove-orphans`). The hosted installer generates a `stop-morphik` script that does this for you automatically.
+This command is destructive. Do not use it for a routine stop:
+
+```bash
+docker compose -f docker-compose.run.yml --profile "*" down --volumes --remove-orphans
+```
+
+It removes PostgreSQL and every other named volume. Back up the database and `./storage` before an intentional reset.
 
 ## Configuration
 
@@ -113,7 +122,7 @@ services:
 
 ## Storage and Data
 
-- Database data: Stored in the `postgres_data` Docker volume
+- Database data: Stored in the `postgres_data` Docker volume outside the PostgreSQL container
 - AI Models: Stored in the `ollama_data` Docker volume
 - Documents: Stored in `./storage` directory (mounted to container)
 - Logs: Available in `./logs` directory

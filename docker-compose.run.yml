@@ -7,9 +7,8 @@
 services:
   morphik:
     image: ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION:-latest}
-    container_name: morphik-app
     ports:
-      - "8000:8000"
+      - "${MORPHIK_API_PORT:-8000}:${MORPHIK_API_PORT:-8000}"
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
       - POSTGRES_URI=postgresql+asyncpg://morphik:morphik@postgres:5432/morphik
@@ -17,6 +16,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LITELLM_LOCAL_MODEL_COST_MAP=${LITELLM_LOCAL_MODEL_COST_MAP:-True}
     volumes:
       # Configuration file (always mounted)
       - ./morphik.toml:/app/morphik.toml:ro
@@ -34,11 +34,12 @@ services:
     networks:
       - morphik-network
     env_file:
-      - .env
+      - path: .env
+        required: false
 
   worker:
     image: ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION:-latest}
-    # No fixed container_name: allows `docker compose up --scale worker=N` to run
+    # Project-scoped names allow `docker compose up --scale worker=N` to run
     # multiple worker processes (rendering is single-core per process).
     # The worker runs as a background job processor, so no ports are exposed.
     command: arq core.workers.ingestion_worker.WorkerSettings
@@ -49,6 +50,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LITELLM_LOCAL_MODEL_COST_MAP=${LITELLM_LOCAL_MODEL_COST_MAP:-True}
     volumes:
       # Configuration file (always mounted)
       - ./morphik.toml:/app/morphik.toml:ro
@@ -63,11 +65,11 @@ services:
     networks:
       - morphik-network
     env_file:
-      - .env
+      - path: .env
+        required: false
 
   redis:
     image: redis:7-alpine
-    container_name: morphik-redis
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -82,14 +84,13 @@ services:
   postgres:
     # Uses a standard image with the pgvector extension pre-installed
     image: pgvector/pgvector:pg16
-    container_name: morphik-postgres
     environment:
       - POSTGRES_USER=morphik
       - POSTGRES_PASSWORD=morphik
       - POSTGRES_DB=morphik
-    ports:
-      - "5432:5432"
     volumes:
+      # Named volumes live outside the container and survive container recreation.
+      # Normal stop scripts must not pass --volumes to `docker compose down`.
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       # The -d flag is important to specify the database name for the readiness check
@@ -103,7 +104,6 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    container_name: morphik-ollama
     # Enable this profile to run Ollama for local models
     profiles:
       - ollama
@@ -116,7 +116,6 @@ services:
 
   ui:
     image: node:22-alpine
-    container_name: morphik-ui
     # Enable this profile to run the Web UI
     profiles:
       - ui
@@ -142,6 +141,7 @@ networks:
     driver: bridge
 
 volumes:
+  # Persistent deployment data. Remove only as an explicit destructive reset.
   postgres_data:
   redis_data:
   ollama_data:

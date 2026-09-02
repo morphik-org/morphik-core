@@ -182,6 +182,9 @@ LOCAL_URI_PASSWORD=
 
 # Morphik image version (use a date tag like 2025-02-01 to pin, or "latest" for newest)
 MORPHIK_VERSION=${MORPHIK_VERSION}
+
+# Prevent LiteLLM from downloading its model-price map at process startup.
+LITELLM_LOCAL_MODEL_COST_MAP=True
 EOF
 
 print_info "Morphik supports 100s of models including OpenAI, Anthropic (Claude), Google Gemini, local models, and even custom models!"
@@ -401,10 +404,9 @@ print_success "Configuration has been set up at 'morphik.toml'."
 print_info "You can edit this file to customize models, ports, or other settings."
 read -p "Press [Enter] to continue with the current configuration or edit 'morphik.toml' in another terminal first..." < /dev/tty
 
-# Update port mapping in docker-compose.run.yml to match morphik.toml
+# Pass the configured API port to Docker Compose without rewriting the compose file.
 API_PORT=$(awk '/^\[api\]/{flag=1; next} /^\[/{flag=0} flag && /^port[[:space:]]*=/ {gsub(/^port[[:space:]]*=[[:space:]]*/, ""); print; exit}' morphik.toml 2>/dev/null || echo "8000")
-sed -i.bak "s|\"8000:8000\"|\"${API_PORT}:${API_PORT}\"|g" "$COMPOSE_FILE"
-rm -f ${COMPOSE_FILE}.bak
+export MORPHIK_API_PORT="${API_PORT:-8000}"
 
 # 5.5. Ask about UI installation
 echo ""
@@ -439,7 +441,7 @@ fi
 
 # 6. Start the application
 print_info "Starting the Morphik stack... This may take a few minutes for the first run."
-docker compose -f "$COMPOSE_FILE" $UI_PROFILE up -d
+docker compose -f "$COMPOSE_FILE" $UI_PROFILE up -d --remove-orphans
 
 print_success "🚀 Morphik has been started!"
 print_info "📝 Check the logs for status - it can take a few minutes to fully load"
@@ -464,15 +466,15 @@ fi
 echo ""
 print_info "📋 Management commands:"
 print_info "   View logs:    docker compose -f $COMPOSE_FILE $UI_PROFILE logs -f"
-print_info "   Stop services: ./stop-morphik.sh   # runs docker compose down --volumes --remove-orphans"
+print_info "   Stop services: ./stop-morphik.sh   # preserves PostgreSQL and other named volumes"
 print_info "   Restart:      ./start-morphik.sh"
 print_info "   Pin version:  ./start-morphik.sh --version 2025-02-01"
 print_info "   List versions: docker image ls ghcr.io/morphik-org/morphik-core"
 
 # Create convenience startup script
 cat > start-morphik.sh << 'EOF'
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 # Purpose: Production startup script for Morphik
 # Automatically updates port mapping from morphik.toml and includes UI if installed
@@ -491,6 +493,10 @@ print_warning() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --version)
+            if [ "$#" -lt 2 ]; then
+                echo "--version requires a tag" >&2
+                exit 2
+            fi
             export MORPHIK_VERSION="$2"
             shift 2
             ;;
@@ -505,7 +511,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Load MORPHIK_VERSION from .env if not set via flag
-if [ -z "$MORPHIK_VERSION" ] && [ -f ".env" ]; then
+if [ -z "${MORPHIK_VERSION:-}" ] && [ -f ".env" ]; then
     MORPHIK_VERSION=$(grep "^MORPHIK_VERSION=" .env 2>/dev/null | tail -n1 | cut -d= -f2-)
 fi
 export MORPHIK_VERSION="${MORPHIK_VERSION:-latest}"
@@ -513,13 +519,7 @@ export MORPHIK_VERSION="${MORPHIK_VERSION:-latest}"
 print_info "Using Morphik version: ${MORPHIK_VERSION}"
 
 API_PORT=$(awk '/^\[api\]/{flag=1; next} /^\[/{flag=0} flag && /^port[[:space:]]*=/ {gsub(/^port[[:space:]]*=[[:space:]]*/, ""); print; exit}' morphik.toml 2>/dev/null || echo "8000")
-CURRENT_PORT=$(grep -oE '"[0-9]+:[0-9]+"' docker-compose.run.yml | head -1 | cut -d: -f1 | tr -d '"')
-
-if [ "$CURRENT_PORT" != "$API_PORT" ]; then
-    echo "Updating port mapping from $CURRENT_PORT to $API_PORT..."
-    sed -i.bak "s|\"${CURRENT_PORT}:${CURRENT_PORT}\"|\"${API_PORT}:${API_PORT}\"|g" docker-compose.run.yml
-    rm -f docker-compose.run.yml.bak
-fi
+export MORPHIK_API_PORT="${API_PORT:-8000}"
 
 # Check multimodal embeddings configuration
 COLPALI_ENABLED=$(awk '/^\[morphik\]/{flag=1; next} /^\[/{flag=0} flag && /^enable_colpali[[:space:]]*=/ {gsub(/^enable_colpali[[:space:]]*=[[:space:]]*/, ""); print; exit}' morphik.toml 2>/dev/null || echo "true")
@@ -534,10 +534,10 @@ if [ -f ".env" ] && grep -q "UI_INSTALLED=true" .env; then
     UI_PROFILE="--profile ui"
 fi
 
-docker compose -f docker-compose.run.yml $UI_PROFILE up -d
-echo "🚀 Morphik ${MORPHIK_VERSION} is running on http://localhost:${API_PORT}"
-echo "   Health: http://localhost:${API_PORT}/health"
-echo "   Docs:   http://localhost:${API_PORT}/docs"
+docker compose -f docker-compose.run.yml $UI_PROFILE up -d --remove-orphans
+echo "🚀 Morphik ${MORPHIK_VERSION} is running on http://localhost:${MORPHIK_API_PORT}"
+echo "   Health: http://localhost:${MORPHIK_API_PORT}/health"
+echo "   Docs:   http://localhost:${MORPHIK_API_PORT}/docs"
 if [ -n "$UI_PROFILE" ]; then
     echo ""
     echo "🎨 Admin UI: http://localhost:3003"
@@ -546,8 +546,8 @@ EOF
 chmod +x start-morphik.sh
 
 cat > stop-morphik.sh << 'EOF'
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 COMPOSE_FILE="docker-compose.run.yml"
 
@@ -556,22 +556,10 @@ if [ ! -f "$COMPOSE_FILE" ]; then
     exit 1
 fi
 
-PROFILE_FLAGS=()
-if [ -f ".env" ] && grep -q "^COMPOSE_PROFILES=" .env; then
-    PROFILES=$(grep "^COMPOSE_PROFILES=" .env | tail -n1 | cut -d= -f2-)
-    IFS=',' read -r -a PROFILE_ARRAY <<< "$PROFILES"
-    for profile in "${PROFILE_ARRAY[@]}"; do
-        profile=$(echo "$profile" | xargs)
-        if [ -n "$profile" ]; then
-            PROFILE_FLAGS+=("--profile" "$profile")
-        fi
-    done
-elif [ -f ".env" ] && grep -q "UI_INSTALLED=true" .env; then
-    PROFILE_FLAGS+=("--profile" "ui")
-fi
-
-docker compose -f "$COMPOSE_FILE" "${PROFILE_FLAGS[@]}" down --volumes --remove-orphans
-echo "🛑 Morphik services stopped. Containers, networks, and anonymous volumes removed."
+# Activate every profile so optional UI and Ollama containers are stopped too.
+# A routine stop must preserve PostgreSQL and all other named volumes.
+docker compose -f "$COMPOSE_FILE" --profile "*" down --remove-orphans
+echo "🛑 Morphik services stopped. Persistent named volumes were preserved."
 EOF
 chmod +x stop-morphik.sh
 

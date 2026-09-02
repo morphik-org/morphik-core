@@ -3,7 +3,7 @@
 import os
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -65,6 +65,15 @@ class FakeStoreFailureDatabase(FakeDatabase):
             }
         )
         return False
+
+
+class FakeRedis:
+    def __init__(self):
+        self.calls = []
+
+    async def enqueue_job(self, function_name, **payload):
+        self.calls.append({"function_name": function_name, "payload": payload})
+        return SimpleNamespace(job_id=payload["_job_id"])
 
 
 def _auth() -> AuthContext:
@@ -234,3 +243,55 @@ async def test_queued_metadata_only_update_allows_unchanged_managed_metadata_fie
     assert updated is doc
     assert doc.metadata["custom"] == "queued"
     assert len(db.update_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_queued_text_update_preserves_identity_metadata_and_queues_reindex():
+    doc = _document()
+    original_metadata = dict(doc.metadata)
+    service, db = _service(doc)
+    redis = FakeRedis()
+
+    async def noop_limit_check(auth, content_length, document_id):
+        return None
+
+    async def fake_upload(*, content_bytes, filename, content_type):
+        assert content_bytes == b"corrected QA backlog text"
+        return "app-1", "ingest_uploads/replacement/report.txt", "report.txt"
+
+    async def noop_record(*args, **kwargs):
+        return None
+
+    async def no_stored_size(*args, **kwargs):
+        return None
+
+    service._verify_ingest_and_storage_limits = noop_limit_check
+    service._upload_content_bytes = fake_upload
+    service._record_storage_usage = noop_record
+    service._get_storage_object_size = no_stored_size
+
+    updated = await service.queue_document_update(
+        document_id="doc-1",
+        auth=_auth(),
+        redis=redis,
+        content="corrected QA backlog text",
+        use_colpali=False,
+    )
+
+    assert updated is doc
+    assert updated.external_id == "doc-1"
+    assert updated.metadata == original_metadata
+    assert updated.system_metadata["status"] == "processing"
+    assert updated.storage_info["key"] == "ingest_uploads/replacement/report.txt"
+
+    persisted = db.update_calls[-1]
+    assert persisted["document_id"] == "doc-1"
+    assert persisted["updates"]["metadata"] == original_metadata
+    assert persisted["updates"]["system_metadata"]["status"] == "processing"
+
+    assert len(redis.calls) == 1
+    queued = redis.calls[0]
+    assert queued["function_name"] == "process_ingestion_job"
+    assert queued["payload"]["document_id"] == "doc-1"
+    assert queued["payload"]["file_key"] == "ingest_uploads/replacement/report.txt"
+    assert queued["payload"]["_job_id"] == "ingest:doc-1"
