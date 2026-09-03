@@ -26,6 +26,8 @@ def test_production_compose_persists_postgres_without_fixed_container_names():
     assert "container_name:" not in compose
     assert '"5432:5432"' not in compose
     assert "${MORPHIK_API_PORT:-8000}:${MORPHIK_API_PORT:-8000}" in compose
+    assert '"${MORPHIK_ENV_FILE:-.env}"' in compose
+    assert "required:" not in compose
     assert "# COMPOSE_PROJECT_NAME=morphik" in _read(".env.example")
     assert "LITELLM_LOCAL_MODEL_COST_MAP=${LITELLM_LOCAL_MODEL_COST_MAP:-True}" in compose
 

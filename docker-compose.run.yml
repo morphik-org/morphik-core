@@ -34,8 +34,7 @@ services:
     networks:
       - morphik-network
     env_file:
-      - path: .env
-        required: false
+      - "${MORPHIK_ENV_FILE:-.env}"
 
   worker:
     image: ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION:-latest}
@@ -65,8 +64,7 @@ services:
     networks:
       - morphik-network
     env_file:
-      - path: .env
-        required: false
+      - "${MORPHIK_ENV_FILE:-.env}"
 
   redis:
     image: redis:7-alpine

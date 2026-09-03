@@ -262,7 +262,7 @@ The iQor MCP wrapper and existing UI are not present in this repository, so this
 ## Files changed by this audit
 
 - `docker-compose.run.yml`: project-scoped service names, parameterized API port, no host-published PostgreSQL port,
-  persistent-volume comments, optional `.env`, and local LiteLLM cost map.
+  persistent-volume comments, Compose V2-compatible `.env` loading, and local LiteLLM cost map.
 - `start-morphik.sh`: repeatable startup without temporary Compose files, profile support, argument validation, and orphan
   cleanup.
 - `stop-morphik.sh`: checked-in, repeatable stop that activates every profile and preserves volumes.
@@ -295,7 +295,7 @@ Validate the lifecycle scripts and rendered production Compose model without sta
 ```bash
 bash -n start-morphik.sh stop-morphik.sh install_docker.sh \
   scripts/test_postgres_persistence.sh scripts/verify_iqor_retrieval.sh
-MORPHIK_API_PORT=8123 MORPHIK_VERSION=test \
+MORPHIK_API_PORT=8123 MORPHIK_VERSION=test MORPHIK_ENV_FILE=/dev/null \
   docker compose -f docker-compose.run.yml --profile "*" config
 ```
 

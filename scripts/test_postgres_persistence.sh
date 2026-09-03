@@ -5,6 +5,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 COMPOSE_FILE="$REPO_DIR/docker-compose.run.yml"
 TEST_PROJECT="${MORPHIK_PERSISTENCE_TEST_PROJECT:-morphik-persistence-test-$$}"
+export MORPHIK_ENV_FILE="${MORPHIK_ENV_FILE:-/dev/null}"
 
 case "$TEST_PROJECT" in
     morphik-persistence-test-*) ;;
