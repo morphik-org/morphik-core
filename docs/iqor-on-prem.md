@@ -209,7 +209,9 @@ MORPHIK_AUTH_TOKEN='<token>' \
 The script saves the raw response in the operating system's temporary directory unless `IQOR_RESPONSE_FILE` is set.
 It prints the chosen path to stderr, validates the filters, exclusion, scores, and source fields, then prints five
 deduplicated items. Use `IQOR_WORK_ITEM_ID_JSON='"47490"'` if IDs are strings. Set `IQOR_RESPONSE_FILE` only to an
-approved location outside the repository when iQor needs to retain the raw customer response.
+approved location outside the repository when iQor needs to retain the raw customer response. The bearer token is
+written to a mode-600 temporary header file so it does not appear in curl's process arguments, and the script deletes
+that file on exit.
 
 ## On-prem data boundary
 

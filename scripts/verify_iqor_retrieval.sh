@@ -12,6 +12,17 @@ IQOR_TYPE_FIELD="${IQOR_TYPE_FIELD:-work_item_type}"
 IQOR_ID_FIELD="${IQOR_ID_FIELD:-work_item_id}"
 IQOR_CANDIDATE_K="${IQOR_CANDIDATE_K:-50}"
 IQOR_USE_COLPALI_JSON="${IQOR_USE_COLPALI_JSON:-false}"
+AUTH_HEADER_FILE=""
+
+cleanup_auth_header() {
+    if [ -n "$AUTH_HEADER_FILE" ]; then
+        rm -f -- "$AUTH_HEADER_FILE"
+    fi
+}
+trap cleanup_auth_header EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 if [ -z "${IQOR_RESPONSE_FILE:-}" ]; then
     IQOR_RESPONSE_FILE=$(mktemp "${TMPDIR:-/tmp}/iqor-retrieval-response.XXXXXX")
 fi
@@ -40,7 +51,10 @@ curl_args=(
     --header "Content-Type: application/json"
 )
 if [ -n "${MORPHIK_AUTH_TOKEN:-}" ]; then
-    curl_args+=(--header "Authorization: Bearer ${MORPHIK_AUTH_TOKEN}")
+    AUTH_HEADER_FILE=$(mktemp "${TMPDIR:-/tmp}/iqor-auth-header.XXXXXX")
+    chmod 600 "$AUTH_HEADER_FILE"
+    printf 'Authorization: Bearer %s\n' "$MORPHIK_AUTH_TOKEN" > "$AUTH_HEADER_FILE"
+    curl_args+=(--header "@$AUTH_HEADER_FILE")
 fi
 
 http_status=$(

@@ -52,6 +52,7 @@ def test_iqor_verifier_sends_contract_and_returns_five_distinct_items(tmp_path, 
             length = int(self.headers["Content-Length"])
             captured["path"] = self.path
             captured["body"] = json.loads(self.rfile.read(length))
+            captured["authorization"] = self.headers.get("Authorization")
             body = json.dumps(response).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -67,10 +68,23 @@ def test_iqor_verifier_sends_contract_and_returns_five_distinct_items(tmp_path, 
     thread.start()
 
     env = os.environ.copy()
+    real_curl = shutil.which("curl")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    curl_argv = tmp_path / "curl-argv"
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text(
+        f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$CURL_ARGV_FILE"\nexec "{real_curl}" "$@"\n',
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
     env.update(
         {
             "IQOR_QUERY": "find related QA backlog work",
             "MORPHIK_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+            "MORPHIK_AUTH_TOKEN": "iqor-secret-token",
+            "PATH": f"{fake_bin}:{env['PATH']}",
+            "CURL_ARGV_FILE": str(curl_argv),
             "TMPDIR": str(tmp_path),
         }
     )
@@ -95,6 +109,9 @@ def test_iqor_verifier_sends_contract_and_returns_five_distinct_items(tmp_path, 
         thread.join(timeout=5)
 
     assert captured["path"] == "/retrieve/chunks"
+    assert captured["authorization"] == "Bearer iqor-secret-token"
+    assert "iqor-secret-token" not in curl_argv.read_text(encoding="utf-8")
+    assert list(tmp_path.glob("iqor-auth-header.*")) == []
     assert captured["body"] == {
         "query": "find related QA backlog work",
         "k": 50,

@@ -31,7 +31,9 @@ cleanup() {
     # This project name is unique to the test. Removing its volumes cannot touch a deployment.
     "${compose[@]}" --profile "*" down --volumes --remove-orphans >/dev/null 2>&1 || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 wait_for_postgres() {
     local attempts=30

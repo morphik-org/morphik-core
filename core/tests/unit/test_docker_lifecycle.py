@@ -52,6 +52,10 @@ def test_persistence_test_uses_a_non_overridable_unique_project():
     assert "MORPHIK_PERSISTENCE_TEST_PROJECT" not in script
     assert "Refusing to reuse existing Docker resources" in script
     assert "\ncleanup\n" not in script
+    assert "trap cleanup EXIT" in script
+    assert "trap 'exit 130' INT" in script
+    assert "trap 'exit 143' TERM" in script
+    assert "trap cleanup EXIT INT TERM" not in script
 
 
 def test_start_is_repeatable_without_rewriting_compose():
