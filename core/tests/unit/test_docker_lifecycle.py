@@ -45,6 +45,15 @@ def test_normal_stop_preserves_volumes_and_stops_all_profiles():
     assert "Persistent named volumes were preserved" in windows_installer
 
 
+def test_persistence_test_uses_a_non_overridable_unique_project():
+    script = _read("scripts/test_postgres_persistence.sh")
+
+    assert 'TEST_PROJECT="morphik-persistence-test-$$-${RANDOM}"' in script
+    assert "MORPHIK_PERSISTENCE_TEST_PROJECT" not in script
+    assert "Refusing to reuse existing Docker resources" in script
+    assert "\ncleanup\n" not in script
+
+
 def test_start_is_repeatable_without_rewriting_compose():
     checked_in_start = _read("start-morphik.sh")
     unix_installer = _read("install_docker.sh")

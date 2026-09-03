@@ -90,10 +90,12 @@ if ! jq -e \
     'type == "array" and all(.[];
         (.metadata[$project_field] == $project) and
         (.metadata[$type_field] == $backlog_type) and
+        ((.metadata[$id_field] | type) == ($current_id | type)) and
         (.metadata[$id_field] != $current_id) and
         (.document_id | type == "string") and
         (.chunk_number | type == "number") and
-        (.score | type == "number"))' \
+        (.score | type == "number") and
+        (.score >= 0.0))' \
     "$IQOR_RESPONSE_FILE" >/dev/null; then
     echo "Response violated the metadata, exclusion, score, or source-ID contract." >&2
     exit 1

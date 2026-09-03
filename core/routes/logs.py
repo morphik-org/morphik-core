@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from core.auth_utils import verify_token
+from core.config import get_settings
 from core.models.auth import AuthContext
 from core.services.telemetry_events import TelemetryEventReader
 
@@ -117,7 +118,7 @@ async def get_logs(
             status=status_filter,
             since=since,
         )
-    else:
+    elif get_settings().TELEMETRY_ENABLED:
         events = await _query_proxy(
             app_id=auth.app_id,
             since=since,
@@ -125,6 +126,9 @@ async def get_logs(
             operation_type=op_type,
             status=status_filter,
         )
+    else:
+        logger.info("Historical log proxy disabled because telemetry is disabled")
+        events = []
 
     return [
         LogResponse(

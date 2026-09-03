@@ -122,3 +122,61 @@ def test_iqor_verifier_sends_contract_and_returns_five_distinct_items(tmp_path, 
     assert selected[0]["score"] == 0.92
     assert selected[0]["source_id"] == "doc-47501:0"
     assert json.loads(response_path.read_text()) == response
+
+
+@pytest.mark.parametrize("invalid_result", ["missing-work-item-id", "below-min-score"])
+def test_iqor_verifier_rejects_invalid_distinct_result(tmp_path, invalid_result):
+    if shutil.which("curl") is None or shutil.which("jq") is None:
+        pytest.skip("curl and jq are required")
+
+    response = [_result(47501, 0.92), _result(47502, 0.88), _result(47503, 0.84), _result(47504, 0.80)]
+    invalid = _result(47505, 0.76)
+    if invalid_result == "missing-work-item-id":
+        del invalid["metadata"]["work_item_id"]
+    else:
+        invalid["score"] = -0.01
+    response.append(invalid)
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers["Content-Length"])
+            self.rfile.read(length)
+            body = json.dumps(response).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "IQOR_QUERY": "find related QA backlog work",
+            "MORPHIK_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+            "IQOR_RESPONSE_FILE": str(tmp_path / "response.json"),
+        }
+    )
+    try:
+        completed = subprocess.run(
+            [str(VERIFY_SCRIPT)],
+            cwd=REPO_ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert completed.returncode == 1
+    assert "violated the metadata, exclusion, score, or source-ID contract" in completed.stderr

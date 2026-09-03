@@ -179,8 +179,8 @@ applies `min_score` after vector scoring and optional reranking, before zero-sco
 
 Core can return several chunks from one work item. The MCP wrapper should keep the highest-scoring chunk for each
 `metadata.work_item_id`, sort those representatives by score, and return the first five. It must reject a result if the
-project or type is wrong, the current work item is present, a source ID is missing, or fewer than five distinct IDs are
-available.
+project or type is wrong, the current work item is present, the work-item ID is missing or has the wrong type, a source
+ID is missing, or fewer than five distinct IDs are available.
 
 ### Error behavior
 
@@ -226,6 +226,7 @@ The stock production configuration is not a no-egress configuration.
 | ColPali API or parser API mode | Local by default | Document images, text, or file bytes go to every configured Morphik embedding API endpoint when API mode is selected. |
 | S3 or Morphik multivector storage | Local PostgreSQL and filesystem by default | Source objects go to S3; vectors and chunk content can go to Turbopuffer when those providers are selected. |
 | Morphik telemetry | Enabled by default unless `TELEMETRY=false` | Compressed operation events go to `https://logs.morphik.ai`. Query and folder strings are redacted, but events include installation, user/app IDs, operation fields, document IDs or filenames for some operations, timings, and error strings. |
+| Historical log lookup | `GET /logs?hours=<value greater than 4>` while telemetry is enabled | The app ID, start time, limit, operation type, and status filter go to `https://logs.morphik.ai`. With `TELEMETRY=false`, this branch returns an empty list without contacting the proxy. |
 | Sentry | Only when `SENTRY_DSN` is set | Errors, traces, profiles, request context, and default PII go to the configured Sentry project. |
 | LiteLLM model-price map | Disabled by default in this branch's production Compose environment | Without `LITELLM_LOCAL_MODEL_COST_MAP=True`, process import downloads a JSON map from GitHub. This request contains no customer document data. |
 | Model and image downloads | First install or uncached local model start | Container images and model weights come from GHCR, Docker Hub, Hugging Face, Ollama, or the configured registry. Customer documents are not part of these downloads. |
@@ -271,7 +272,9 @@ The iQor MCP wrapper and existing UI are not present in this repository, so this
 - `.gitignore`: defense-in-depth exclusion for explicitly named iQor retrieval captures.
 - `DOCKER.md`: safe stop and explicit destructive reset documentation.
 - `core/services/document_service.py`: enforce `min_score` after final scoring.
+- `core/routes/logs.py`: avoid the historical Morphik log proxy when telemetry is disabled.
 - `core/tests/unit/test_docker_lifecycle.py`: lifecycle and installer guards.
+- `core/tests/unit/test_logs_no_egress.py`: historical-log no-egress test.
 - `core/tests/integration/test_docker_postgres_persistence.py` and `scripts/test_postgres_persistence.sh`: container
   recreation test.
 - `core/tests/unit/test_ingestion_service_metadata_update.py`: identity, metadata, status, and re-index queue test.
@@ -307,6 +310,7 @@ Run the tests that passed during this audit:
 LITELLM_LOCAL_MODEL_COST_MAP=True \
   .venv/bin/pytest -q core/tests/unit/test_retrieval_contract.py
 .venv/bin/pytest -q core/tests/unit/test_iqor_retrieval_script.py
+.venv/bin/pytest -q core/tests/unit/test_logs_no_egress.py
 .venv/bin/pytest -q sdks/python/morphik/tests/test_document_status.py
 ```
 

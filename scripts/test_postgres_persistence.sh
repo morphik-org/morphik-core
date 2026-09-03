@@ -4,16 +4,10 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 COMPOSE_FILE="$REPO_DIR/docker-compose.run.yml"
-TEST_PROJECT="${MORPHIK_PERSISTENCE_TEST_PROJECT:-morphik-persistence-test-$$}"
+TEST_PROJECT="morphik-persistence-test-$$-${RANDOM}"
+TEST_VOLUME="${TEST_PROJECT}_postgres_data"
+TEST_NETWORK="${TEST_PROJECT}_morphik-network"
 export MORPHIK_ENV_FILE="${MORPHIK_ENV_FILE:-/dev/null}"
-
-case "$TEST_PROJECT" in
-    morphik-persistence-test-*) ;;
-    *)
-        echo "Test project name must start with morphik-persistence-test-." >&2
-        exit 2
-        ;;
-esac
 
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker is required." >&2
@@ -22,6 +16,13 @@ fi
 if ! docker info >/dev/null 2>&1; then
     echo "Docker is installed, but the daemon is not running." >&2
     exit 1
+fi
+
+if docker volume inspect "$TEST_VOLUME" >/dev/null 2>&1 || \
+    docker network inspect "$TEST_NETWORK" >/dev/null 2>&1 || \
+    docker ps -aq --filter "label=com.docker.compose.project=$TEST_PROJECT" | grep -q .; then
+    echo "Refusing to reuse existing Docker resources for test project $TEST_PROJECT." >&2
+    exit 2
 fi
 
 compose=(docker compose --project-name "$TEST_PROJECT" --project-directory "$REPO_DIR" -f "$COMPOSE_FILE")
@@ -46,7 +47,6 @@ wait_for_postgres() {
     return 1
 }
 
-cleanup
 "${compose[@]}" up -d postgres
 wait_for_postgres
 
