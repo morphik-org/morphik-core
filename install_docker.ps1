@@ -175,7 +175,10 @@ function Ensure-EnvFile {
     "JWT_SECRET_KEY=$jwt",
     "",
     "# Local URI password for secure URI generation (required for creating connection URIs)",
-    "LOCAL_URI_PASSWORD="
+    "LOCAL_URI_PASSWORD=",
+    "",
+    "# Prevent LiteLLM from downloading its model-price map at process startup.",
+    "LITELLM_LOCAL_MODEL_COST_MAP=True"
   ) -join [Environment]::NewLine
   Set-Content -Path .env -Value $envContent
 
@@ -368,12 +371,6 @@ function Get-ApiPortFromToml {
   return $port
 }
 
-function Update-Port-Mapping($apiPort) {
-  $composeContent = Get-Content $COMPOSE -Raw
-  $composeContent = $composeContent -replace '"8000:8000"', '"{0}:{0}"' -f $apiPort
-  [System.IO.File]::WriteAllText($COMPOSE, $composeContent, (New-Object System.Text.UTF8Encoding($false)))
-}
-
 function Maybe-Install-UI($apiPort) {
   Write-Host ""; Write-Info "Morphik includes an optional Admin UI."
   $ans = Read-Host "Would you like to install the Admin UI? (y/N)"
@@ -403,9 +400,10 @@ function Maybe-Install-UI($apiPort) {
 
 function Start-Stack($apiPort, $ui) {
   Write-Step "Starting the Morphik stack... (first run can take a few minutes)"
+  $env:MORPHIK_API_PORT = $apiPort
   $args = @('-f', $COMPOSE)
   if ($ui) { $args += @('--profile','ui') }
-  docker compose @args up -d
+  docker compose @args up -d --remove-orphans
   Write-Ok "Morphik has been started!"
   Write-Info ("Health check: http://localhost:{0}/health" -f $apiPort)
   Write-Info ("API docs:     http://localhost:{0}/docs"   -f $apiPort)
@@ -436,13 +434,8 @@ function Start-Stack($apiPort, $ui) {
     "  if (`$p) { `$desired = `$p }",
     "}",
     "",
-    "# Update port mapping in compose file if needed",
-    "`$compose = Get-Content 'docker-compose.run.yml' -Raw",
-    "if (`$compose -match '`"(\\d+):(\\d+)`"') {",
-    "  `$current = `$Matches[1]",
-    "  if (`$current -ne `$desired) {",
-    "    `$compose = `$compose -replace `"`$(`$current`):`$(`$current`)`", `"`$(`$desired`):`$(`$desired`)`"",
-    "    Set-Content 'docker-compose.run.yml' -Value `$compose  } }",
+    "# Pass the configured port to Compose without rewriting the compose file",
+    "`$env:MORPHIK_API_PORT = `$desired",
     "",
     "# Warn if multimodal embeddings disabled",
     "if (Test-Path 'morphik.toml') {",
@@ -458,7 +451,7 @@ function Start-Stack($apiPort, $ui) {
     "",
     "`$args = @('-f','docker-compose.run.yml')",
     "if (`$ui) { `$args += @('--profile','ui') }",
-    "docker compose @args up -d",
+    "docker compose @args up -d --remove-orphans",
     "Write-Host `"Morphik is running on http://localhost:`$(`$desired)`""
   ) -join [Environment]::NewLine
   Set-Content -Path 'start-morphik.ps1' -Value $start }
@@ -471,24 +464,10 @@ function Start-Stack($apiPort, $ui) {
     "  Write-Error 'docker-compose.run.yml not found. Run this script from your Morphik install directory.'",
     "}",
     "",
-    "`$profiles = @()",
-    "if (Test-Path '.env') {",
-    "  `$envLines = Get-Content .env",
-    "  `$match = `$envLines | Select-String '^COMPOSE_PROFILES=' | Select-Object -First 1",
-    "  if (`$match) {",
-    "    `$value = `$envLines[`$match.LineNumber - 1].Split('=')[1]",
-    "    `$value.Split(',') | ForEach-Object {",
-    "      `$p = `$_.Trim()",
-    "      if (`$p) { `$profiles += @('--profile', `$p) }",
-    "    }",
-    "  } elseif (`$envLines | Select-String 'UI_INSTALLED=true') {",
-    "    `$profiles += @('--profile','ui')",
-    "  }",
-    "}",
-    "",
-    "`$args = @('-f','docker-compose.run.yml') + `$profiles + @('down','--volumes','--remove-orphans')",
+    "# Activate every profile so optional containers stop; preserve all named volumes.",
+    "`$args = @('-f','docker-compose.run.yml','--profile','*','down','--remove-orphans')",
     "docker compose @args",
-    "Write-Host 'Morphik services stopped and cleaned up.'"
+    "Write-Host 'Morphik services stopped. Persistent named volumes were preserved.'"
   ) -join [Environment]::NewLine
   Set-Content -Path 'stop-morphik.ps1' -Value $stop
 
@@ -515,7 +494,6 @@ Update-GPU-Options
 Enable-Config-Mount
 
 $apiPort = Get-ApiPortFromToml
-Update-Port-Mapping -apiPort $apiPort
 
 $uiInstalled = Maybe-Install-UI -apiPort $apiPort
 Start-Stack -apiPort $apiPort -ui $uiInstalled
@@ -523,7 +501,7 @@ Start-Stack -apiPort $apiPort -ui $uiInstalled
 Write-Host ""
 Write-Ok "Management commands:"
 Write-Info "View logs:    docker compose -f $COMPOSE $(if($uiInstalled){'--profile ui '})logs -f"
-Write-Info "Stop services: ./stop-morphik.ps1   (runs docker compose down --volumes --remove-orphans)"
+Write-Info "Stop services: ./stop-morphik.ps1   (preserves PostgreSQL and other named volumes)"
 Write-Info "Restart:      ./start-morphik.ps1"
 
 Write-Host ""
