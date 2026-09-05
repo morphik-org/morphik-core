@@ -140,7 +140,8 @@ arq_max_jobs = 1  # Maximum concurrent jobs for ARQ worker
 colpali_store_batch_size = 16  # Batch size for ColPali vector storage
 
 [pdf]
-colpali_pdf_dpi = 150  # DPI for PDF to image conversion in ColPali processing
+# colpali_pdf_dpi = 150  # DPI for PDF to image conversion in ColPali processing
+colpali_pdf_dpi = 300 # For clarity when using small colpali model
 
 [morphik]
 enable_colpali = true
@@ -151,6 +152,18 @@ api_domain = "api.morphik.ai"  # API domain for cloud URIs
 morphik_embedding_api_domain = ["http://localhost:6000"]
 colpali_mode = "local" # "off", "local", or "api"
 parser_mode = "local" # "local" or "api" - "api" offloads parsing to GPU servers
+
+# --- ColPali Model Selection ---
+# 1. SmolVLM (Lightweight & Fast - Uses ColIdefics3)
+#    - vidore/colSmol-256M
+#    - vidore/colSmol-500M
+# 2. Qwen 2.5-VL (High Performance - Uses ColQwen2_5)
+#    - vidore/colqwen2.5-v0.1
+# 3. Standard ColPali (PaliGemma - Uses ColPali)
+#    - vidore/colpali-v1.2-merged
+#    - vidore/colpali-v1.3
+# Default if not set: "vidore/colpali-v1.2-merged"
+colpali_model_name="vidore/colpali-v1.2-merged"
 
 [pdf_viewer]
 frontend_url = "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf" # "http://localhost:3000/api/pdf" # "https://morphik.ai/api/pdf"
