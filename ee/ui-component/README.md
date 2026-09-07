@@ -1,4 +1,4 @@
-# @morphik/ui
+# Morphik UI Component
 
 A modern React-based UI for Morphik, built with Next.js and Tailwind CSS. This component provides a user-friendly interface for:
 
@@ -7,61 +7,25 @@ A modern React-based UI for Morphik, built with Next.js and Tailwind CSS. This c
 - Real-time document processing feedback
 - Query testing and prototyping
 
-## Installation
+## Development Quick Start
+
+The UI component is a private Next.js app in this repository. It is not published as an `@morphik/ui` package.
+Run these commands from `ee/ui-component`:
 
 ```bash
-npm install @morphik/ui
+npm install
+npm run dev
 ```
 
-## Usage
+Open [http://localhost:3000](http://localhost:3000) and connect to a running local Morphik server with `localhost:8000`.
 
-```jsx
-import { MorphikUI } from "@morphik/ui";
-
-export default function YourApp() {
-  return (
-    <MorphikUI
-      connectionUri="your-connection-uri"
-      apiBaseUrl="http://your-api-base-url"
-      isReadOnlyUri={false}
-      onUriChange={uri => console.log("URI changed:", uri)}
-    />
-  );
-}
-```
-
-## Props
-
-| Prop            | Type                    | Default                   | Description                            |
-| --------------- | ----------------------- | ------------------------- | -------------------------------------- |
-| `connectionUri` | `string`                | `undefined`               | Connection URI for Morphik API         |
-| `apiBaseUrl`    | `string`                | `"http://localhost:8000"` | Base URL for API requests              |
-| `isReadOnlyUri` | `boolean`               | `false`                   | Controls whether the URI can be edited |
-| `onUriChange`   | `(uri: string) => void` | `undefined`               | Callback when URI is changed           |
+The routed app lives under `app/`; a reusable dashboard component also exists at `components/MorphikUI.tsx`. Check `components/types.ts` for the supported internal prop contract before embedding it elsewhere in this app.
 
 ## Prerequisites
 
 - Node.js 18 or later
 - npm or yarn package manager
 - A running Morphik server
-
-## Development Quick Start
-
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Start the development server:
-
-```bash
-npm run dev
-```
-
-3. Open [http://localhost:3000](http://localhost:3000) in your browser
-
-4. Connect to your Morphik server using a URI from the `/local/generate_uri` endpoint
 
 ## Features
 
@@ -82,7 +46,7 @@ npm run dev
 - **Connection Management**
   - Easy server connection
   - Connection status indicator
-  - Automatic reconnection
+  - Cloud connection persistence and automatic local connection clearing on restart
   - Error handling
 
 ## Development
@@ -110,6 +74,8 @@ ui-component/
 npm run build
 npm start
 ```
+
+There is no `build:package` script in this package.
 
 ## Contributing
 
