@@ -4,10 +4,10 @@ Example script demonstrating basic usage of the Morphik SDK.
 This can be run to verify that the SDK is working correctly.
 
 Usage:
-    python example_usage.py [--async]
+    uv run python example_usage.py [--run-async]
 
 Options:
-    --async    Run the example using the async client
+    --run-async    Run the example using the async client
 """
 
 import argparse
