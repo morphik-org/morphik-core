@@ -191,7 +191,6 @@ LABEL org.opencontainers.image.title="Morphik Core"
 LABEL org.opencontainers.image.description="Morphik Core - A powerful document processing and retrieval system"
 LABEL org.opencontainers.image.source="https://github.com/morphik-org/morphik-core"
 LABEL org.opencontainers.image.version="1.0.0"
-LABEL org.opencontainers.image.licenses="MIT"
 
 # Expose port
 EXPOSE 8000

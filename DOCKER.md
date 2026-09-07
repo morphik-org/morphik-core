@@ -189,4 +189,4 @@ For issues and feature requests:
 
 ## Repository information
 
-- License: MIT
+- License: The Docker image bundles components under multiple licenses. Review [LICENSE](./LICENSE), [ee/LICENSE](./ee/LICENSE), and bundled package metadata before production use.
