@@ -157,6 +157,18 @@ class TestNormalizeMetadata:
         with pytest.raises(TypedMetadataError, match="cannot store NaN or infinite"):
             _normalize_values({"value": float("inf")}, {"value": "number"})
 
+    def test_number_coercion_rejects_nan_and_infinity_strings(self):
+        """Non-finite values supplied as strings must be rejected too.
+
+        Regression: the string branch parsed "inf"/"nan" (and overflowing
+        literals like "1e400") into non-finite floats without the finite check
+        applied to numeric inputs, letting them through to storage where they
+        break JSON serialization and Postgres double precision columns.
+        """
+        for token in ("inf", "-inf", "Infinity", "nan", "1e400"):
+            with pytest.raises(TypedMetadataError, match="cannot store NaN or infinite"):
+                _normalize_values({"value": token}, {"value": "number"})
+
     def test_decimal_coercion(self):
         """Test decimal coercion from various types."""
         metadata = {

@@ -238,9 +238,12 @@ def _coerce_number(value: Any, field: str) -> int | float:
         try:
             if all(ch.isdigit() or ch in {"+", "-", "_"} for ch in text.replace("_", "")) and "." not in text:
                 return int(text.replace("_", ""))
-            return float(text)
+            parsed = float(text)
         except ValueError as exc:  # noqa: BLE001
             raise TypedMetadataError(f"Metadata field '{field}' expects a numeric value.") from exc
+        if math.isnan(parsed) or math.isinf(parsed):
+            raise TypedMetadataError(f"Metadata field '{field}' cannot store NaN or infinite values.")
+        return parsed
 
     raise TypedMetadataError(f"Metadata field '{field}' expects a numeric value.")
 
