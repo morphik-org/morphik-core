@@ -25,6 +25,7 @@ from core.limits_utils import check_and_increment_limits, estimate_pages_by_char
 from core.models.auth import AuthContext
 from core.models.chunk import Chunk
 from core.parser.morphik_parser import MorphikParser
+from core.redis_settings import build_redis_settings
 from core.services.ingestion_service import IngestionService, PdfConversionError
 from core.services.telemetry import TelemetryService
 from core.services.v2_document_service import V2DocumentService
@@ -2007,32 +2008,15 @@ async def shutdown(ctx):
 
 def redis_settings_from_env() -> RedisSettings:
     """
-    Create RedisSettings from REDIS_URL for the ARQ worker.
+    Build ARQ worker Redis settings from the shared Morphik settings helper.
 
-    Parses the full DSN (host, port, db, username/password, TLS) so workers on
-    other machines can point at an authenticated/managed Redis (e.g.
-    ElastiCache). The old host/port-only construction silently dropped
-    credentials from the URL.
+    The helper parses the full DSN for managed Redis deployments while preserving
+    the legacy host/port fallback for the default local URL.
 
     Returns:
         RedisSettings configured for Redis connection with optimized performance
     """
-    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-
-    # Fall back to explicit host/port settings when the URL is the localhost
-    # default but morphik.toml overrides host and/or port separately.
-    if settings.REDIS_URL == "redis://localhost:6379/0" and (
-        settings.REDIS_HOST != "localhost" or settings.REDIS_PORT != 6379
-    ):
-        redis_settings.host = settings.REDIS_HOST
-        redis_settings.port = settings.REDIS_PORT
-
-    # Use ARQ's supported parameters with optimized values for stability
-    # For high-volume ingestion (100+ documents), these settings help prevent timeouts
-    redis_settings.conn_timeout = 5  # Increased connection timeout (seconds)
-    redis_settings.conn_retries = 15  # More retries for transient connection issues
-    redis_settings.conn_retry_delay = 1  # Quick retry delay (seconds)
-    return redis_settings
+    return build_redis_settings(settings)
 
 
 # ARQ Worker Settings
