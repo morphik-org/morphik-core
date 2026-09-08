@@ -1,5 +1,6 @@
 import json
 import logging
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional
 
@@ -7,6 +8,7 @@ from sqlalchemy import desc, select, text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from core.config import get_settings
 from core.utils.folder_utils import normalize_folder_path
@@ -172,7 +174,29 @@ class PostgresDatabase:
             connect_args={"server_settings": {"statement_timeout": "30000"}},  # 30 second timeout
         )
         self.async_session = sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
+        # Ingestion holds a lock across parsing and embedding. Keep those connections
+        # out of the query pool so busy workers cannot exhaust it and deadlock writes.
+        self._ingestion_lock_engine = create_async_engine(uri, poolclass=NullPool)
         self._initialized = False
+
+    @asynccontextmanager
+    async def document_ingestion_lock(self, document_id: str, *, wait: bool = False):
+        """Serialize content replacement and all worker writes for one document.
+
+        Transaction-scoped advisory locks are released on cancellation/disconnect,
+        with no expiring lease that could admit another writer during a long ingest.
+        Callers must read the document/revision *after* acquiring the lock.
+        """
+        async with self._ingestion_lock_engine.begin() as connection:
+            key = {"key": f"document-ingestion:{document_id}"}
+            if wait:
+                await connection.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), key)
+                acquired = True
+            else:
+                acquired = await connection.scalar(
+                    text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"), key
+                )
+            yield acquired
 
     async def initialize(self):
         """Initialize database tables and indexes."""
@@ -296,7 +320,9 @@ class PostgresDatabase:
             logger.error(f"Error storing document metadata: {str(e)}")
             return False
 
-    async def get_document(self, document_id: str, auth: AuthContext) -> Optional[Document]:
+    async def get_document(
+        self, document_id: str, auth: AuthContext, *, raise_on_error: bool = False
+    ) -> Optional[Document]:
         """Retrieve document metadata by ID if user has access."""
         try:
             async with self.async_session() as session:
@@ -320,6 +346,8 @@ class PostgresDatabase:
 
         except Exception as e:
             logger.error(f"Error retrieving document metadata: {str(e)}")
+            if raise_on_error:
+                raise
             return None
 
     async def get_document_by_filename(

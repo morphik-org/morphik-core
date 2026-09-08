@@ -2,6 +2,8 @@
 
 Audit baseline: `origin/main` at `8c51b8d` on 2026-09-02.
 
+The September 8 content-update follow-up is documented in [Document update scheduling](document-updates.md).
+
 This document separates Morphik Core behavior from iQor's MCP wrapper and UI. It also records which findings have an
 executable test. A code path alone is not counted as a passing deployment check.
 
@@ -14,8 +16,8 @@ executable test. A code path alone is not counted as a passing deployment check.
 | Start rewrites Compose state and fixed container names collide | Implemented; static verification passed | The API port now uses `MORPHIK_API_PORT`; production services use Compose project-scoped names; static lifecycle tests and `docker compose config` pass. | Morphik Core |
 | Documents survive PostgreSQL container recreation | Verified in Docker | `scripts/test_postgres_persistence.sh` inserts a document row, recreates PostgreSQL, and checks the original ID and metadata. | Morphik Core / iQor infrastructure |
 | Text update preserves document identity and existing metadata | Verified in a unit test | `test_queued_text_update_preserves_identity_metadata_and_queues_reindex` passes. | Morphik Core |
-| Text update queues changed content for re-indexing and exposes processing status | Partially verified | The unit test proves the replacement object and `process_ingestion_job` payload use the same document ID and that the returned status is `processing`. Existing SDK status tests pass. No end-to-end test in this audit proves the changed text is retrievable after the worker finishes. | Morphik Core |
-| Text update prevents lost updates | Fails | There is no content revision precondition. Every update uses ARQ job ID `ingest:{document_id}`. A second update can receive a successful API response while `enqueue_job` returns `None`, and the first queued job may refer to an object the second update deleted. | Morphik Core, then iQor caller adoption |
+| Text update queues changed content for re-indexing and exposes processing status | Verified with synthetic standard text | The September 8 runtime proof uses the real API, worker, embeddings, and pgvector. Corrected downloads and retrieval survive container recreation. See [update verification](document-updates.md#verification). | Morphik Core |
+| Content updates and ingestion workers cannot overwrite a newer accepted revision | Implemented and integration tested | Persisted revisions give updates distinct job IDs. API and worker share a document lock; active processing returns 409, queued superseded jobs skip all writes. Client editing preconditions remain outside this change. See [update scheduling](document-updates.md). | Morphik Core, then iQor caller adoption |
 | `min_score` affects retrieval | Fixed and unit verified in this branch | `test_min_score_zero_keeps_zero_and_positive_scores` and `test_min_score_filters_on_the_final_score` pass. | Morphik Core |
 | Work item 47490 returns five distinct QA backlog items | Not verified | The repository has no iQor corpus, query text, auth token, or captured response. `scripts/verify_iqor_retrieval.sh` captures and validates the response on iQor's deployment. | iQor MCP wrapper / iQor acceptance test |
 | Default Docker config keeps document and query data on premises | Fails by default | `morphik.docker.toml` selects OpenAI for completion and standard embeddings. Telemetry is enabled unless `TELEMETRY=false`. See the data boundary below. | Joint configuration decision |
