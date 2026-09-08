@@ -2,6 +2,7 @@
 
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -30,6 +31,10 @@ class FakeDatabase:
     def __init__(self, doc: Document):
         self.doc = doc
         self.update_calls = []
+
+    @asynccontextmanager
+    async def document_ingestion_lock(self, document_id, *, wait=False):
+        yield True
 
     async def get_document(self, document_id: str, auth: AuthContext):
         if document_id == self.doc.external_id:
@@ -294,4 +299,5 @@ async def test_queued_text_update_preserves_identity_metadata_and_queues_reindex
     assert queued["function_name"] == "process_ingestion_job"
     assert queued["payload"]["document_id"] == "doc-1"
     assert queued["payload"]["file_key"] == "ingest_uploads/replacement/report.txt"
-    assert queued["payload"]["_job_id"] == "ingest:doc-1"
+    assert queued["payload"]["_job_id"] == "ingest:doc-1:1"
+    assert queued["payload"]["ingestion_revision"] == 1

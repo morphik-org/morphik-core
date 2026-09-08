@@ -428,9 +428,11 @@ class IngestionService:
         folder_path: Optional[str] = None,
         folder_leaf: Optional[str] = None,
         end_user_id: Optional[str] = None,
+        ingestion_revision: int = 0,
     ) -> Dict[str, Any]:
         return {
-            "_job_id": f"ingest:{document_id}",
+            "_job_id": f"ingest:{document_id}:{ingestion_revision}",
+            "ingestion_revision": ingestion_revision,
             "_expires": timedelta(days=7),
             "document_id": document_id,
             "file_key": file_key,
@@ -563,6 +565,38 @@ class IngestionService:
         use_colpali: Optional[bool] = False,
         external_id: Optional[str] = None,
     ) -> Document:
+        document_id = external_id or str(uuid.uuid4())
+        async with self.db.document_ingestion_lock(document_id) as acquired:
+            if not acquired:
+                raise HTTPException(status_code=409, detail="Document ingestion is already in progress; retry later")
+            return await self._ingest_file_content_locked(
+                file_content_bytes,
+                filename,
+                content_type,
+                metadata,
+                auth,
+                redis,
+                metadata_types,
+                folder_name,
+                end_user_id,
+                use_colpali,
+                document_id,
+            )
+
+    async def _ingest_file_content_locked(
+        self,
+        file_content_bytes: bytes,
+        filename: str,
+        content_type: Optional[str],
+        metadata: Optional[Dict[str, Any]],
+        auth: AuthContext,
+        redis: arq.ArqRedis,
+        metadata_types: Optional[Dict[str, str]],
+        folder_name: Optional[Union[str, List[str]]],
+        end_user_id: Optional[str],
+        use_colpali: Optional[bool],
+        external_id: str,
+    ) -> Document:
         """
         Ingests file content from bytes. Saves to storage, creates document record,
         and then enqueues a background job for chunking and embedding.
@@ -594,6 +628,7 @@ class IngestionService:
             folder_path=folder_path,
         )
         doc.system_metadata = self._reset_processing_metadata(doc.system_metadata)
+        doc.system_metadata["ingestion_revision"] = 0
 
         await self._verify_ingest_and_storage_limits(auth, len(file_content_bytes), doc.external_id)
 
@@ -685,7 +720,7 @@ class IngestionService:
             )
             job = await redis.enqueue_job("process_ingestion_job", **job_payload)
             if job is None:
-                logger.info("Connector file ingestion job already queued (doc_id=%s)", doc.external_id)
+                raise RuntimeError("Ingestion job ID is already present in Redis; no new job was queued")
             else:
                 logger.info(
                     "Connector file ingestion job queued with ID: %s for document: %s", job.job_id, doc.external_id
@@ -712,6 +747,33 @@ class IngestionService:
         metadata: Optional[Dict[str, Any]] = None,
         metadata_types: Optional[Dict[str, str]] = None,
         use_colpali: Optional[bool] = None,
+    ) -> Optional[Document]:
+        async with self.db.document_ingestion_lock(document_id) as acquired:
+            if not acquired:
+                raise HTTPException(status_code=409, detail="Document ingestion is already in progress; retry later")
+            return await self._queue_document_update_locked(
+                document_id,
+                auth,
+                redis,
+                content,
+                file,
+                filename,
+                metadata,
+                metadata_types,
+                use_colpali,
+            )
+
+    async def _queue_document_update_locked(
+        self,
+        document_id: str,
+        auth: AuthContext,
+        redis: arq.ArqRedis,
+        content: Optional[str],
+        file: Optional[UploadFile],
+        filename: Optional[str],
+        metadata: Optional[Dict[str, Any]],
+        metadata_types: Optional[Dict[str, str]],
+        use_colpali: Optional[bool],
     ) -> Optional[Document]:
         """
         Update a document by replacing its content and re-queueing ingestion.
@@ -781,6 +843,7 @@ class IngestionService:
             raise HTTPException(status_code=500, detail=f"Failed to upload updated file to storage: {str(e)}")
 
         doc.system_metadata = self._reset_processing_metadata(doc.system_metadata)
+        doc.system_metadata["ingestion_revision"] = int(doc.system_metadata.get("ingestion_revision", 0)) + 1
 
         updates = {
             "metadata": doc.metadata,
@@ -832,10 +895,11 @@ class IngestionService:
                 folder_path=doc.folder_path,
                 folder_leaf=doc.folder_name,
                 end_user_id=doc.end_user_id,
+                ingestion_revision=doc.system_metadata["ingestion_revision"],
             )
             job = await redis.enqueue_job("process_ingestion_job", **job_payload)
             if job is None:
-                logger.info("Update ingestion job already queued (doc_id=%s)", doc.external_id)
+                raise RuntimeError("Update job ID is already present in Redis; no new job was queued")
             else:
                 logger.info("Update ingestion job queued (job_id=%s, doc=%s)", job.job_id, doc.external_id)
         except Exception as e:

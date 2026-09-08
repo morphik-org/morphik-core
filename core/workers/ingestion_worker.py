@@ -15,6 +15,7 @@ from arq.connections import RedisSettings
 from arq.worker import Retry
 from opentelemetry.trace import Status, StatusCode, get_current_span
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from core.config import get_settings
 from core.database.postgres_database import PostgresDatabase
@@ -45,7 +46,8 @@ from core.vector_store.pgvector_store import PGVectorStore
 # library can never break error classification. Used to recognise S3 / turbopuffer
 # backpressure (throttling, 5xx, connection blips) as transient-and-retryable.
 try:
-    from botocore.exceptions import BotoCoreError, ClientError as BotoClientError
+    from botocore.exceptions import BotoCoreError
+    from botocore.exceptions import ClientError as BotoClientError
 except Exception:  # noqa: BLE001
     BotoCoreError = BotoClientError = None
 
@@ -458,6 +460,65 @@ async def process_ingestion_job(
     folder_path: Optional[str] = None,
     folder_leaf: Optional[str] = None,
     end_user_id: Optional[str] = None,
+    ingestion_revision: int = 0,
+) -> Dict[str, Any]:
+    """Run only the current revision, holding the document lock through every write.
+
+    Legacy queue messages have revision zero. Checking their storage location too
+    prevents an old message from reading a file replaced before this rollout.
+    """
+    database = ctx["database"]
+    auth = AuthContext(
+        user_id=auth_dict.get("user_id") or auth_dict.get("entity_id", ""),
+        app_id=auth_dict.get("app_id"),
+    )
+    try:
+        async with database.document_ingestion_lock(document_id, wait=True):
+            doc = await database.get_document(document_id, auth, raise_on_error=True)
+            if (
+                doc is None
+                or int(doc.system_metadata.get("ingestion_revision", 0)) != ingestion_revision
+                or doc.storage_info.get("key") != file_key
+                or doc.storage_info.get("bucket") != bucket
+            ):
+                logger.info("Skipping superseded ingestion job for %s revision %s", document_id, ingestion_revision)
+                return {"document_id": document_id, "status": "superseded"}
+            if doc.system_metadata.get("status") == "completed":
+                return {"document_id": document_id, "status": "completed"}
+            return await _process_ingestion_job_locked(
+                ctx,
+                document_id,
+                file_key,
+                bucket,
+                original_filename,
+                content_type,
+                auth_dict,
+                use_colpali,
+                folder_name,
+                folder_path,
+                folder_leaf,
+                end_user_id,
+                ingestion_revision,
+            )
+    except (SQLAlchemyError, OSError, asyncio.TimeoutError) as exc:
+        # A failed lock/read is not evidence that this revision was superseded.
+        raise Retry(defer=30) from exc
+
+
+async def _process_ingestion_job_locked(
+    ctx: Dict[str, Any],
+    document_id: str,
+    file_key: str,
+    bucket: str,
+    original_filename: str,
+    content_type: str,
+    auth_dict: Dict[str, Any],
+    use_colpali: bool,
+    folder_name: Optional[str] = None,
+    folder_path: Optional[str] = None,
+    folder_leaf: Optional[str] = None,
+    end_user_id: Optional[str] = None,
+    ingestion_revision: int = 0,
 ) -> Dict[str, Any]:
     """
     Background worker task that processes file ingestion jobs.
@@ -1088,16 +1149,13 @@ async def process_ingestion_job(
             # duplicate; deletion is by document_id, so it works even though
             # chunk_ids is only persisted on success.
             is_retry_attempt = int(ctx.get("job_try") or 1) > 1
-            if doc.chunk_ids or is_retry_attempt:
+            if doc.chunk_ids or is_retry_attempt or ingestion_revision > 0:
                 logger.info(
                     "Cleanup before storing for %s (%s): deleting existing chunks (%d tracked)",
                     document_id,
                     "arq retry" if is_retry_attempt and not doc.chunk_ids else "re-ingestion",
                     len(doc.chunk_ids),
                 )
-                deletion_tasks = []
-                if hasattr(vector_store, "delete_chunks_by_document_id"):
-                    deletion_tasks.append(vector_store.delete_chunks_by_document_id(document_id, auth.app_id))
                 # Always try to clean colpali store — the doc may have been ingested
                 # with colpali previously even if this re-ingestion doesn't use it
                 cleanup_colpali_store = colpali_vector_store
@@ -1105,23 +1163,25 @@ async def process_ingestion_job(
                     try:
                         cleanup_colpali_store = await _get_worker_colpali_store(database)
                     except Exception as e:
-                        logger.warning(f"Could not init colpali store for cleanup: {e}")
+                        raise RuntimeError("Could not initialize ColPali store to remove old chunks") from e
+                deletion_tasks = []
+                if hasattr(vector_store, "delete_chunks_by_document_id"):
+                    deletion_tasks.append(vector_store.delete_chunks_by_document_id(document_id, auth.app_id))
                 if cleanup_colpali_store and hasattr(cleanup_colpali_store, "delete_chunks_by_document_id"):
                     deletion_tasks.append(cleanup_colpali_store.delete_chunks_by_document_id(document_id, auth.app_id))
                 chunk_v2_store = ctx.get("chunk_v2_store")
                 if chunk_v2_store and auth.app_id and hasattr(chunk_v2_store, "delete_chunks_by_document_id"):
                     deletion_tasks.append(chunk_v2_store.delete_chunks_by_document_id(document_id, auth))
                 if deletion_tasks:
-                    try:
-                        results = await asyncio.wait_for(
-                            asyncio.gather(*deletion_tasks, return_exceptions=True),
-                            timeout=30,
-                        )
-                        for i, result in enumerate(results):
-                            if isinstance(result, Exception):
-                                logger.error(f"Error deleting old chunks (task {i}): {result}")
-                    except asyncio.TimeoutError:
-                        logger.error(f"Timeout deleting old chunks for {document_id}, proceeding anyway")
+                    results = await asyncio.wait_for(
+                        asyncio.gather(*deletion_tasks, return_exceptions=True),
+                        timeout=30,
+                    )
+                    for result in results:
+                        if isinstance(result, BaseException):
+                            raise result
+                        if result is not True:
+                            raise RuntimeError("Failed to delete old chunks; refusing to complete ingestion")
 
             # 12. Handle ColPali embeddings
             chunk_objects_multivector = []
@@ -1375,6 +1435,7 @@ async def process_ingestion_job(
 
             # Final update to mark as completed
             completion_update = {
+                "indexed_revision": ingestion_revision,
                 "page_count": final_page_count,
                 "status": "completed",
                 "use_colpali": using_colpali,
@@ -1386,9 +1447,11 @@ async def process_ingestion_job(
             if no_content_extracted:
                 completion_update["content_extraction_status"] = "no_content_extracted"
                 completion_update["content_extraction_warning"] = content_extraction_warning
-            await ingestion_service.db.update_document(
+            completed = await ingestion_service.db.update_document(
                 document_id=document_id, updates={"system_metadata": completion_update}, auth=auth
             )
+            if not completed:
+                raise RuntimeError("Failed to persist completed ingestion status")
 
             # 13. Log successful completion
             logger.info(f"Successfully completed ingestion for {original_filename}, document ID: {doc.external_id}")
