@@ -70,6 +70,26 @@ def extract_text(path: Path) -> str:
                 if sum(len(c) for c in chunks) >= MAX_TEXT:
                     break
             return "\n".join(chunks)[:MAX_TEXT]
+        if suffix in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}:
+            try:
+                from rapidocr_onnxruntime import RapidOCR
+
+                items = RapidOCR()(str(path))
+                if not items:
+                    return ""
+                lines = []
+                for item in items:
+                    if isinstance(item, dict):
+                        text = item.get("text") or item.get("content")
+                        if text:
+                            lines.append(str(text))
+                    elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                        text = item[1]
+                        if isinstance(text, str) and text.strip():
+                            lines.append(text)
+                return "\n".join(lines)[:MAX_TEXT]
+            except Exception as exc:
+                return f"[OCR extraction error: {type(exc).__name__}: {exc}]"
     except Exception as exc:
         return f"[Extraction error: {type(exc).__name__}: {exc}]"
     return ""
@@ -108,7 +128,64 @@ def doc_type(path: Path) -> str:
         ".png": "Image",
         ".jpg": "Image",
         ".jpeg": "Image",
+        ".gif": "Image",
+        ".bmp": "Image",
+        ".tif": "Image",
+        ".tiff": "Image",
     }.get(suffix, suffix[1:].upper() if suffix else "File")
+
+
+def extract_author(path: Path, text: str) -> str:
+    candidates: list[str] = []
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".pdf":
+            from pypdf import PdfReader
+
+            meta = PdfReader(str(path)).metadata or {}
+            for key in ("Author", "author", "creator", "Creator"):
+                value = meta.get(key)
+                if value:
+                    candidates.append(str(value).strip())
+    except Exception:
+        pass
+    try:
+        if suffix == ".docx":
+            from docx import Document
+
+            props = Document(str(path)).core_properties
+            for key in ("author", "last_modified_by"):
+                value = getattr(props, key, None)
+                if value:
+                    candidates.append(str(value).strip())
+    except Exception:
+        pass
+
+    known = [
+        "Nada Boris",
+        "Fran Casey",
+        "Lindsay Hutter",
+        "Kathie Miller",
+        "Trish Povlitz",
+        "Dr. Gloria Okereke",
+        "Goodwin Living",
+        "EEOC",
+        "VEC",
+    ]
+    for person in known:
+        if person.lower() in (text[:20000] + " " + path.name).lower():
+            candidates.append(person)
+
+    seen = []
+    result = []
+    for value in candidates:
+        for chunk in re.split(r"[;,/|]+", value):
+            cleaned = chunk.strip()
+            if not cleaned or cleaned in seen:
+                continue
+            seen.append(cleaned)
+            result.append(cleaned)
+    return ", ".join(result) if result else "Not specified"
 
 
 def classify(path: Path, text: str) -> tuple[str, str, str, str]:
@@ -218,6 +295,7 @@ def build(root: Path) -> None:
         stat = path.stat()
         extracted = extract_text(path)
         topic, means, participants, org = classify(path, extracted)
+        source_folder = relative.parent.as_posix() if relative.parent.as_posix() != "." else "root"
         text_file = ""
         if extracted:
             target = output_dir / safe_name(relative, index)
@@ -232,6 +310,9 @@ def build(root: Path) -> None:
             "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
             "type": doc_type(path),
             "size": stat.st_size,
+            "author": extract_author(path, extracted),
+            "source_folder": source_folder,
+            "document_family": relative.parent.name or "root",
             "topic": topic,
             "means": means,
             "participants": participants,
@@ -280,12 +361,13 @@ details{{background:#fff;border:1px solid #ddd;padding:10px;margin:8px 0}} summa
         index_rows.append(
             "<tr data-search=\"{search}\" data-topic=\"{data_topic}\" data-date=\"{date}\">"
             "<td>{id}</td><td>{date}</td><td><a href=\"{link}\">{name}</a><br><span class=\"muted\">{path}</span></td>"
-            "<td>{type}</td><td>{participants}</td><td>{topic}</td><td>{means}</td><td>{org}</td>"
+            "<td>{type}</td><td>{author}</td><td>{source_folder}</td><td>{participants}</td><td>{topic}</td><td>{means}</td><td>{org}</td>"
             "<td class=\"content\">{content}<br>{text_link}</td></tr>".format(
                 search=html.escape(" ".join(str(v) for v in r.values()), quote=True),
                 data_topic=html.escape(r["topic"], quote=True), id=r["id"], date=r["date"],
                 link=html.escape(r["link"], quote=True), name=html.escape(r["name"]),
                 path=html.escape(r["path"]), type=html.escape(r["type"]),
+                author=html.escape(r["author"]), source_folder=html.escape(r["source_folder"]),
                 participants=html.escape(r["participants"]), topic=html.escape(r["topic"]),
                 means=html.escape(r["means"]), org=html.escape(r["org"]),
                 content=html.escape(r["content"]),
@@ -299,7 +381,7 @@ details{{background:#fff;border:1px solid #ddd;padding:10px;margin:8px 0}} summa
 <div class="controls"><label>Search <input id="q" size="45" placeholder="name, participant, topic, content..."></label>
 <label>Topic <select id="topic"><option value="">All topics</option>{topics}</select></label>
 <label>Date order <select id="dateOrder"><option value="desc">Newest to oldest</option><option value="asc">Oldest to newest</option></select></label><span id="count"></span></div>
-<table id="docs"><thead><tr><th>ID</th><th>Date</th><th>Document</th><th>Type</th><th>Participants</th><th>Topic</th><th>Means</th><th>Org/entity</th><th>Content / retrieval</th></tr></thead>
+<table id="docs"><thead><tr><th>ID</th><th>Date</th><th>Document</th><th>Type</th><th>Author(s)</th><th>Folder</th><th>Participants</th><th>Topic</th><th>Means</th><th>Org/entity</th><th>Content / retrieval</th></tr></thead>
 <tbody>{"".join(index_rows)}</tbody></table>"""
     index_script = """<script>
 const body=document.querySelector('#docs tbody'),rows=[...body.querySelectorAll('tr')],q=document.querySelector('#q'),topic=document.querySelector('#topic'),dateOrder=document.querySelector('#dateOrder'),count=document.querySelector('#count');
