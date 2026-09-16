@@ -33,3 +33,18 @@ This script runs the same tools in the same order as the pre-commit hook, but on
 ### Configuration
 
 The tools are configured in the `pyproject.toml` file at the root of the project. This ensures consistent formatting regardless of how the tools are invoked.
+
+## Payroll PDF report
+
+`payroll_report.py` ingests ADP earnings-statement PDFs, extracts pay-period
+dates, payroll totals, selected tax fields, regular hours, and safe document
+metadata, then writes `documents.csv`, `payroll_summary.csv`, `report.html`,
+and `styles.css`.
+
+```bash
+python scripts/payroll_report.py --input "C:\path\to\payroll-pdfs" --output reports\payroll
+```
+
+The report excludes account, advice, and address details from its generated
+content. The parser uses the repository's existing PyMuPDF dependency and
+does not require pandas or a charting package.
