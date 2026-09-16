@@ -204,11 +204,41 @@ def yearly_hours(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     ]
 
 
+def monthly_hours(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    by_month: dict[str, list[float]] = defaultdict(list)
+    statement_counts: dict[str, int] = defaultdict(int)
+    for row in rows:
+        pay_date = str(row.get("pay_date") or "")
+        hours = row.get("regular_hours")
+        if len(pay_date) >= 7:
+            month = pay_date[:7]
+            statement_counts[month] += 1
+            if hours is not None:
+                by_month[month].append(float(hours))
+    months = sorted(statement_counts)
+    return [
+        {
+            "month": month,
+            "statement_count": statement_counts[month],
+            "hours_available_count": len(by_month.get(month, [])),
+            "regular_hours_total": round(sum(by_month.get(month, [])), 2),
+            "regular_hours_average": round(sum(by_month[month]) / len(by_month[month]), 2)
+            if by_month.get(month)
+            else None,
+            "regular_hours_min": min(by_month[month]) if by_month.get(month) else None,
+            "regular_hours_max": max(by_month[month]) if by_month.get(month) else None,
+            "status": "available" if by_month.get(month) else "no hours extracted",
+        }
+        for month in months
+    ]
+
+
 def write_report(path: Path, rows: list[dict[str, object]]) -> None:
     rows = sorted(rows, key=lambda row: str(row["pay_date"]))
     total_gross = sum(float(row["gross_pay"] or 0) for row in rows)
     total_net = sum(float(row["net_pay"] or 0) for row in rows)
     yearly = yearly_hours(rows)
+    monthly = monthly_hours(rows)
     yearly_rows = "".join(
         "<tr>"
         + "".join(
@@ -221,6 +251,18 @@ def write_report(path: Path, rows: list[dict[str, object]]) -> None:
         )
         + "</tr>"
         for item in yearly
+    )
+    monthly_rows = "".join(
+        "<tr>"
+        + "".join(
+            f"<td>{html.escape(str(item[field] if item[field] is not None else ''))}</td>"
+            for field in (
+                "month", "statement_count", "hours_available_count", "regular_hours_total",
+                "regular_hours_average", "regular_hours_min", "regular_hours_max", "status",
+            )
+        )
+        + "</tr>"
+        for item in monthly
     )
     table_rows = "".join(
         "<tr>"
@@ -245,6 +287,10 @@ overtime, holiday, and leave hours are not included in this comparison.</p>
 <table><thead><tr><th>Year</th><th>Statements</th><th>Hours available</th><th>Total regular hours</th>
 <th>Average per statement</th><th>Minimum</th><th>Maximum</th><th>Status</th></tr></thead>
 <tbody>{yearly_rows}</tbody></table>
+<h2>Regular hours by month</h2>
+<table><thead><tr><th>Month</th><th>Statements</th><th>Hours available</th>
+<th>Total regular hours</th><th>Average per statement</th><th>Minimum</th><th>Maximum</th>
+<th>Status</th></tr></thead><tbody>{monthly_rows}</tbody></table>
 <h2>Document and extracted payroll data</h2>
 <table><thead><tr><th>Pay date</th><th>Period beginning</th><th>Period ending</th>
 <th>Gross pay</th><th>Net pay</th><th>Regular hours</th></tr></thead>
@@ -279,6 +325,10 @@ def main() -> None:
         "year", "statement_count", "hours_available_count", "regular_hours_total",
         "regular_hours_average",
         "regular_hours_min", "regular_hours_max", "status",
+    ])
+    write_csv(args.output / "monthly_hours_comparison.csv", monthly_hours(rows), [
+        "month", "statement_count", "hours_available_count", "regular_hours_total",
+        "regular_hours_average", "regular_hours_min", "regular_hours_max", "status",
     ])
     write_report(args.output / "report.html", rows)
     (args.output / "styles.css").write_text(

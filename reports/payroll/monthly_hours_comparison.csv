@@ -1,0 +1,12 @@
+month,statement_count,hours_available_count,regular_hours_total,regular_hours_average,regular_hours_min,regular_hours_max,status
+2024-02,2,2,153.0,76.5,73.0,80.0,available
+2024-03,2,2,158.0,79.0,78.0,80.0,available
+2024-04,2,2,137.5,68.75,64.0,73.5,available
+2024-05,2,2,138.5,69.25,61.5,77.0,available
+2024-07,2,2,137.25,68.62,57.25,80.0,available
+2024-08,2,2,141.75,70.88,69.75,72.0,available
+2024-09,2,2,150.75,75.38,70.75,80.0,available
+2024-10,2,1,45.0,45.0,45.0,45.0,available
+2025-04,1,1,38.75,38.75,38.75,38.75,available
+2025-05,2,2,143.75,71.88,69.0,74.75,available
+2025-06,2,1,46.25,46.25,46.25,46.25,available
