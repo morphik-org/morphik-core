@@ -1,0 +1,4 @@
+year,statement_count,hours_available_count,regular_hours_total,regular_hours_average,regular_hours_min,regular_hours_max,status
+2023,0,0,0,,,,no statements
+2024,16,15,1061.75,70.78,45.0,80.0,available
+2025,5,4,228.75,57.19,38.75,74.75,available

@@ -39,7 +39,7 @@ The tools are configured in the `pyproject.toml` file at the root of the project
 `payroll_report.py` ingests ADP earnings-statement PDFs, extracts pay-period
 dates, payroll totals, selected tax fields, regular hours, and safe document
 metadata, then writes `documents.csv`, `payroll_summary.csv`, `report.html`,
-and `styles.css`.
+`yearly_hours_comparison.csv`, and `styles.css`.
 
 ```bash
 python scripts/payroll_report.py --input "C:\path\to\payroll-pdfs" --output reports\payroll
@@ -48,3 +48,7 @@ python scripts/payroll_report.py --input "C:\path\to\payroll-pdfs" --output repo
 The report excludes account, advice, and address details from its generated
 content. The parser uses the repository's existing PyMuPDF dependency and
 does not require pandas or a charting package.
+
+The yearly comparison reports extracted regular hours only; overtime, holiday,
+and leave hours are not included. Years with no matching statements are
+included with a `no statements` status.

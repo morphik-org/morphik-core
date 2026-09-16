@@ -14,6 +14,7 @@ import argparse
 import csv
 import html
 import re
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -174,10 +175,53 @@ def svg_line_chart(rows: list[dict[str, object]], field: str, title: str, color:
     )
 
 
+def yearly_hours(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    by_year: dict[str, list[float]] = defaultdict(list)
+    statement_counts: dict[str, int] = defaultdict(int)
+    for row in rows:
+        pay_date = str(row.get("pay_date") or "")
+        hours = row.get("regular_hours")
+        if len(pay_date) >= 4:
+            year = pay_date[:4]
+            statement_counts[year] += 1
+            if hours is not None:
+                by_year[year].append(float(hours))
+    years = sorted(set(by_year) | {"2023", "2024", "2025"})
+    return [
+        {
+            "year": year,
+            "statement_count": statement_counts.get(year, 0),
+            "hours_available_count": len(by_year.get(year, [])),
+            "regular_hours_total": round(sum(by_year.get(year, [])), 2),
+            "regular_hours_average": round(sum(by_year.get(year, [])) / len(by_year[year]), 2)
+            if by_year.get(year)
+            else None,
+            "regular_hours_min": min(by_year[year]) if by_year.get(year) else None,
+            "regular_hours_max": max(by_year[year]) if by_year.get(year) else None,
+            "status": "available" if by_year.get(year) else "no statements",
+        }
+        for year in years
+    ]
+
+
 def write_report(path: Path, rows: list[dict[str, object]]) -> None:
     rows = sorted(rows, key=lambda row: str(row["pay_date"]))
     total_gross = sum(float(row["gross_pay"] or 0) for row in rows)
     total_net = sum(float(row["net_pay"] or 0) for row in rows)
+    yearly = yearly_hours(rows)
+    yearly_rows = "".join(
+        "<tr>"
+        + "".join(
+            f"<td>{html.escape(str(item[field] if item[field] is not None else ''))}</td>"
+            for field in (
+                "year", "statement_count", "hours_available_count", "regular_hours_total",
+                "regular_hours_average",
+                "regular_hours_min", "regular_hours_max", "status",
+            )
+        )
+        + "</tr>"
+        for item in yearly
+    )
     table_rows = "".join(
         "<tr>"
         + "".join(
@@ -195,6 +239,12 @@ def write_report(path: Path, rows: list[dict[str, object]]) -> None:
 total net pay <strong>${total_net:,.2f}</strong>.</p>
 <div class="charts">{svg_line_chart(rows, "gross_pay", "Gross pay by pay date", "#2563eb")}
 {svg_line_chart(rows, "net_pay", "Net pay by pay date", "#059669")}</div>
+<h2>Regular hours by year</h2>
+<p class="note">Hours are the extracted <strong>Regular</strong> hours on each statement;
+overtime, holiday, and leave hours are not included in this comparison.</p>
+<table><thead><tr><th>Year</th><th>Statements</th><th>Hours available</th><th>Total regular hours</th>
+<th>Average per statement</th><th>Minimum</th><th>Maximum</th><th>Status</th></tr></thead>
+<tbody>{yearly_rows}</tbody></table>
 <h2>Document and extracted payroll data</h2>
 <table><thead><tr><th>Pay date</th><th>Period beginning</th><th>Period ending</th>
 <th>Gross pay</th><th>Net pay</th><th>Regular hours</th></tr></thead>
@@ -224,6 +274,11 @@ def main() -> None:
     write_csv(args.output / "payroll_summary.csv", rows, [
         "pay_date", "period_beginning", "period_ending", "gross_pay", "net_pay", "regular_hours",
         "federal_income_tax", "social_security_tax", "medicare_tax", "va_state_income_tax",
+    ])
+    write_csv(args.output / "yearly_hours_comparison.csv", yearly_hours(rows), [
+        "year", "statement_count", "hours_available_count", "regular_hours_total",
+        "regular_hours_average",
+        "regular_hours_min", "regular_hours_max", "status",
     ])
     write_report(args.output / "report.html", rows)
     (args.output / "styles.css").write_text(
