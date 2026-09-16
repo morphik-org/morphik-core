@@ -278,7 +278,7 @@ details{{background:#fff;border:1px solid #ddd;padding:10px;margin:8px 0}} summa
     index_rows = []
     for r in records:
         index_rows.append(
-            "<tr data-search=\"{search}\" data-topic=\"{data_topic}\">"
+            "<tr data-search=\"{search}\" data-topic=\"{data_topic}\" data-date=\"{date}\">"
             "<td>{id}</td><td>{date}</td><td><a href=\"{link}\">{name}</a><br><span class=\"muted\">{path}</span></td>"
             "<td>{type}</td><td>{participants}</td><td>{topic}</td><td>{means}</td><td>{org}</td>"
             "<td class=\"content\">{content}<br>{text_link}</td></tr>".format(
@@ -297,12 +297,14 @@ details{{background:#fff;border:1px solid #ddd;padding:10px;margin:8px 0}} summa
 <p class="muted">Generated {html.escape(data["generated"])} | {len(records)} indexed files | {len(duplicate_moves)} exact duplicates moved to <a href="OLD_DUPLICATES/">OLD_DUPLICATES</a>.</p>
 <nav><a href="INCIDENT_TIMELINE.html">Open incident timeline</a><a href="INCIDENT_REPORT_DATA.json">Download index data</a></nav>
 <div class="controls"><label>Search <input id="q" size="45" placeholder="name, participant, topic, content..."></label>
-<label>Topic <select id="topic"><option value="">All topics</option>{topics}</select></label><span id="count"></span></div>
+<label>Topic <select id="topic"><option value="">All topics</option>{topics}</select></label>
+<label>Date order <select id="dateOrder"><option value="desc">Newest to oldest</option><option value="asc">Oldest to newest</option></select></label><span id="count"></span></div>
 <table id="docs"><thead><tr><th>ID</th><th>Date</th><th>Document</th><th>Type</th><th>Participants</th><th>Topic</th><th>Means</th><th>Org/entity</th><th>Content / retrieval</th></tr></thead>
 <tbody>{"".join(index_rows)}</tbody></table>"""
     index_script = """<script>
-const rows=[...document.querySelectorAll('#docs tbody tr')],q=document.querySelector('#q'),topic=document.querySelector('#topic'),count=document.querySelector('#count');
-function apply(){const needle=q.value.toLowerCase(), selected=topic.value;let n=0;rows.forEach(r=>{const ok=(!needle||r.dataset.search.toLowerCase().includes(needle))&&(!selected||r.dataset.topic===selected);r.hidden=!ok;if(ok)n++});count.textContent=` ${n} matching documents`;} q.oninput=apply;topic.onchange=apply;apply();
+const body=document.querySelector('#docs tbody'),rows=[...body.querySelectorAll('tr')],q=document.querySelector('#q'),topic=document.querySelector('#topic'),dateOrder=document.querySelector('#dateOrder'),count=document.querySelector('#count');
+function sortRows(){rows.sort((a,b)=>dateOrder.value==='desc'?b.dataset.date.localeCompare(a.dataset.date):a.dataset.date.localeCompare(b.dataset.date));rows.forEach(r=>body.appendChild(r));}
+function apply(){sortRows();const needle=q.value.toLowerCase(), selected=topic.value;let n=0;rows.forEach(r=>{const ok=(!needle||r.dataset.search.toLowerCase().includes(needle))&&(!selected||r.dataset.topic===selected);r.hidden=!ok;if(ok)n++});count.textContent=` ${n} matching documents`;} q.oninput=apply;topic.onchange=apply;dateOrder.onchange=apply;apply();
 </script>"""
     (root / "INCIDENT_REPORT_INDEX.html").write_text(page_shell("EEOC Evidence Document Index", index_body, index_script), encoding="utf-8")
 
@@ -318,7 +320,7 @@ function apply(){const needle=q.value.toLowerCase(), selected=topic.value;let n=
             timeline_items.append({"date": r["date"], "category": topic, "event": r["content"], "source": r["path"], "links": f'<a href="{html.escape(r["link"], quote=True)}">{html.escape(r["id"])}</a>'})
     timeline_items.sort(key=lambda x: (x["date"], x["category"], x["event"]))
     timeline_rows = "".join(
-        f'<tr data-search="{html.escape((i["category"]+" "+i["event"]+" "+i["source"]).lower(), quote=True)}">'
+        f'<tr data-search="{html.escape((i["category"]+" "+i["event"]+" "+i["source"]).lower(), quote=True)}" data-date="{html.escape(i["date"], quote=True)}">'
         f'<td>{html.escape(i["date"])}</td><td><span class="tag">{html.escape(i["category"])}</span></td>'
         f'<td>{html.escape(i["event"])}</td><td>{html.escape(i["source"])}<br>{i["links"]}</td></tr>'
         for i in timeline_items
@@ -336,12 +338,14 @@ function apply(){const needle=q.value.toLowerCase(), selected=topic.value;let n=
         )
     timeline_body = f"""<h1>Mass Incident Timeline</h1><p class="muted">Formal chronology plus document-linked incident records. Each row links to its supporting evidence.</p>
 <nav><a href="INCIDENT_REPORT_INDEX.html">Back to document index</a> {category_links}</nav>
-<div class="controls"><label>Search <input id="timelineQ" size="55" placeholder="incident, date, person, source..."></label><span id="timelineCount"></span></div>
+<div class="controls"><label>Search <input id="timelineQ" size="55" placeholder="incident, date, person, source..."></label>
+<label>Date order <select id="timelineDateOrder"><option value="desc">Newest to oldest</option><option value="asc">Oldest to newest</option></select></label><span id="timelineCount"></span></div>
 <table id="timeline"><thead><tr><th>Date</th><th>Incident category</th><th>Event / document content</th><th>Supporting document(s)</th></tr></thead><tbody>{timeline_rows}</tbody></table>
 <h2>Incident categories</h2>{"".join(category_details)}"""
     timeline_script = """<script>
-const trs=[...document.querySelectorAll('#timeline tbody tr')],tq=document.querySelector('#timelineQ'),tc=document.querySelector('#timelineCount');
-function filterTimeline(){const n=tq.value.toLowerCase();let c=0;trs.forEach(r=>{const ok=!n||r.dataset.search.includes(n);r.hidden=!ok;if(ok)c++});tc.textContent=` ${c} matching incidents`;} tq.oninput=filterTimeline;filterTimeline();
+const timelineBody=document.querySelector('#timeline tbody'),trs=[...timelineBody.querySelectorAll('tr')],tq=document.querySelector('#timelineQ'),dateOrder=document.querySelector('#timelineDateOrder'),tc=document.querySelector('#timelineCount');
+function sortTimeline(){trs.sort((a,b)=>dateOrder.value==='desc'?b.dataset.date.localeCompare(a.dataset.date):a.dataset.date.localeCompare(b.dataset.date));trs.forEach(r=>timelineBody.appendChild(r));}
+function filterTimeline(){sortTimeline();const n=tq.value.toLowerCase();let c=0;trs.forEach(r=>{const ok=!n||r.dataset.search.includes(n);r.hidden=!ok;if(ok)c++});tc.textContent=` ${c} matching incidents`;} tq.oninput=filterTimeline;dateOrder.onchange=filterTimeline;filterTimeline();
 </script>"""
     (root / "INCIDENT_TIMELINE.html").write_text(page_shell("Mass Incident Timeline", timeline_body, timeline_script), encoding="utf-8")
     print(json.dumps({"documents": len(records), "timeline_events": len(timeline_items), "duplicates_moved": len(duplicate_moves), "index": str(root / "INCIDENT_REPORT_INDEX.html"), "timeline": str(root / "INCIDENT_TIMELINE.html")}, indent=2))
