@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, List, Optional, Set
 
 import arq
+from arq.jobs import Job, JobStatus
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from core.auth_utils import verify_token
@@ -287,11 +288,39 @@ async def requeue_ingest_jobs(
     results: List[RequeueIngestionResult] = []
 
     async def _process_document(doc: Document, override_flag: Optional[bool]) -> None:
+        if doc.external_id in processed_ids:
+            return
+        async with ingestion_service.db.document_ingestion_lock(doc.external_id) as acquired:
+            if not acquired:
+                results.append(
+                    RequeueIngestionResult(
+                        external_id=doc.external_id,
+                        status="already_queued",
+                        message="Document ingestion is in progress",
+                    )
+                )
+                processed_ids.add(doc.external_id)
+                return
+            current = await ingestion_service.db.get_document(doc.external_id, auth, raise_on_error=True)
+            if current is None:
+                results.append(
+                    RequeueIngestionResult(
+                        external_id=doc.external_id,
+                        status="error",
+                        message="Document no longer exists",
+                    )
+                )
+                processed_ids.add(doc.external_id)
+                return
+            await _process_locked_document(current, override_flag)
+
+    async def _process_locked_document(doc: Document, override_flag: Optional[bool]) -> None:
         ext_id = doc.external_id
         if ext_id in processed_ids:
             return
 
         processed_ids.add(ext_id)
+        revision_persisted = False
 
         try:
             auth_for_doc = AuthContext(
@@ -332,11 +361,28 @@ async def requeue_ingest_jobs(
             if isinstance(system_metadata, str):
                 system_metadata = json.loads(system_metadata)
             sanitized_system_metadata = IngestionService._reset_processing_metadata(system_metadata)
-            await ingestion_service.db.update_document(
+            revision = int(system_metadata.get("ingestion_revision", 0))
+            current_job = Job(f"ingest:{ext_id}:{revision}", redis, _queue_name=redis.default_queue_name)
+            if await current_job.status() in {JobStatus.queued, JobStatus.deferred, JobStatus.in_progress}:
+                results.append(
+                    RequeueIngestionResult(
+                        external_id=ext_id,
+                        status="already_queued",
+                        message="An ingestion job is already pending",
+                    )
+                )
+                return
+            # A retained result may represent a failed attempt. A manual requeue
+            # gets a new revision, fencing off any delayed attempt of the old job.
+            sanitized_system_metadata["ingestion_revision"] = revision + 1
+            success = await ingestion_service.db.update_document(
                 document_id=ext_id,
                 updates={"system_metadata": sanitized_system_metadata},
                 auth=auth_for_doc,
             )
+            if not success:
+                raise RuntimeError("Failed to persist requeue revision")
+            revision_persisted = True
             job_payload = IngestionService._build_ingestion_job_payload(
                 document_id=ext_id,
                 file_key=key,
@@ -349,17 +395,12 @@ async def requeue_ingest_jobs(
                 folder_path=doc.folder_path,
                 folder_leaf=doc.folder_name,
                 end_user_id=doc.end_user_id,
+                ingestion_revision=revision + 1,
             )
             job = await redis.enqueue_job("process_ingestion_job", **job_payload)
 
             if job is None:
-                results.append(
-                    RequeueIngestionResult(
-                        external_id=ext_id,
-                        status="already_queued",
-                        message="An ingestion job is already pending for this document",
-                    )
-                )
+                raise RuntimeError("Requeue job ID is already present in Redis; no new job was queued")
             else:
                 results.append(
                     RequeueIngestionResult(
@@ -372,6 +413,8 @@ async def requeue_ingest_jobs(
             raise
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to requeue ingestion for document %s: %s", ext_id, exc, exc_info=True)
+            if revision_persisted:
+                await ingestion_service._mark_document_failed(doc, auth, f"Failed to requeue ingestion: {exc}")
             results.append(
                 RequeueIngestionResult(
                     external_id=ext_id,
