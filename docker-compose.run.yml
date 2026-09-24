@@ -90,7 +90,9 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Defaults to a Docker-managed volume. Set MORPHIK_POSTGRES_DATA_PATH
+      # to a host directory such as ./postgres-data for a bind mount.
+      - "${MORPHIK_POSTGRES_DATA_PATH:-postgres_data}:/var/lib/postgresql/data"
     healthcheck:
       # The -d flag is important to specify the database name for the readiness check
       test: ["CMD-SHELL", "pg_isready -U morphik -d morphik"]

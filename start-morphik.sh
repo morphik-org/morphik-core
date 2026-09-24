@@ -1,6 +1,16 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd "$SCRIPT_DIR"
+
+if [[ ! -f "$SCRIPT_DIR/morphik-compose-project.sh" ]]; then
+    echo "morphik-compose-project.sh not found. Restore it from the Morphik release before starting." >&2
+    exit 1
+fi
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/morphik-compose-project.sh"
+
 # Purpose: Production startup script for Morphik (created by install_docker.sh)
 # This script reads the port from morphik.toml and dynamically updates docker-compose.run.yml
 # port mapping if it has changed. This allows users to change ports in morphik.toml
@@ -14,6 +24,10 @@ print_info() {
 
 print_success() {
     echo -e "\033[32m✅ $1\033[0m"
+}
+
+print_error() {
+    echo -e "\033[31m❌ $1\033[0m" >&2
 }
 
 # Parse --version flag (overrides .env)
@@ -56,6 +70,7 @@ sed -i.bak "s|\"8000:8000\"|\"${API_PORT}:${API_PORT}\"|g" docker-compose.run.ym
 rm -f docker-compose.run.yml.tmp.bak
 
 print_info "Starting Morphik with port ${API_PORT}..."
+morphik_compose_resolve_existing_project
 docker compose -f docker-compose.run.yml.tmp up -d
 
 print_success "🚀 Morphik is running!"

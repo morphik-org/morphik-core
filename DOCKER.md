@@ -40,7 +40,7 @@ docker compose down  # Stop all services
 docker compose down -v
 ```
 
-> **Note:** If you enabled the optional UI profile (or any other compose profile), make sure to include `--profile ui` when stopping services (`docker compose --profile ui down --volumes --remove-orphans`). The hosted installer generates a `stop-morphik` script that does this for you automatically.
+> **Important:** Do not add `--volumes` to a normal shutdown. That option deletes the declared PostgreSQL volume. If you enabled the optional UI profile, stop it with `docker compose --profile ui down --remove-orphans`. The hosted installer generates a `stop-morphik` script that preserves all data volumes.
 
 ## Configuration
 
@@ -113,10 +113,20 @@ services:
 
 ## Storage and Data
 
-- Database data: Stored in the `postgres_data` Docker volume
+- Database data: Stored on the host in the `postgres_data` Docker volume. It survives container replacement and `docker compose down`.
 - AI Models: Stored in the `ollama_data` Docker volume
 - Documents: Stored in `./storage` directory (mounted to container)
 - Logs: Available in `./logs` directory
+
+To keep the PostgreSQL files in a visible host directory on a new installation, set this in `.env` before the first start:
+
+```bash
+MORPHIK_POSTGRES_DATA_PATH=./postgres-data
+```
+
+Do not add or change this setting on an existing installation until you have migrated the current database. Pointing Postgres at an empty directory creates an empty database and makes the existing data appear lost.
+
+The generated start and stop scripts also recover the existing Compose project name from Docker's container and volume labels. This prevents a moved installation directory from leaving the old containers and database volume behind.
 
 ## Troubleshooting
 
@@ -135,12 +145,18 @@ services:
    - Check PostgreSQL is healthy: `docker compose ps`
    - Verify database connection: `docker compose exec postgres psql -U morphik -d morphik`
 
-3. **Model Download Issues**
+3. **Container Name Is Already in Use**
+   - Do not delete the existing containers or volumes before identifying their Compose project.
+   - Read the current project name: `docker inspect morphik-postgres --format '{{ index .Config.Labels "com.docker.compose.project" }}'`
+   - List existing Postgres volumes: `docker volume ls --filter label=com.docker.compose.volume=postgres_data`
+   - The generated scripts select the existing project automatically. If more than one project owns a Postgres volume, set the intended project explicitly in `.env` with `COMPOSE_PROJECT_NAME=<project>`.
+
+4. **Model Download Issues**
    - Check Ollama logs: `docker compose logs ollama`
    - Ensure enough disk space for models
    - Try restarting Ollama: `docker compose restart ollama`
 
-4. **Performance Issues**
+5. **Performance Issues**
    - Monitor resources: `docker stats`
    - Ensure sufficient RAM (8GB+ recommended)
    - Check disk space: `df -h`
@@ -159,6 +175,7 @@ For production environments:
    - Use named volumes for all data
    - Set up regular backups of PostgreSQL
    - Back up the storage directory
+   - Test database restoration before upgrading production deployments
 
 3. **Monitoring**:
    - Set up container monitoring

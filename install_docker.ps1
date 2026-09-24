@@ -25,6 +25,7 @@ function Write-Err($msg)   { Write-Host "[ERROR] $msg" -ForegroundColor Red }
 $REPO_URL   = "https://raw.githubusercontent.com/morphik-org/morphik-core/main"
 $REPO_ZIP   = "https://codeload.github.com/morphik-org/morphik-core/zip/refs/heads/main"
 $COMPOSE    = "docker-compose.run.yml"
+$COMPOSE_PROJECT_HELPER = "morphik-compose-project.ps1"
 $IMAGE      = "ghcr.io/morphik-org/morphik-core:latest"
 $DIRECT_URL = "https://www.morphik.ai/docs/getting-started#self-host-direct-installation-advanced"
 
@@ -157,6 +158,8 @@ function Ensure-ComposeFile {
   Write-Step "Downloading the Docker Compose configuration file..."
   try {
     Download-File "$REPO_URL/$COMPOSE" $COMPOSE
+    Download-File "$REPO_URL/$COMPOSE_PROJECT_HELPER" $COMPOSE_PROJECT_HELPER
+    . (Join-Path (Get-Location) $COMPOSE_PROJECT_HELPER)
     Write-Ok "Downloaded '$COMPOSE'."
   } catch {
     Write-Err "Failed to download '$COMPOSE'. Check connectivity and try again."
@@ -175,7 +178,10 @@ function Ensure-EnvFile {
     "JWT_SECRET_KEY=$jwt",
     "",
     "# Local URI password for secure URI generation (required for creating connection URIs)",
-    "LOCAL_URI_PASSWORD="
+    "LOCAL_URI_PASSWORD=",
+    "",
+    "# Optional host directory for Postgres. Leave unset to use the persistent Docker volume.",
+    "# MORPHIK_POSTGRES_DATA_PATH=./postgres-data"
   ) -join [Environment]::NewLine
   Set-Content -Path .env -Value $envContent
 
@@ -403,6 +409,7 @@ function Maybe-Install-UI($apiPort) {
 
 function Start-Stack($apiPort, $ui) {
   Write-Step "Starting the Morphik stack... (first run can take a few minutes)"
+  Resolve-MorphikComposeProject
   $args = @('-f', $COMPOSE)
   if ($ui) { $args += @('--profile','ui') }
   docker compose @args up -d
@@ -418,6 +425,8 @@ function Start-Stack($apiPort, $ui) {
   $start = @(
     "Set-StrictMode -Version Latest",
     "`$ErrorActionPreference = 'Stop'",
+    "Set-Location -LiteralPath `$PSScriptRoot",
+    ". (Join-Path `$PSScriptRoot 'morphik-compose-project.ps1')",
     "",
     'function Write-Info($msg) { Write-Host "[INFO]  $msg" -ForegroundColor Cyan }',
     'function Write-Warn($msg) { Write-Host "[WARN]  $msg" -ForegroundColor Yellow }',
@@ -458,6 +467,7 @@ function Start-Stack($apiPort, $ui) {
     "",
     "`$args = @('-f','docker-compose.run.yml')",
     "if (`$ui) { `$args += @('--profile','ui') }",
+    "Resolve-MorphikComposeProject",
     "docker compose @args up -d",
     "Write-Host `"Morphik is running on http://localhost:`$(`$desired)`""
   ) -join [Environment]::NewLine
@@ -466,6 +476,8 @@ function Start-Stack($apiPort, $ui) {
   $stop = @(
     "Set-StrictMode -Version Latest",
     "`$ErrorActionPreference = 'Stop'",
+    "Set-Location -LiteralPath `$PSScriptRoot",
+    ". (Join-Path `$PSScriptRoot 'morphik-compose-project.ps1')",
     "",
     "if (-not (Test-Path 'docker-compose.run.yml')) {",
     "  Write-Error 'docker-compose.run.yml not found. Run this script from your Morphik install directory.'",
@@ -486,9 +498,10 @@ function Start-Stack($apiPort, $ui) {
     "  }",
     "}",
     "",
-    "`$args = @('-f','docker-compose.run.yml') + `$profiles + @('down','--volumes','--remove-orphans')",
+    "Resolve-MorphikComposeProject",
+    "`$args = @('-f','docker-compose.run.yml') + `$profiles + @('down','--remove-orphans')",
     "docker compose @args",
-    "Write-Host 'Morphik services stopped and cleaned up.'"
+    "Write-Host 'Morphik services stopped. PostgreSQL and other data volumes were preserved.'"
   ) -join [Environment]::NewLine
   Set-Content -Path 'stop-morphik.ps1' -Value $stop
 
@@ -523,7 +536,7 @@ Start-Stack -apiPort $apiPort -ui $uiInstalled
 Write-Host ""
 Write-Ok "Management commands:"
 Write-Info "View logs:    docker compose -f $COMPOSE $(if($uiInstalled){'--profile ui '})logs -f"
-Write-Info "Stop services: ./stop-morphik.ps1   (runs docker compose down --volumes --remove-orphans)"
+Write-Info "Stop services: ./stop-morphik.ps1   (preserves PostgreSQL and other data volumes)"
 Write-Info "Restart:      ./start-morphik.ps1"
 
 Write-Host ""

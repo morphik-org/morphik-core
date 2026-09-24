@@ -11,6 +11,7 @@ set -e
 REPO_URL="https://raw.githubusercontent.com/morphik-org/morphik-core/main"
 REPO_ARCHIVE_URL="https://codeload.github.com/morphik-org/morphik-core/tar.gz/refs/heads/main"
 COMPOSE_FILE="docker-compose.run.yml"
+COMPOSE_PROJECT_HELPER="morphik-compose-project.sh"
 DIRECT_INSTALL_URL="https://www.morphik.ai/docs/getting-started#self-host-direct-installation-advanced"
 
 EMBEDDING_PROVIDER=""
@@ -168,6 +169,12 @@ else
     print_error "Failed to download '$COMPOSE_FILE'. Please check your internet connection and the repository URL."
 fi
 
+if ! curl -fsSL -o "$COMPOSE_PROJECT_HELPER" "$REPO_URL/$COMPOSE_PROJECT_HELPER"; then
+    print_error "Failed to download '$COMPOSE_PROJECT_HELPER'. Please check your internet connection and the repository URL."
+fi
+# shellcheck disable=SC1090
+source "$COMPOSE_PROJECT_HELPER"
+
 # 4. Create .env and get User Input for API Key
 print_info "Creating '.env' file for your secrets..."
 cat > .env <<EOF
@@ -182,6 +189,9 @@ LOCAL_URI_PASSWORD=
 
 # Morphik image version (use a date tag like 2025-02-01 to pin, or "latest" for newest)
 MORPHIK_VERSION=${MORPHIK_VERSION}
+
+# Optional host directory for Postgres. Leave unset to use the persistent Docker volume.
+# MORPHIK_POSTGRES_DATA_PATH=./postgres-data
 EOF
 
 print_info "Morphik supports 100s of models including OpenAI, Anthropic (Claude), Google Gemini, local models, and even custom models!"
@@ -439,6 +449,7 @@ fi
 
 # 6. Start the application
 print_info "Starting the Morphik stack... This may take a few minutes for the first run."
+morphik_compose_resolve_existing_project
 docker compose -f "$COMPOSE_FILE" $UI_PROFILE up -d
 
 print_success "🚀 Morphik has been started!"
@@ -464,7 +475,7 @@ fi
 echo ""
 print_info "📋 Management commands:"
 print_info "   View logs:    docker compose -f $COMPOSE_FILE $UI_PROFILE logs -f"
-print_info "   Stop services: ./stop-morphik.sh   # runs docker compose down --volumes --remove-orphans"
+print_info "   Stop services: ./stop-morphik.sh   # preserves PostgreSQL and other data volumes"
 print_info "   Restart:      ./start-morphik.sh"
 print_info "   Pin version:  ./start-morphik.sh --version 2025-02-01"
 print_info "   List versions: docker image ls ghcr.io/morphik-org/morphik-core"
@@ -473,6 +484,16 @@ print_info "   List versions: docker image ls ghcr.io/morphik-org/morphik-core"
 cat > start-morphik.sh << 'EOF'
 #!/bin/bash
 set -e
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd "$SCRIPT_DIR"
+
+if [[ ! -f "$SCRIPT_DIR/morphik-compose-project.sh" ]]; then
+    echo "morphik-compose-project.sh not found. Run the installer again to restore it." >&2
+    exit 1
+fi
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/morphik-compose-project.sh"
 
 # Purpose: Production startup script for Morphik
 # Automatically updates port mapping from morphik.toml and includes UI if installed
@@ -534,6 +555,7 @@ if [ -f ".env" ] && grep -q "UI_INSTALLED=true" .env; then
     UI_PROFILE="--profile ui"
 fi
 
+morphik_compose_resolve_existing_project
 docker compose -f docker-compose.run.yml $UI_PROFILE up -d
 echo "🚀 Morphik ${MORPHIK_VERSION} is running on http://localhost:${API_PORT}"
 echo "   Health: http://localhost:${API_PORT}/health"
@@ -548,6 +570,16 @@ chmod +x start-morphik.sh
 cat > stop-morphik.sh << 'EOF'
 #!/bin/bash
 set -e
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd "$SCRIPT_DIR"
+
+if [[ ! -f "$SCRIPT_DIR/morphik-compose-project.sh" ]]; then
+    echo "morphik-compose-project.sh not found. Run the installer again to restore it." >&2
+    exit 1
+fi
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/morphik-compose-project.sh"
 
 COMPOSE_FILE="docker-compose.run.yml"
 
@@ -570,8 +602,9 @@ elif [ -f ".env" ] && grep -q "UI_INSTALLED=true" .env; then
     PROFILE_FLAGS+=("--profile" "ui")
 fi
 
-docker compose -f "$COMPOSE_FILE" "${PROFILE_FLAGS[@]}" down --volumes --remove-orphans
-echo "🛑 Morphik services stopped. Containers, networks, and anonymous volumes removed."
+morphik_compose_resolve_existing_project
+docker compose -f "$COMPOSE_FILE" "${PROFILE_FLAGS[@]}" down --remove-orphans
+echo "🛑 Morphik services stopped. PostgreSQL and other data volumes were preserved."
 EOF
 chmod +x stop-morphik.sh
 
