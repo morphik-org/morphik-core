@@ -14,6 +14,7 @@ build/
 .eggs/
 *.egg
 *.pytest_cache/
+iqor-retrieval-response*.json
 
 core/tests/output
 core/tests/assets

@@ -40,6 +40,11 @@ SUMMARY_FILE_EXTENSION = ".md"
 SUMMARY_CONTENT_TYPE = "text/markdown"
 
 
+def _filter_chunks_by_min_score(chunks: List[DocumentChunk], min_score: float) -> List[DocumentChunk]:
+    """Return chunks whose final relevance score meets the request threshold."""
+    return [chunk for chunk in chunks if chunk.score >= min_score]
+
+
 class DocumentService:
     """Service for document retrieval and query operations.
 
@@ -486,6 +491,12 @@ class DocumentService:
                 )
         else:
             phase_times["multivector_chunk_combination"] = phase_times.get("multivector_chunk_combination", 0.0)
+
+        # Apply the threshold after vector scoring and optional reranking, but before
+        # adding zero-score padding chunks. RetrieveRequest has exposed min_score for
+        # years; keeping the filtering here makes the request field effective for all
+        # retrieval backends.
+        chunks = _filter_chunks_by_min_score(chunks, min_score)
 
         # Apply padding if requested and using colpali
         if padding > 0 and using_multivector:

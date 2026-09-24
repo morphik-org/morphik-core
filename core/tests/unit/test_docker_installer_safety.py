@@ -78,10 +78,10 @@ def test_generated_stop_scripts_preserve_named_volumes():
 
     assert "down --remove-orphans" in shell_stop
     assert "down --volumes" not in shell_stop
-    assert "@('down','--remove-orphans')" in powershell_installer
+    assert "'down','--remove-orphans'" in powershell_installer
     assert "@('down','--volumes'" not in powershell_installer
-    assert "data volumes were preserved" in shell_stop
-    assert "data volumes were preserved" in powershell_installer
+    assert "Persistent named volumes were preserved" in shell_stop
+    assert "Persistent named volumes were preserved" in powershell_installer
 
 
 def test_generated_scripts_load_project_recovery_helper():
@@ -141,7 +141,7 @@ def test_generated_stop_script_runs_from_its_directory_without_deleting_volumes(
 
     assert result.returncode == 0, result.stderr
     command = docker_log.read_text().strip()
-    assert command == "compose -f docker-compose.run.yml down --remove-orphans"
+    assert command == "compose -f docker-compose.run.yml --profile * down --remove-orphans"
     assert "--volumes" not in command
 
 

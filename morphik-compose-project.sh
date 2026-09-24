@@ -10,7 +10,7 @@ morphik_compose_resolve_existing_project() {
 
     local configured_project=""
     if [[ -f .env ]]; then
-        configured_project=$(grep "^COMPOSE_PROJECT_NAME=" .env 2>/dev/null | tail -n1 | cut -d= -f2-)
+        configured_project=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' .env 2>/dev/null | tail -n1)
     fi
 
     local container_project

@@ -28,6 +28,7 @@ from core.routes.utils import (
 )
 from core.services.telemetry import TelemetryService
 from core.services_init import document_service, ingestion_service
+from core.utils.content_disposition import build_content_disposition
 from core.utils.typed_metadata import TypedMetadataError
 
 # ---------------------------------------------------------------------------
@@ -374,7 +375,7 @@ async def download_document_file(document_id: str, auth: AuthContext = Depends(v
             generate(),
             media_type=doc.content_type or "application/octet-stream",
             headers={
-                "Content-Disposition": f"inline; filename=\"{doc.filename or 'document'}\"",
+                "Content-Disposition": build_content_disposition(doc.filename, disposition="inline"),
                 "Content-Length": str(len(file_content)),
             },
         )
