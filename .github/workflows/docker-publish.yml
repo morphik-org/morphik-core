@@ -60,6 +60,8 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: ghcr.io/${{ github.repository_owner }}/morphik-core:${{ github.sha }}-amd64
+          # morphik-backup.sh records this commit in each backup manifest
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,mode=min,scope=amd64
           provenance: false
@@ -118,6 +120,7 @@ jobs:
           push: true
           platforms: linux/arm64/v8
           tags: ghcr.io/${{ github.repository_owner }}/morphik-core:${{ github.sha }}-arm64
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,mode=min,scope=arm64
           provenance: false

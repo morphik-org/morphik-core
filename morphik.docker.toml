@@ -145,6 +145,18 @@ api_domain = "api.morphik.ai"  # API domain for cloud URIs
 morphik_embedding_api_domain = ["http://localhost:6000"]
 colpali_mode = "local" # "off", "local", or "api"
 
+[backup]
+# Scheduled backups run in the optional `backup` service. ./start-morphik.sh starts it when
+# enabled = true. Each backup holds PostgreSQL (embeddings included), ./storage, and this file.
+enabled = false
+interval_hours = 12
+directory = "./backups"
+keep = 14                # scheduled backups to keep; manual backups are never deleted
+verify = false           # restore each backup into a temporary database and check it
+include_env = false      # .env holds secrets; include it only if backups are stored securely
+s3_uri = ""              # e.g. "s3://my-bucket/morphik". Starts `backup-s3` to copy backups off this host
+s3_region = ""
+
 [pdf_viewer]
 frontend_url = "http://localhost:3000/api/pdf"
 

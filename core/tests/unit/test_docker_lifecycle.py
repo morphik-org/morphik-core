@@ -125,3 +125,119 @@ def test_start_defaults_to_latest_when_env_omits_version(tmp_path, script_text):
 
     assert "Using Morphik version: latest" in completed.stdout
     assert docker_output.read_text(encoding="utf-8").strip() == "latest|8123"
+
+
+def _run_start_script(tmp_path, script_text, toml_text, with_backup_tool=True):
+    deployment = tmp_path / "deployment"
+    deployment.mkdir()
+    script = deployment / "start-morphik.sh"
+    script.write_text(script_text, encoding="utf-8")
+    script.chmod(0o755)
+    (deployment / ".env").write_text("JWT_SECRET_KEY=test-only\n", encoding="utf-8")
+    (deployment / "morphik.toml").write_text(toml_text, encoding="utf-8")
+    (deployment / "docker-compose.run.yml").write_text("services: {}\n", encoding="utf-8")
+    if with_backup_tool:
+        (deployment / "morphik-backup.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        '#!/usr/bin/env bash\nprintf "%s|%s\\n" "$*" "${MORPHIK_BACKUP_DIR:-}" > "$FAKE_DOCKER_OUTPUT"\n',
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    docker_output = tmp_path / "docker-output"
+
+    env = os.environ.copy()
+    for key in ("MORPHIK_VERSION", "COMPOSE_PROFILES", "MORPHIK_BACKUP_DIR"):
+        env.pop(key, None)
+    env.update({"PATH": f"{fake_bin}:{env['PATH']}", "FAKE_DOCKER_OUTPUT": str(docker_output)})
+
+    completed = subprocess.run([str(script)], cwd=deployment, env=env, text=True, capture_output=True, check=False)
+    docker_args = docker_output.read_text(encoding="utf-8").strip() if docker_output.exists() else ""
+    return completed, docker_args, deployment
+
+
+START_SCRIPTS = pytest.mark.parametrize(
+    "script_text",
+    [_read("start-morphik.sh"), _installer_start_script()],
+    ids=["checked-in", "installer-generated"],
+)
+
+
+@START_SCRIPTS
+def test_start_enables_backup_profiles_from_morphik_toml(tmp_path, script_text):
+    toml_text = (
+        '[api]\nport = 8123\n\n[backup]  # scheduled\nenabled = true  # on\ndirectory = "./nightly"\n'
+        's3_uri = "s3://bucket/morphik"  # off-host\n\n[other]\nenabled = false\n'
+    )
+
+    completed, docker_args, deployment = _run_start_script(tmp_path, script_text, toml_text)
+
+    assert completed.returncode == 0, completed.stderr
+    args, backup_dir = docker_args.split("|")
+    assert "--profile backup --profile backup-s3 up -d --remove-orphans" in args
+    assert backup_dir == "./nightly"
+    assert (deployment / "nightly").is_dir()
+    assert oct((deployment / "nightly").stat().st_mode & 0o777) == "0o700"
+
+
+@START_SCRIPTS
+def test_start_leaves_backups_off_by_default(tmp_path, script_text):
+    toml_text = '[api]\nport = 8123\n\n[backup]\nenabled = false\ns3_uri = "s3://bucket/morphik"\n'
+
+    completed, docker_args, deployment = _run_start_script(tmp_path, script_text, toml_text)
+
+    assert completed.returncode == 0, completed.stderr
+    assert "--profile backup" not in docker_args
+    assert "./morphik-backup.sh backup" in completed.stdout
+    assert not (deployment / "backups").exists()
+
+
+@START_SCRIPTS
+def test_start_refuses_scheduled_backups_without_the_backup_tool(tmp_path, script_text):
+    toml_text = "[backup]\nenabled = true\n"
+
+    completed, docker_args, _ = _run_start_script(tmp_path, script_text, toml_text, with_backup_tool=False)
+
+    assert completed.returncode != 0
+    assert "morphik-backup.sh is missing" in completed.stderr
+    assert docker_args == ""
+
+
+def test_backup_services_are_optional_and_cannot_reach_the_docker_daemon():
+    compose = _read("docker-compose.run.yml")
+    backup = compose.split("\n  backup:\n", 1)[1].split("\n  backup-s3:\n", 1)[0]
+    offsite = compose.split("\n  backup-s3:\n", 1)[1].split("\nnetworks:\n", 1)[0]
+
+    for service in (backup, offsite):
+        assert "profiles:" in service
+        assert "./morphik-backup.sh:/opt/morphik/morphik-backup.sh:ro" in service
+        assert "docker.sock" not in service
+        assert "ports:" not in service
+    assert "      - backup\n" in backup
+    assert "./storage:/install/storage:ro" in backup
+    assert "${MORPHIK_BACKUP_DIR:-./backups}:/backups" in backup
+    assert "      - backup-s3\n" in offsite
+    assert "${MORPHIK_BACKUP_DIR:-./backups}:/backups:ro" in offsite
+    assert "storage" not in offsite
+
+
+def test_backup_tool_is_installed_and_keeps_data_safe():
+    tool = _read("morphik-backup.sh")
+    unix_installer = _read("install_docker.sh")
+    windows_installer = _read("install_docker.ps1")
+
+    assert "umask 077" in tool
+    assert "down --volumes" not in tool
+    assert "--volumes" not in tool
+    assert 'pg_restore -U "$PG_USER" -d "$PG_DB" --clean --if-exists --no-owner' in tool
+    assert "$REPO_URL/morphik-backup.sh" in unix_installer
+    assert "/app/morphik-backup.sh" in unix_installer
+    assert "./morphik-backup.sh backup" in unix_installer
+    assert "Ensure-BackupTool" in windows_installer
+    assert "morphik-backup.ps1" in windows_installer
+    assert "COPY morphik-backup.sh ./" in _read("dockerfile")
+    assert "backups/" in _read(".gitignore")
+    assert "**/backups" in _read(".dockerignore")

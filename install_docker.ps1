@@ -164,6 +164,30 @@ function Ensure-ComposeFile {
   }
 }
 
+function Ensure-BackupTool {
+  Write-Step "Downloading the backup tool..."
+  try {
+    Download-File "$REPO_URL/morphik-backup.sh" 'morphik-backup.sh'
+    Write-Ok "Downloaded 'morphik-backup.sh'."
+  } catch {
+    Write-Err "Could not download 'morphik-backup.sh'. Download it later from $REPO_URL/morphik-backup.sh"
+  }
+
+  # morphik-backup.sh is a bash script. On Windows it runs in WSL, where Docker Desktop's
+  # WSL integration provides the docker CLI. Scheduled backups need no WSL: they run in a container.
+  $shim = @(
+    "Set-StrictMode -Version Latest",
+    "`$ErrorActionPreference = 'Stop'",
+    "",
+    "if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {",
+    "  Write-Error 'morphik-backup.sh needs bash. Install WSL and enable Docker Desktop WSL integration, then run this again.'",
+    "}",
+    "wsl bash ./morphik-backup.sh @args",
+    "exit `$LASTEXITCODE"
+  ) -join [Environment]::NewLine
+  Set-Content -Path 'morphik-backup.ps1' -Value $shim
+}
+
 function Ensure-EnvFile {
   Write-Step "Creating '.env' file for secrets..."
   $jwt = "your-super-secret-key-$(New-RandomHex 16)"
@@ -427,9 +451,9 @@ function Start-Stack($apiPort, $ui) {
     "  `$lines = Get-Content morphik.toml",
     "  `$inApi = `$false; `$p = `$null",
     "  foreach (`$l in `$lines) {",
-    "    if (`$l -match '^\\s*\\[api\\]\\s*`$') { `$inApi = `$true; continue }",
-    "    if (`$inApi -and `$l -match '^\\s*\\[') { break }",
-    "    if (`$inApi -and `$l -match '^\\s*port\\s*=\\s*`"?(\\d+)`"?') {",
+    "    if (`$l -match '^\s*\[api\]\s*`$') { `$inApi = `$true; continue }",
+    "    if (`$inApi -and `$l -match '^\s*\[') { break }",
+    "    if (`$inApi -and `$l -match '^\s*port\s*=\s*`"?(\d+)`"?') {",
     "      `$p = `$Matches[1]; break } }",
     "  if (`$p) { `$desired = `$p }",
     "}",
@@ -440,7 +464,7 @@ function Start-Stack($apiPort, $ui) {
     "# Warn if multimodal embeddings disabled",
     "if (Test-Path 'morphik.toml') {",
     "  `$cfg = Get-Content morphik.toml -Raw",
-    "  if (`$cfg -match '(?m)^enable_colpali\\s*=\\s*false') {",
+    "  if (`$cfg -match '(?m)^enable_colpali\s*=\s*false') {",
     "    Write-Warn 'Multimodal embeddings are disabled. Enable in morphik.toml if you have a GPU.' } }",
     "",
     "# Include UI profile if installed",
@@ -449,8 +473,24 @@ function Start-Stack($apiPort, $ui) {
     "  `$envText = Get-Content .env -Raw",
     "  if (`$envText -match 'UI_INSTALLED=true') { `$ui = `$true } }",
     "",
+    "# [backup] enabled = true starts scheduled backups; a non-empty s3_uri also copies them off this host",
+    "`$backup = @{}",
+    "if (Test-Path 'morphik.toml') {",
+    "  `$inBackup = `$false",
+    "  foreach (`$l in (Get-Content morphik.toml)) {",
+    "    if (`$l -match '^\s*\[') { `$inBackup = (`$l -match '^\s*\[backup\]'); continue }",
+    "    if (`$inBackup -and `$l -match '^\s*(\w+)\s*=\s*(.*)`$') { `$backup[`$Matches[1]] = (`$Matches[2] -replace '#.*`$', '').Trim().Trim([char]34) } } }",
+    "",
     "`$args = @('-f','docker-compose.run.yml')",
     "if (`$ui) { `$args += @('--profile','ui') }",
+    "if (`$backup['enabled'] -eq 'true') {",
+    "  `$dir = if (`$backup['directory']) { `$backup['directory'] } else { './backups' }",
+    "  New-Item -ItemType Directory -Force -Path `$dir | Out-Null",
+    "  `$env:MORPHIK_BACKUP_DIR = `$dir",
+    "  `$args += @('--profile','backup')",
+    "  if (`$backup['s3_uri']) { `$args += @('--profile','backup-s3') }",
+    "  Write-Info `"Scheduled backups are on. Files go to `$dir.`"",
+    "}",
     "docker compose @args up -d --remove-orphans",
     "Write-Host `"Morphik is running on http://localhost:`$(`$desired)`""
   ) -join [Environment]::NewLine
@@ -484,6 +524,7 @@ if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
 }
 
 Ensure-ComposeFile
+Ensure-BackupTool
 Ensure-EnvFile
 Try-Extract-Config
 if ($script:EmbeddingSelection) {
@@ -503,6 +544,13 @@ Write-Ok "Management commands:"
 Write-Info "View logs:    docker compose -f $COMPOSE $(if($uiInstalled){'--profile ui '})logs -f"
 Write-Info "Stop services: ./stop-morphik.ps1   (preserves PostgreSQL and other named volumes)"
 Write-Info "Restart:      ./start-morphik.ps1"
+
+Write-Host ""
+Write-Ok "Backups:"
+Write-Info "Back up now:  ./morphik-backup.ps1 backup   (runs morphik-backup.sh in WSL)"
+Write-Info "Restore:      ./morphik-backup.ps1 restore backups/<file>.backup"
+Write-Info "Schedule:     set [backup] enabled = true in morphik.toml, then ./start-morphik.ps1"
+Write-Info "Back up before every upgrade or experiment. Copy backups off this machine, for example with [backup] s3_uri."
 
 Write-Host ""
 Write-Ok "Enjoy using Morphik!"
