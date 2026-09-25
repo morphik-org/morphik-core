@@ -185,6 +185,8 @@ COPY utils ./utils
 COPY README.md LICENSE ./
 # Assuming start_server.py is at the root of your project
 COPY start_server.py ./
+# install_docker.sh copies the backup tool from the image when it cannot download it
+COPY morphik-backup.sh ./
 
 # Labels for the image
 LABEL org.opencontainers.image.title="Morphik Core"

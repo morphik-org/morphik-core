@@ -175,6 +175,16 @@ fi
 # shellcheck disable=SC1090
 source "$COMPOSE_PROJECT_HELPER"
 
+# 3.1 Download the backup tool. It needs only bash and Docker on this host.
+print_info "Downloading the backup tool..."
+if curl -fsSL -o morphik-backup.sh "$REPO_URL/morphik-backup.sh"; then
+    chmod +x morphik-backup.sh
+    print_success "Downloaded 'morphik-backup.sh'."
+else
+    rm -f morphik-backup.sh
+    print_warning "Could not download 'morphik-backup.sh'. The installer will try to copy it from the Docker image."
+fi
+
 # 4. Create .env and get User Input for API Key
 print_info "Creating '.env' file for your secrets..."
 cat > .env <<EOF
@@ -449,6 +459,16 @@ if [[ "$install_ui" == "y" || "$install_ui" == "Y" ]]; then
     fi
 fi
 
+if [ ! -s morphik-backup.sh ]; then
+    if docker run --rm --entrypoint cat "ghcr.io/morphik-org/morphik-core:${MORPHIK_VERSION}" /app/morphik-backup.sh > morphik-backup.sh 2>/dev/null && [ -s morphik-backup.sh ]; then
+        chmod +x morphik-backup.sh
+        print_success "Copied 'morphik-backup.sh' from the Docker image."
+    else
+        rm -f morphik-backup.sh
+        print_warning "morphik-backup.sh is not available. Download it later from $REPO_URL/morphik-backup.sh"
+    fi
+fi
+
 # 6. Start the application
 print_info "Starting the Morphik stack... This may take a few minutes for the first run."
 morphik_compose_resolve_existing_project
@@ -481,6 +501,13 @@ print_info "   Stop services: ./stop-morphik.sh   # preserves PostgreSQL and oth
 print_info "   Restart:      ./start-morphik.sh"
 print_info "   Pin version:  ./start-morphik.sh --version 2025-02-01"
 print_info "   List versions: docker image ls ghcr.io/morphik-org/morphik-core"
+echo ""
+print_info "💾 Backups:"
+print_info "   Back up now:  ./morphik-backup.sh backup   # database, embeddings, files, morphik.toml"
+print_info "   Restore:      ./morphik-backup.sh restore backups/<file>.backup"
+print_info "   Check a file: ./morphik-backup.sh verify backups/<file>.backup"
+print_info "   Schedule:     set [backup] enabled = true in morphik.toml, then ./start-morphik.sh"
+print_info "   Back up before every upgrade or experiment. Copy backups off this host, for example with [backup] s3_uri."
 
 # Create convenience startup script
 cat > start-morphik.sh << 'EOF'
@@ -555,14 +582,47 @@ if [ -f ".env" ] && grep -q "UI_INSTALLED=true" .env; then
     UI_PROFILE="--profile ui"
 fi
 
+# Read one value from the [backup] section of morphik.toml.
+backup_setting() {
+    awk -v key="$1" '
+        /^\[/ { in_backup = ($0 ~ /^\[backup\][[:space:]]*(#.*)?$/); next }
+        in_backup && $0 ~ ("^" key "[[:space:]]*=") {
+            sub(/^[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); gsub(/"/, ""); print; exit
+        }' morphik.toml 2>/dev/null || true
+}
+
+# [backup] enabled = true starts the scheduled backup service. A non-empty s3_uri also starts
+# backup-s3, which copies every backup off this host.
+BACKUP_PROFILES=""
+if [ "$(backup_setting enabled)" = "true" ]; then
+    if [ ! -f morphik-backup.sh ]; then
+        echo "[backup] enabled = true, but morphik-backup.sh is missing. Download it next to this script." >&2
+        exit 1
+    fi
+    BACKUP_DIR=$(backup_setting directory)
+    export MORPHIK_BACKUP_DIR="${BACKUP_DIR:-./backups}"
+    mkdir -p "$MORPHIK_BACKUP_DIR"
+    chmod 700 "$MORPHIK_BACKUP_DIR"
+    export MORPHIK_BACKUP_OWNER="$(id -u):$(id -g)"
+    BACKUP_PROFILES="--profile backup"
+    if [ -n "$(backup_setting s3_uri)" ]; then
+        BACKUP_PROFILES="$BACKUP_PROFILES --profile backup-s3"
+    fi
+fi
+
 morphik_compose_resolve_existing_project
-docker compose -f docker-compose.run.yml $UI_PROFILE up -d --remove-orphans
+docker compose -f docker-compose.run.yml $UI_PROFILE $BACKUP_PROFILES up -d --remove-orphans
 echo "🚀 Morphik ${MORPHIK_VERSION} is running on http://localhost:${MORPHIK_API_PORT}"
 echo "   Health: http://localhost:${MORPHIK_API_PORT}/health"
 echo "   Docs:   http://localhost:${MORPHIK_API_PORT}/docs"
 if [ -n "$UI_PROFILE" ]; then
     echo ""
     echo "🎨 Admin UI: http://localhost:3003"
+fi
+if [ -n "$BACKUP_PROFILES" ]; then
+    echo "💾 Scheduled backups are on. Files go to ${MORPHIK_BACKUP_DIR}."
+else
+    echo "💾 Back up before upgrades or experiments: ./morphik-backup.sh backup"
 fi
 EOF
 chmod +x start-morphik.sh

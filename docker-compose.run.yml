@@ -134,6 +134,64 @@ services:
     networks:
       - morphik-network
 
+  backup:
+    # Scheduled backups. start-morphik.sh enables this profile when morphik.toml has
+    # [backup] enabled = true. It runs morphik-backup.sh in the PostgreSQL image, outside the
+    # API process, so a hung API cannot stop backups. Settings are read from [backup] before
+    # every run.
+    image: pgvector/pgvector:pg16
+    profiles:
+      - backup
+    entrypoint: ["bash", "/opt/morphik/morphik-backup.sh", "scheduled"]
+    init: true
+    environment:
+      - MORPHIK_BACKUP_IN_CONTAINER=1
+      - MORPHIK_BACKUP_OWNER=${MORPHIK_BACKUP_OWNER:-}
+      - MORPHIK_BACKUP_MIN_INTERVAL_SECONDS=${MORPHIK_BACKUP_MIN_INTERVAL_SECONDS:-60}
+      - MORPHIK_VERSION=${MORPHIK_VERSION:-latest}
+      - PGHOST=postgres
+      - PGUSER=morphik
+      - PGPASSWORD=morphik
+      - PGDATABASE=morphik
+    volumes:
+      - ./morphik-backup.sh:/opt/morphik/morphik-backup.sh:ro
+      - ./morphik.toml:/install/morphik.toml:ro
+      - "${MORPHIK_ENV_FILE:-.env}:/install/.env:ro"
+      - ./storage:/install/storage:ro
+      - ${MORPHIK_BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - morphik-network
+
+  backup-s3:
+    # Copies finished backups to [backup] s3_uri, so a backup survives losing this host.
+    # It never deletes remote objects; use an S3 lifecycle rule for remote retention.
+    # Credentials come from the EC2 instance role or the AWS_* variables below.
+    image: ${MORPHIK_BACKUP_AWS_IMAGE:-amazon/aws-cli:latest}
+    profiles:
+      - backup-s3
+    entrypoint: ["bash", "/opt/morphik/morphik-backup.sh", "offsite-sync"]
+    init: true
+    environment:
+      - MORPHIK_BACKUP_IN_CONTAINER=1
+      - MORPHIK_BACKUP_SYNC_SECONDS=${MORPHIK_BACKUP_SYNC_SECONDS:-300}
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - AWS_REGION
+      - AWS_DEFAULT_REGION
+      - AWS_ENDPOINT_URL
+    volumes:
+      - ./morphik-backup.sh:/opt/morphik/morphik-backup.sh:ro
+      - ./morphik.toml:/install/morphik.toml:ro
+      - ${MORPHIK_BACKUP_DIR:-./backups}:/backups:ro
+    restart: unless-stopped
+    networks:
+      - morphik-network
+
 networks:
   morphik-network:
     driver: bridge

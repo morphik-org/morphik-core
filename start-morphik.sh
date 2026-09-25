@@ -73,12 +73,45 @@ if [ -f ".env" ] && grep -q "^UI_INSTALLED=true" .env; then
     UI_PROFILE="--profile ui"
 fi
 
+# Read one value from the [backup] section of morphik.toml.
+backup_setting() {
+    awk -v key="$1" '
+        /^\[/ { in_backup = ($0 ~ /^\[backup\][[:space:]]*(#.*)?$/); next }
+        in_backup && $0 ~ ("^" key "[[:space:]]*=") {
+            sub(/^[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); gsub(/"/, ""); print; exit
+        }' morphik.toml 2>/dev/null || true
+}
+
+# [backup] enabled = true starts the scheduled backup service. A non-empty s3_uri also starts
+# backup-s3, which copies every backup off this host.
+BACKUP_PROFILES=""
+if [ "$(backup_setting enabled)" = "true" ]; then
+    if [ ! -f morphik-backup.sh ]; then
+        print_error "[backup] enabled = true, but morphik-backup.sh is missing. Download it next to this script."
+        exit 1
+    fi
+    BACKUP_DIR=$(backup_setting directory)
+    export MORPHIK_BACKUP_DIR="${BACKUP_DIR:-./backups}"
+    mkdir -p "$MORPHIK_BACKUP_DIR"
+    chmod 700 "$MORPHIK_BACKUP_DIR"
+    export MORPHIK_BACKUP_OWNER="$(id -u):$(id -g)"
+    BACKUP_PROFILES="--profile backup"
+    if [ -n "$(backup_setting s3_uri)" ]; then
+        BACKUP_PROFILES="$BACKUP_PROFILES --profile backup-s3"
+    fi
+fi
+
 print_info "Starting Morphik with port ${MORPHIK_API_PORT}..."
 morphik_compose_resolve_existing_project
-docker compose -f "$COMPOSE_FILE" $UI_PROFILE up -d --remove-orphans
+docker compose -f "$COMPOSE_FILE" $UI_PROFILE $BACKUP_PROFILES up -d --remove-orphans
 
 print_success "🚀 Morphik is running!"
 print_info "🌐 API endpoints:"
 print_info "   Health check: http://localhost:${MORPHIK_API_PORT}/health"
 print_info "   API docs:     http://localhost:${MORPHIK_API_PORT}/docs"
 print_info "   Main API:     http://localhost:${MORPHIK_API_PORT}"
+if [ -n "$BACKUP_PROFILES" ]; then
+    print_info "💾 Scheduled backups are on. Files go to ${MORPHIK_BACKUP_DIR}."
+else
+    print_info "💾 Back up before upgrades or experiments: ./morphik-backup.sh backup"
+fi

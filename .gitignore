@@ -27,6 +27,9 @@ core/tests/assets
 
 storage/*
 logs/*
+# Backups contain the full knowledge base. Keep them out of git and image builds.
+backups/
+*.backup
 samples/*
 aggregated_code.txt
 

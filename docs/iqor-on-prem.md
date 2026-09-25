@@ -20,6 +20,8 @@ executable test. A code path alone is not counted as a passing deployment check.
 | Content updates and ingestion workers cannot overwrite a newer accepted revision | Implemented and integration tested | Persisted revisions give updates distinct job IDs. API and worker share a document lock; active processing returns 409, queued superseded jobs skip all writes. Client editing preconditions remain outside this change. See [update scheduling](document-updates.md). | Morphik Core, then iQor caller adoption |
 | `min_score` affects retrieval | Fixed and unit verified in this branch | `test_min_score_zero_keeps_zero_and_positive_scores` and `test_min_score_filters_on_the_final_score` pass. | Morphik Core |
 | Work item 47490 returns five distinct QA backlog items | Not verified | The repository has no iQor corpus, query text, auth token, or captured response. `scripts/verify_iqor_retrieval.sh` captures and validates the response on iQor's deployment. | iQor MCP wrapper / iQor acceptance test |
+| A whole knowledge base can be backed up and restored without re-embedding | Verified in Docker and with real Core | `scripts/test_backup_restore.sh` backs up, deletes the PostgreSQL volume and `./storage`, restores, and compares documents, metadata, embeddings, and file hashes. A run against the real API and worker returned identical retrieval scores and file bytes after restore. See [Backup and restore](#backup-and-restore). | Morphik Core |
+| Scheduled backups with retention and an off-host copy | Verified in Docker against an S3 mock | The same test runs the `backup` and `backup-s3` services. Real AWS S3 and EC2 instance-role credentials are not yet tested. | Morphik Core / iQor infrastructure |
 | Default Docker config keeps document and query data on premises | Fails by default | `morphik.docker.toml` selects OpenAI for completion and standard embeddings. Telemetry is enabled unless `TELEMETRY=false`. See the data boundary below. | Joint configuration decision |
 | Core, MCP wrapper, and UI responsibilities are separated | Documented | See the ownership table below. The iQor MCP wrapper and existing iQor UI are not in this repository. | Joint |
 
@@ -48,7 +50,7 @@ command below deletes PostgreSQL, Redis, downloaded model state, and UI build vo
 docker compose -f docker-compose.run.yml --profile "*" down --volumes --remove-orphans
 ```
 
-Treat that command as destructive. Back up PostgreSQL and `./storage` first.
+Treat that command as destructive. Run `./morphik-backup.sh backup` first.
 
 ### Automated recreation test
 
@@ -79,6 +81,75 @@ Captured on 2026-09-02 with Docker Engine 27.4.0:
 PASS: document identity and metadata survived container recreation and repeated stop/start.
 1 passed
 ```
+
+## Backup and restore
+
+`morphik-backup.sh` backs up the whole knowledge base into one file and restores it. It needs only bash and
+Docker on the EC2 host. [DOCKER.md](../DOCKER.md#backup-and-restore) has the full reference. This section is the
+short version for iQor.
+
+### Why data was lost before
+
+Two things can make the knowledge base disappear:
+
+1. Installers before September 4, 2026 (PR #435) generated a `stop-morphik.sh` that ran `down --volumes`. Every
+   stop deleted the PostgreSQL volume. Check the install:
+
+   ```bash
+   grep -n -- --volumes stop-morphik.sh
+   ```
+
+   If this prints a line, replace `stop-morphik.sh` with the current one before the next stop.
+
+2. A changed `COMPOSE_PROJECT_NAME` or install directory name points Compose at a new, empty volume. The old
+   volume still exists. `docker volume ls` shows it as `<old-project>_postgres_data`.
+
+### Before an experiment
+
+```bash
+./morphik-backup.sh backup
+./morphik-backup.sh verify backups/morphik-<time>.backup
+```
+
+Copy the file off the instance, or set `[backup] s3_uri` so the script uploads it. A backup prints a warning if
+the database has no documents. That usually means reason 2 above.
+
+### Restore
+
+```bash
+./morphik-backup.sh restore backups/morphik-<time>.backup
+```
+
+Restore refuses to run if a checksum fails, if the embedding model or dimensions differ from `morphik.toml`, or
+if the deployment already has data. `--force` replaces existing data after writing a safety backup of it.
+Embeddings come back exactly, so nothing is re-embedded. Documents that were mid-ingestion come back as `failed`
+with a new ingestion revision, and restore prints the `POST /ingest/requeue` call that finishes them.
+
+If the EC2 instance is lost, install Morphik on a new instance, copy the backup there, and run:
+
+```bash
+./morphik-backup.sh restore morphik-<time>.backup --restore-config
+```
+
+### Recommended schedule
+
+```toml
+[backup]
+enabled = true
+interval_hours = 12
+directory = "./backups"
+keep = 14
+verify = true
+s3_uri = "s3://<iqor-bucket>/morphik"
+s3_region = "<region>"
+```
+
+Run `./start-morphik.sh` after editing. The `backup` service writes a backup every 12 hours, checks it, and keeps
+the newest 14 scheduled backups. The `backup-s3` service copies each one to S3 within 5 minutes. It uses the EC2
+instance role, which needs `s3:PutObject` and `s3:ListBucket` on that prefix and a metadata hop limit of 2.
+Remote copies are never deleted by Morphik. Set an S3 lifecycle rule for them.
+
+Restore a recent backup onto a spare host once a quarter. A backup that has never been restored is not proven.
 
 ## Document update contract
 
@@ -285,6 +356,15 @@ The iQor MCP wrapper and existing UI are not present in this repository, so this
 - `core/tests/unit/test_retrieval_contract.py`: minimum-score tests.
 - `scripts/verify_iqor_retrieval.sh`: captured-response acceptance check for work item 47490.
 
+The backup follow-up added:
+
+- `morphik-backup.sh`: backup, verify, restore, list, and the entry points of the scheduled services.
+- `docker-compose.run.yml`: optional `backup` and `backup-s3` services.
+- `start-morphik.sh` and both installers: download the backup tool, start the backup profiles from `[backup]`, and
+  print backup commands.
+- `core/tests/unit/test_backup_tool.py`: manifest, compatibility, comparison, and retention tests.
+- `scripts/test_backup_restore.sh` and `core/tests/integration/test_docker_backup_restore.py`: Docker test.
+
 ## Reproduction and verification commands
 
 Confirm the audit base:
@@ -300,8 +380,8 @@ The audit began with `0 0` and `8c51b8d` before these branch changes.
 Validate the lifecycle scripts and rendered production Compose model without starting containers:
 
 ```bash
-bash -n start-morphik.sh stop-morphik.sh install_docker.sh \
-  scripts/test_postgres_persistence.sh scripts/verify_iqor_retrieval.sh
+bash -n start-morphik.sh stop-morphik.sh install_docker.sh morphik-backup.sh \
+  scripts/test_postgres_persistence.sh scripts/test_backup_restore.sh scripts/verify_iqor_retrieval.sh
 MORPHIK_API_PORT=8123 MORPHIK_VERSION=test MORPHIK_ENV_FILE=/dev/null \
   docker compose -f docker-compose.run.yml --profile "*" config
 ```
@@ -310,6 +390,7 @@ Run the tests that passed during this audit:
 
 ```bash
 .venv/bin/pytest -q core/tests/unit/test_docker_lifecycle.py
+.venv/bin/pytest -q core/tests/unit/test_backup_tool.py
 .venv/bin/pytest -q core/tests/unit/test_ingestion_service_metadata_update.py
 LITELLM_LOCAL_MODEL_COST_MAP=True \
   .venv/bin/pytest -q core/tests/unit/test_retrieval_contract.py
@@ -324,7 +405,15 @@ Run the Docker proof on a host with its daemon running:
 .venv/bin/pytest -q core/tests/integration/test_docker_postgres_persistence.py
 # or
 ./scripts/test_postgres_persistence.sh
+
+.venv/bin/pytest -q core/tests/integration/test_docker_backup_restore.py
+# or
+./scripts/test_backup_restore.sh
 ```
+
+The backup test uses a project named `morphik-backup-test-<pid>-<random>` and deletes only that project, its
+volumes, and its temporary install directory. It pulls `adobe/s3mock` for the off-host copy. Set
+`MORPHIK_BACKUP_TEST_S3=0` to skip that part.
 
 Reproduce the original destructive behavior on an old installation only after taking a backup. Inspect the generated
 script rather than running it against customer data:
@@ -349,7 +438,7 @@ branch, the command returns no matches for the production stop paths.
    the lost-update fix?
 6. Must the deployment have zero outbound network access, or are approved internal Azure/OpenAI, S3, telemetry, or
    registry endpoints allowed?
-7. Who owns PostgreSQL backups, restore drills, retention, encryption keys, and the stable `COMPOSE_PROJECT_NAME` in
-   customer infrastructure?
+7. Morphik now ships the backup, verify, restore, and scheduling tools. Who at iQor owns the S3 bucket, its
+   encryption keys and lifecycle rules, the quarterly restore drill, and the stable `COMPOSE_PROJECT_NAME`?
 8. Will iQor use the bundled Redis container? Redis persistence is retained now, but queued jobs are not a substitute
    for a database backup or an update revision contract.
