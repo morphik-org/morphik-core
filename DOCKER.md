@@ -44,6 +44,7 @@ docker compose -f docker-compose.run.yml --profile "*" down --volumes --remove-o
 ```
 
 It removes PostgreSQL and every other named volume. Run `./morphik-backup.sh backup` before an intentional reset.
+Do not add `--volumes` to a normal shutdown. The generated `stop-morphik` script preserves all data volumes.
 
 Installers before September 4, 2026 (PR #435) generated a `stop-morphik.sh` that ran `down --volumes`, so every stop
 deleted the database. Check an older install with `grep -n -- --volumes stop-morphik.sh`. If it matches, replace
@@ -125,10 +126,20 @@ run `./start-morphik.sh` again to apply changes.
 
 ## Storage and data
 
-- Database data: Stored in the `postgres_data` Docker volume outside the PostgreSQL container
+- Database data: Stored on the host in the `postgres_data` Docker volume. It survives container replacement and `docker compose down`.
 - AI Models: Stored in the `ollama_data` Docker volume
 - Documents: Stored in `./storage` directory (mounted to container)
 - Logs: Available in `./logs` directory
+
+To keep the PostgreSQL files in a visible host directory on a new installation, set this in `.env` before the first start:
+
+```bash
+MORPHIK_POSTGRES_DATA_PATH=./postgres-data
+```
+
+Do not add or change this setting on an existing installation until you have migrated the current database. Pointing Postgres at an empty directory creates an empty database and makes the existing data appear lost.
+
+The generated start and stop scripts also recover the existing Compose project name from Docker's container and volume labels. This prevents a moved installation directory from leaving the old containers and database volume behind.
 
 ## Backup and restore
 
@@ -157,6 +168,9 @@ The dump and the manifest counts come from one database snapshot. You can back u
 Backup files and the `backups` directory are readable only by their owner.
 
 Redis is not backed up. It holds only the ingestion queue.
+
+Backups work the same when `MORPHIK_POSTGRES_DATA_PATH` keeps PostgreSQL in a host directory. The script reads
+the database through PostgreSQL, not from its files.
 
 If `[storage] provider` is `aws-s3`, the source files stay in the bucket and are not copied. The manifest records
 this, and the script prints a warning. Turn on bucket versioning to protect those files.
@@ -270,13 +284,20 @@ aws ec2 modify-instance-metadata-options --instance-id <instance-id> \
    - Check PostgreSQL health: `docker compose -f docker-compose.run.yml ps`
    - Verify the database: `docker compose -f docker-compose.run.yml exec postgres psql -U morphik -d morphik`
 
-3. **Model download issues**
+3. **Container name is already in use**
+
+   - Do not delete the existing containers or volumes before identifying their Compose project.
+   - Read the current project name: `docker inspect morphik-postgres --format '{{ index .Config.Labels "com.docker.compose.project" }}'`
+   - List existing Postgres volumes: `docker volume ls --filter label=com.docker.compose.volume=postgres_data`
+   - The generated scripts select the existing project automatically. If more than one project owns a Postgres volume, set the intended project explicitly in `.env` with `COMPOSE_PROJECT_NAME=<project>`.
+
+4. **Model download issues**
 
    - Check Ollama logs: `docker compose -f docker-compose.run.yml --profile ollama logs ollama`
    - Ensure enough disk space for models
    - Restart Ollama: `docker compose -f docker-compose.run.yml --profile ollama restart ollama`
 
-4. **Performance issues**
+5. **Performance issues**
 
    - Monitor resources: `docker stats`
    - Ensure sufficient RAM (8GB+ recommended)
@@ -297,7 +318,7 @@ For production environments:
 
    - Use named volumes for all data
    - Turn on scheduled backups with an off-host copy (see [Backup and restore](#backup-and-restore))
-   - Test a restore with `./morphik-backup.sh verify` before you need it
+   - Test a restore with `./morphik-backup.sh verify` before upgrading production deployments
 
 3. **Monitoring**
 

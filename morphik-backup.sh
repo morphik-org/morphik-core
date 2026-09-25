@@ -614,6 +614,17 @@ compose() {
     docker compose -f "$COMPOSE_FILE" "$@"
 }
 
+# Use the same Compose project as start-morphik.sh and stop-morphik.sh. After the install
+# directory is moved, morphik-compose-project.sh finds the project from Docker's labels, so a
+# backup or restore does not silently target a new, empty database. Older installs without the
+# helper keep Compose's default project name.
+resolve_compose_project() {
+    [ -f morphik-compose-project.sh ] || return 0
+    # shellcheck disable=SC1091
+    source ./morphik-compose-project.sh
+    morphik_compose_resolve_existing_project >&2 || die "Could not decide which Compose project to use."
+}
+
 # Run a PostgreSQL client program against the deployment database.
 pg() {
     if [ "$IN_CONTAINER" = "1" ]; then
@@ -628,6 +639,7 @@ require_host_deployment() {
     command -v docker >/dev/null 2>&1 || die "Docker is required."
     docker info >/dev/null 2>&1 || die "Docker is installed, but the daemon is not running."
     [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found in $INSTALL_DIR. Run this script from the Morphik install directory."
+    resolve_compose_project
 }
 
 postgres_container() {
@@ -1362,8 +1374,9 @@ match the backup, or re-run with --restore-config to use the configuration saved
     }
     wait_for_postgres
     project=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$(postgres_container)")
-    volume=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' "$(postgres_container)")
-    info "Target: Compose project '$project', PostgreSQL volume '$volume', storage $STORAGE_DIR"
+    # A named volume has a Name. A MORPHIK_POSTGRES_DATA_PATH bind mount has only a Source.
+    volume=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}}{{end}}{{end}}' "$(postgres_container)")
+    info "Target: Compose project '$project', PostgreSQL data '$volume', storage $STORAGE_DIR"
 
     check_target_empty() {
         existing=$(target_data)
@@ -1480,6 +1493,7 @@ cmd_verify() {
     command -v docker >/dev/null 2>&1 || die "Docker is required."
     TOOL_IMAGE=${MORPHIK_BACKUP_TOOL_IMAGE:-$DEFAULT_TOOL_IMAGE}
     if [ -f "$COMPOSE_FILE" ]; then
+        resolve_compose_project
         TOOL_IMAGE=$(tool_image)
     fi
     info "Verifying $(basename "$file") in a temporary PostgreSQL container. The live deployment is not touched."

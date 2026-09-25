@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd "$SCRIPT_DIR"
+
+if [[ ! -f "$SCRIPT_DIR/morphik-compose-project.sh" ]]; then
+    echo "morphik-compose-project.sh not found. Restore it from the Morphik release before starting." >&2
+    exit 1
+fi
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/morphik-compose-project.sh"
+
 # Purpose: Production startup script for Morphik (created by install_docker.sh)
 # This script reads the port from morphik.toml and passes it to Docker Compose.
 # It is safe to run repeatedly and never rewrites the compose file.
@@ -92,6 +102,7 @@ if [ "$(backup_setting enabled)" = "true" ]; then
 fi
 
 print_info "Starting Morphik with port ${MORPHIK_API_PORT}..."
+morphik_compose_resolve_existing_project
 docker compose -f "$COMPOSE_FILE" $UI_PROFILE $BACKUP_PROFILES up -d --remove-orphans
 
 print_success "🚀 Morphik is running!"

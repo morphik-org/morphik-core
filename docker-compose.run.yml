@@ -87,9 +87,9 @@ services:
       - POSTGRES_PASSWORD=morphik
       - POSTGRES_DB=morphik
     volumes:
-      # Named volumes live outside the container and survive container recreation.
-      # Normal stop scripts must not pass --volumes to `docker compose down`.
-      - postgres_data:/var/lib/postgresql/data
+      # Defaults to a named volume outside the container. Set MORPHIK_POSTGRES_DATA_PATH
+      # before the first start to use a host directory such as ./postgres-data.
+      - "${MORPHIK_POSTGRES_DATA_PATH:-postgres_data}:/var/lib/postgresql/data"
     healthcheck:
       # The -d flag is important to specify the database name for the readiness check
       test: ["CMD-SHELL", "pg_isready -U morphik -d morphik"]

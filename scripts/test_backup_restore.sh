@@ -38,7 +38,7 @@ fi
 
 INSTALL_DIR=$(mktemp -d "${TMPDIR:-/tmp}/morphik-backup-test.XXXXXX")
 INSTALL_DIR=$(cd "$INSTALL_DIR" && pwd -P)
-cp "$REPO_DIR/docker-compose.run.yml" "$REPO_DIR/morphik-backup.sh" "$INSTALL_DIR/"
+cp "$REPO_DIR/docker-compose.run.yml" "$REPO_DIR/morphik-backup.sh" "$REPO_DIR/morphik-compose-project.sh" "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/morphik-backup.sh"
 
 export COMPOSE_PROJECT_NAME="$TEST_PROJECT"

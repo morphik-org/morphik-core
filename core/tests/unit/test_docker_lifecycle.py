@@ -22,7 +22,7 @@ def _installer_start_script() -> str:
 def test_production_compose_persists_postgres_without_fixed_container_names():
     compose = _read("docker-compose.run.yml")
 
-    assert "postgres_data:/var/lib/postgresql/data" in compose
+    assert '"${MORPHIK_POSTGRES_DATA_PATH:-postgres_data}:/var/lib/postgresql/data"' in compose
     assert "container_name:" not in compose
     assert '"5432:5432"' not in compose
     assert "${MORPHIK_API_PORT:-8000}:${MORPHIK_API_PORT:-8000}" in compose
@@ -93,6 +93,9 @@ def test_start_defaults_to_latest_when_env_omits_version(tmp_path, script_text):
     (deployment / ".env").write_text("JWT_SECRET_KEY=test-only\n", encoding="utf-8")
     (deployment / "morphik.toml").write_text("[api]\nport = 8123\n", encoding="utf-8")
     (deployment / "docker-compose.run.yml").write_text("services: {}\n", encoding="utf-8")
+    (deployment / "morphik-compose-project.sh").write_text(
+        _read("morphik-compose-project.sh"), encoding="utf-8"
+    )
 
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -136,6 +139,7 @@ def _run_start_script(tmp_path, script_text, toml_text, with_backup_tool=True):
     (deployment / ".env").write_text("JWT_SECRET_KEY=test-only\n", encoding="utf-8")
     (deployment / "morphik.toml").write_text(toml_text, encoding="utf-8")
     (deployment / "docker-compose.run.yml").write_text("services: {}\n", encoding="utf-8")
+    (deployment / "morphik-compose-project.sh").write_text(_read("morphik-compose-project.sh"), encoding="utf-8")
     if with_backup_tool:
         (deployment / "morphik-backup.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
@@ -230,6 +234,7 @@ def test_backup_tool_is_installed_and_keeps_data_safe():
     windows_installer = _read("install_docker.ps1")
 
     assert "umask 077" in tool
+    assert "morphik_compose_resolve_existing_project" in tool
     assert "down --volumes" not in tool
     assert "--volumes" not in tool
     assert 'pg_restore -U "$PG_USER" -d "$PG_DB" --clean --if-exists --no-owner' in tool
