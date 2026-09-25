@@ -1230,6 +1230,8 @@ cmd_backup() {
     s3_region=$(toml_get "$CONFIG_FILE" backup s3_region)
     if [ "$upload" = "1" ] && [ -n "$s3_uri" ]; then
         if ! upload_to_s3 "$file" "$s3_uri" "$s3_region"; then
+            info "On EC2 with an instance role, containers reach the role only when the instance metadata hop limit"
+            info "is at least 2: aws ec2 modify-instance-metadata-options --instance-id <id> --http-put-response-hop-limit 2"
             die "The backup was written locally, but the upload to $s3_uri failed."
         fi
         info "Uploaded to ${s3_uri%/}/$(basename "$file")"
@@ -1617,7 +1619,7 @@ cmd_offsite_sync() {
         if aws s3 sync /backups "${uri%/}/" --exclude '*' --include 'morphik-*.backup' --only-show-errors --no-progress; then
             info "$(utc_iso) backups are copied to $uri."
         else
-            warn "$(utc_iso) copy to $uri failed. Retrying in $interval seconds."
+            warn "$(utc_iso) copy to $uri failed. Retrying in $interval seconds. On EC2, an instance role needs a metadata hop limit of at least 2."
         fi
         pause "$interval"
     done

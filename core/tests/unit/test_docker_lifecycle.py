@@ -93,9 +93,7 @@ def test_start_defaults_to_latest_when_env_omits_version(tmp_path, script_text):
     (deployment / ".env").write_text("JWT_SECRET_KEY=test-only\n", encoding="utf-8")
     (deployment / "morphik.toml").write_text("[api]\nport = 8123\n", encoding="utf-8")
     (deployment / "docker-compose.run.yml").write_text("services: {}\n", encoding="utf-8")
-    (deployment / "morphik-compose-project.sh").write_text(
-        _read("morphik-compose-project.sh"), encoding="utf-8"
-    )
+    (deployment / "morphik-compose-project.sh").write_text(_read("morphik-compose-project.sh"), encoding="utf-8")
 
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -130,13 +128,13 @@ def test_start_defaults_to_latest_when_env_omits_version(tmp_path, script_text):
     assert docker_output.read_text(encoding="utf-8").strip() == "latest|8123"
 
 
-def _run_start_script(tmp_path, script_text, toml_text, with_backup_tool=True):
+def _run_start_script(tmp_path, script_text, toml_text, with_backup_tool=True, env_text="JWT_SECRET_KEY=test-only\n"):
     deployment = tmp_path / "deployment"
     deployment.mkdir()
     script = deployment / "start-morphik.sh"
     script.write_text(script_text, encoding="utf-8")
     script.chmod(0o755)
-    (deployment / ".env").write_text("JWT_SECRET_KEY=test-only\n", encoding="utf-8")
+    (deployment / ".env").write_text(env_text, encoding="utf-8")
     (deployment / "morphik.toml").write_text(toml_text, encoding="utf-8")
     (deployment / "docker-compose.run.yml").write_text("services: {}\n", encoding="utf-8")
     (deployment / "morphik-compose-project.sh").write_text(_read("morphik-compose-project.sh"), encoding="utf-8")
@@ -147,7 +145,8 @@ def _run_start_script(tmp_path, script_text, toml_text, with_backup_tool=True):
     fake_bin.mkdir()
     fake_docker = fake_bin / "docker"
     fake_docker.write_text(
-        '#!/usr/bin/env bash\nprintf "%s|%s\\n" "$*" "${MORPHIK_BACKUP_DIR:-}" > "$FAKE_DOCKER_OUTPUT"\n',
+        "#!/usr/bin/env bash\n"
+        'printf "%s|%s|%s\\n" "$*" "${MORPHIK_BACKUP_DIR:-}" "${COMPOSE_PROFILES:-}" > "$FAKE_DOCKER_OUTPUT"\n',
         encoding="utf-8",
     )
     fake_docker.chmod(0o755)
@@ -180,8 +179,10 @@ def test_start_enables_backup_profiles_from_morphik_toml(tmp_path, script_text):
     completed, docker_args, deployment = _run_start_script(tmp_path, script_text, toml_text)
 
     assert completed.returncode == 0, completed.stderr
-    args, backup_dir = docker_args.split("|")
-    assert "--profile backup --profile backup-s3 up -d --remove-orphans" in args
+    args, backup_dir, profiles = docker_args.split("|")
+    assert args.endswith("up -d --remove-orphans")
+    assert "--profile" not in args
+    assert profiles == "backup,backup-s3"
     assert backup_dir == "./nightly"
     assert (deployment / "nightly").is_dir()
     assert oct((deployment / "nightly").stat().st_mode & 0o777) == "0o700"
@@ -194,9 +195,24 @@ def test_start_leaves_backups_off_by_default(tmp_path, script_text):
     completed, docker_args, deployment = _run_start_script(tmp_path, script_text, toml_text)
 
     assert completed.returncode == 0, completed.stderr
-    assert "--profile backup" not in docker_args
+    assert "backup" not in docker_args.split("|")[2]
     assert "./morphik-backup.sh backup" in completed.stdout
     assert not (deployment / "backups").exists()
+
+
+@START_SCRIPTS
+def test_start_keeps_profiles_from_env_when_adding_ui_and_backups(tmp_path, script_text):
+    # A --profile flag makes Compose ignore COMPOSE_PROFILES, which dropped the ollama profile on
+    # a real EC2 restore. The start script must merge the profiles instead.
+    toml_text = '[backup]\nenabled = true\ns3_uri = "s3://bucket/morphik"\n'
+    env_text = 'JWT_SECRET_KEY=test-only\nCOMPOSE_PROFILES="ollama,ui"\nUI_INSTALLED=true\n'
+
+    completed, docker_args, _ = _run_start_script(tmp_path, script_text, toml_text, env_text=env_text)
+
+    assert completed.returncode == 0, completed.stderr
+    args, _, profiles = docker_args.split("|")
+    assert "--profile" not in args
+    assert profiles == "ollama,ui,backup,backup-s3"
 
 
 @START_SCRIPTS
