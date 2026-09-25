@@ -577,9 +577,23 @@ if [ "$COLPALI_ENABLED" = "false" ]; then
 fi
 
 # Check if UI is installed
+# Compose ignores COMPOSE_PROFILES whenever a --profile flag is passed, which would silently drop
+# profiles such as ollama. Add every profile to COMPOSE_PROFILES instead of passing flags.
+PROFILES="${COMPOSE_PROFILES:-}"
+if [ -z "$PROFILES" ] && [ -f ".env" ]; then
+    PROFILES=$(sed -n 's/^COMPOSE_PROFILES=//p' .env | tail -n1 | tr -d "\"'")
+fi
+add_profile() {
+    case ",${PROFILES}," in
+        *",$1,"*) ;;
+        *) PROFILES="${PROFILES:+$PROFILES,}$1" ;;
+    esac
+}
+
 UI_PROFILE=""
 if [ -f ".env" ] && grep -q "UI_INSTALLED=true" .env; then
-    UI_PROFILE="--profile ui"
+    UI_PROFILE="ui"
+    add_profile ui
 fi
 
 # Read one value from the [backup] section of morphik.toml.
@@ -604,14 +618,16 @@ if [ "$(backup_setting enabled)" = "true" ]; then
     mkdir -p "$MORPHIK_BACKUP_DIR"
     chmod 700 "$MORPHIK_BACKUP_DIR"
     export MORPHIK_BACKUP_OWNER="$(id -u):$(id -g)"
-    BACKUP_PROFILES="--profile backup"
+    BACKUP_PROFILES="backup"
+    add_profile backup
     if [ -n "$(backup_setting s3_uri)" ]; then
-        BACKUP_PROFILES="$BACKUP_PROFILES --profile backup-s3"
+        add_profile backup-s3
     fi
 fi
+export COMPOSE_PROFILES="$PROFILES"
 
 morphik_compose_resolve_existing_project
-docker compose -f docker-compose.run.yml $UI_PROFILE $BACKUP_PROFILES up -d --remove-orphans
+docker compose -f docker-compose.run.yml up -d --remove-orphans
 echo "🚀 Morphik ${MORPHIK_VERSION} is running on http://localhost:${MORPHIK_API_PORT}"
 echo "   Health: http://localhost:${MORPHIK_API_PORT}/health"
 echo "   Docs:   http://localhost:${MORPHIK_API_PORT}/docs"
