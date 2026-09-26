@@ -1,49 +1,100 @@
 import argparse
+import asyncio
 import atexit
+from dataclasses import replace
 import logging
 import os
 import signal
-import socket
 import subprocess
 import sys
 import time
 
+import arq
 import requests
 import tomli
 import uvicorn
 
 from core.config import get_settings
 from core.logging_config import setup_logging
+from core.redis_settings import build_redis_settings, should_manage_local_redis
 from utils.env_loader import load_local_env
 
 # Global variable to store the worker process
-worker_process = None
+worker_process: subprocess.Popen | None = None
 
 
-def wait_for_redis(host="localhost", port=6379, timeout=20):
+def register_shutdown_handlers():
+    """Register process cleanup handlers for CLI execution."""
+    atexit.register(cleanup_processes)
+    signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
+    signal.signal(signal.SIGTERM, lambda sig, frame: sys.exit(0))
+
+
+async def _check_redis_connection(redis_settings):
+    redis_pool = await arq.create_pool(redis_settings)
+    try:
+        await redis_pool.ping()
+    finally:
+        await redis_pool.aclose()
+
+
+def wait_for_redis(redis_settings, timeout=20):
     """
     Wait for Redis to become available.
 
     Args:
-        host: Redis host address
-        port: Redis port number
+        redis_settings: Redis settings used by the API and ARQ worker
         timeout: Maximum time to wait in seconds
 
     Returns:
         True if Redis becomes available within the timeout, False otherwise
     """
-    logging.info(f"Waiting for Redis to be available at {host}:{port}...")
-    t0 = time.monotonic()
-    while time.monotonic() - t0 < timeout:
-        try:
-            with socket.create_connection((host, port), timeout=1):
-                logging.info("Redis is accepting connections.")
-                return True
-        except (OSError, socket.error):
-            logging.debug(f"Redis not available yet, retrying... ({int(time.monotonic() - t0)}s elapsed)")
-            time.sleep(0.3)
+    logging.info(
+        "Waiting for Redis to be available at %s:%s (db=%s, ssl=%s)...",
+        redis_settings.host,
+        redis_settings.port,
+        redis_settings.database,
+        redis_settings.ssl,
+    )
+    started_at = time.monotonic()
+    deadline = started_at + timeout
+    retry_delay = redis_settings.conn_retry_delay or 1
+    last_error = None
 
-    logging.error(f"Redis not reachable after {timeout}s")
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+
+        readiness_settings = replace(
+            redis_settings,
+            conn_timeout=max(min(redis_settings.conn_timeout, 1, remaining), 0.1),
+            conn_retries=0,
+            conn_retry_delay=retry_delay,
+        )
+
+        try:
+            asyncio.run(asyncio.wait_for(_check_redis_connection(readiness_settings), timeout=remaining))
+        except Exception as exc:
+            last_error = exc
+            sleep_for = min(retry_delay, max(deadline - time.monotonic(), 0))
+            if sleep_for <= 0:
+                break
+            time.sleep(sleep_for)
+        else:
+            logging.info("Redis connection verified.")
+            return True
+
+    elapsed = time.monotonic() - started_at
+    logging.error(
+        "Redis not reachable after %.1fs at %s:%s (db=%s, ssl=%s): %s",
+        elapsed,
+        redis_settings.host,
+        redis_settings.port,
+        redis_settings.database,
+        redis_settings.ssl,
+        last_error or "timed out",
+    )
     return False
 
 
@@ -127,8 +178,9 @@ def start_arq_worker():
 def cleanup_processes():
     """Stop the ARQ worker process on exit."""
     global worker_process
-    if worker_process and worker_process.poll() is None:  # Check if process is still running
-        logging.info(f"Stopping ARQ worker (PID: {worker_process.pid})...")
+    process = worker_process
+    if process and process.poll() is None:  # Check if process is still running
+        logging.info(f"Stopping ARQ worker (PID: {process.pid})...")
 
         # Log the worker termination
         try:
@@ -144,21 +196,21 @@ def cleanup_processes():
             logging.warning(f"Could not write worker stop message to log: {e}")
 
         # Send SIGTERM first for graceful shutdown
-        worker_process.terminate()
+        process.terminate()
         try:
             # Wait a bit for graceful shutdown
-            worker_process.wait(timeout=5)
+            process.wait(timeout=5)
             logging.info("ARQ worker stopped gracefully.")
         except subprocess.TimeoutExpired:
             logging.warning("ARQ worker did not terminate gracefully, sending SIGKILL.")
-            worker_process.kill()  # Force kill if it doesn't stop
+            process.kill()  # Force kill if it doesn't stop
             logging.info("ARQ worker killed.")
 
         # Close any open file descriptors for the process
-        if hasattr(worker_process, "stdout") and worker_process.stdout:
-            worker_process.stdout.close()
-        if hasattr(worker_process, "stderr") and worker_process.stderr:
-            worker_process.stderr.close()
+        if hasattr(process, "stdout") and process.stdout:
+            process.stdout.close()
+        if hasattr(process, "stderr") and process.stderr:
+            process.stderr.close()
 
     # Optional: Add Redis container stop logic here if desired
     # try:
@@ -166,13 +218,6 @@ def cleanup_processes():
     #     subprocess.run(["docker", "stop", "morphik-redis"], check=False, capture_output=True)
     # except Exception as e:
     #     logging.warning(f"Could not stop Redis container: {e}")
-
-
-# Register the cleanup function to be called on script exit
-atexit.register(cleanup_processes)
-# Also register for SIGINT (Ctrl+C) and SIGTERM
-signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
-signal.signal(signal.SIGTERM, lambda sig, frame: sys.exit(0))
 
 
 def check_ollama_running(base_url):
@@ -242,6 +287,8 @@ def get_ollama_usage_info():
 
 
 def main():
+    register_shutdown_handlers()
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Start the Morphik server")
     parser.add_argument(
@@ -271,12 +318,23 @@ def main():
     # Set up logging first with specified level
     setup_logging(log_level=args.log.upper())
 
-    # Check and start Redis container (unless skipped)
-    if not args.skip_redis_check:
-        check_and_start_redis()
-
     # Load environment variables from .env file if secrets aren't injected
     load_local_env(override=True)
+
+    # Load settings (this will validate all required env vars)
+    settings = get_settings()
+    redis_settings = build_redis_settings(settings)
+
+    # Check and start local Redis container only when using the default local target.
+    if not args.skip_redis_check:
+        if should_manage_local_redis(redis_settings):
+            check_and_start_redis()
+        else:
+            logging.info(
+                "Skipping local Redis container management for configured Redis target %s:%s",
+                redis_settings.host,
+                redis_settings.port,
+            )
 
     # Check if Ollama is required and running
     if not args.skip_ollama_check:
@@ -305,11 +363,8 @@ def main():
                 component_list = [config["component"] for config in ollama_configs]
                 print(f"Ollama is running and will be used for: {', '.join(component_list)}")
 
-    # Load settings (this will validate all required env vars)
-    settings = get_settings()
-
     # Wait for Redis to be available
-    if not wait_for_redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT):
+    if not wait_for_redis(redis_settings):
         logging.error("Cannot start server without Redis. Please ensure Redis is running.")
         sys.exit(1)
 

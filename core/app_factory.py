@@ -5,6 +5,8 @@ from pathlib import Path
 import arq
 from fastapi import FastAPI
 
+from core.redis_settings import build_redis_settings
+
 HEARTBEAT_URL = "https://logs.morphik.ai/api/heartbeat"
 HEARTBEAT_INTERVAL_HOURS = 4.0
 
@@ -89,14 +91,13 @@ async def lifespan(app_instance: FastAPI):
     logger.info("Lifespan: Attempting to initialize Redis connection pool…")
     global _global_redis_pool  # pylint: disable=global-statement
     try:
-        redis_settings_obj = arq.connections.RedisSettings(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-        )
+        redis_settings_obj = build_redis_settings(settings)
         logger.info(
-            "Lifespan: Redis settings for pool: host=%s, port=%s",
-            settings.REDIS_HOST,
-            settings.REDIS_PORT,
+            "Lifespan: Redis settings for pool: host=%s, port=%s, database=%s, ssl=%s",
+            redis_settings_obj.host,
+            redis_settings_obj.port,
+            redis_settings_obj.database,
+            redis_settings_obj.ssl,
         )
         current_redis_pool = await arq.create_pool(redis_settings_obj)
         if current_redis_pool:

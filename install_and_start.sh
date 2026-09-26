@@ -3,18 +3,13 @@
 # Morphik Core one-liner installer + server launcher.
 # Works on macOS (Apple Silicon or Intel) and Linux.
 # Usage:  bash install_and_start.sh
+# Requires Docker when using the default local Redis configuration.
 
 set -euo pipefail
 
 # Detect platform
 OS=$(uname -s)
 ARCH=$(uname -m)
-
-# Check docker availability
-if ! command -v docker >/dev/null 2>&1; then
-  echo "❌ Docker is required (used to run a local Redis container). Install Docker Desktop or docker engine first." >&2
-  exit 1
-fi
 
 printf "\n➡️  Detected OS: %s | Arch: %s\n" "$OS" "$ARCH"
 
