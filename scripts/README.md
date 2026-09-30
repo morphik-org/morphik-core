@@ -2,6 +2,36 @@
 
 This directory contains various utility scripts for development.
 
+## Reliance Appeal ingestion
+
+Use `ingest_reliance_appeal.py` to inventory and ingest supported files from a
+Reliance Appeal folder. It recursively includes PDF, DOCX, TIFF, PNG, JPG, and
+JPEG files, while excluding ZIP archives and generated HTML/CSS/images/XML
+export internals. The generated JSON manifest is local runtime output and
+contains each relative source path, extracted content when available, detected
+document dates, hashes, Morphik IDs, and processing status.
+
+```bash
+python scripts/ingest_reliance_appeal.py "C:\path\to\Reliance Appeal" `
+  --manifest "C:\path\to\reliance-appeal-manifest.json" `
+  --folder "/Reliance Appeal"
+```
+
+Run `--dry-run` first to create an inventory without calling Morphik. After
+ingestion, retrieve chunks with the stored `external_id` or search the indexed
+metadata:
+
+```python
+from morphik import Morphik
+
+db = Morphik()
+chunks = db.retrieve_chunks(
+    query="What evidence supports the appeal?",
+    filters={"document_date": {"$gte": "2025-01-01"}},
+    k=10,
+)
+```
+
 ## Code Formatting
 
 The project uses the following tools for code formatting:
