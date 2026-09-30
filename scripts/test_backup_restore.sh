@@ -191,6 +191,15 @@ INSERT INTO vector_embeddings (document_id, chunk_number, content, chunk_metadat
     ('doc-pdf', 0, 'pdf chunk', '{}', '[-0.333333343,0.666666687,0,0,0,0,0,1e-38]');
 INSERT INTO multi_vector_embeddings (document_id, chunk_number, content, embeddings) VALUES
     ('doc-pdf', 0, 'page image', ARRAY[B'10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010']::bit(128)[]);
+-- Core's IVFFlat index shape at production size. pg_restore builds it after loading the rows,
+-- and with 10000+ vectors of 1536 dimensions that needs about 65 MB of maintenance_work_mem,
+-- over PostgreSQL's 64 MB default. The index is created first, as Core does.
+CREATE TABLE ivfflat_restore_probe (id SERIAL PRIMARY KEY, embedding vector(1536) NOT NULL);
+CREATE INDEX ivfflat_restore_probe_idx ON ivfflat_restore_probe USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+SELECT setseed(0.47490);
+INSERT INTO ivfflat_restore_probe (embedding)
+SELECT (SELECT array_agg(random()::real) FROM generate_series(1, 1536) WHERE g > 0)::vector
+FROM generate_series(1, 10500) g;
 SQL
 }
 
@@ -319,12 +328,14 @@ if [ "$actual" != "$expected" ]; then
     diff <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
     fail "restored state differs from the original"
 fi
+[ "$(psql_q -c "SELECT count(*) FROM ivfflat_restore_probe")" = "10500" ] || fail "IVFFlat probe rows after restore"
+[ "$(psql_q -c "SELECT to_regclass('public.ivfflat_restore_probe_idx') IS NOT NULL")" = "t" ] || fail "IVFFlat index after restore"
 processing=$(psql_q -c "SELECT system_metadata->>'status', system_metadata->>'ingestion_revision', system_metadata ? 'progress' FROM documents WHERE external_id = 'doc-processing'")
 [ "$processing" = "failed|3|f" ] || fail "mid-ingestion document after restore: $processing"
 requeue_file=$(ls "$INSTALL_DIR"/backups/restore-*-requeue.json 2>/dev/null | head -n 1)
 [ -n "$requeue_file" ] && grep -q '"external_id" : "doc-processing"' "$requeue_file" || fail "requeue file"
 grep -q 'ingest/requeue' "$restore_log" || fail "restore did not explain how to requeue"
-pass "restore after volume deletion brought back documents, metadata, embeddings, and files"
+pass "restore after volume deletion brought back documents, metadata, embeddings, files, and a 1536-dimension IVFFlat index"
 pass "the mid-ingestion document is failed with revision 3 and listed for requeue"
 
 # 4. Existing data: refuse without --force, replace with --force
@@ -338,6 +349,23 @@ grep -q 'already has data' "$INSTALL_DIR/force.log" || fail "missing existing-da
 [ "$(snapshot_state)" = "$before_force" ] || fail "refused restore changed data"
 pass "restore refuses to overwrite existing data without --force"
 
+# A pg_restore failure must leave the live database alone. PostgreSQL's 64 MB default is the
+# setting that made the IVFFlat index build fail on a customer's 359k-chunk restore.
+if MORPHIK_RESTORE_MAINTENANCE_WORK_MEM=64MB backup_tool restore "$backup_file" --force --no-safety-backup --no-start \
+    >"$INSTALL_DIR/failed.log" 2>&1; then
+    fail "restore succeeded with maintenance_work_mem=64MB, so the failure path was not tested"
+fi
+grep -q 'memory required is' "$INSTALL_DIR/failed.log" || {
+    cat "$INSTALL_DIR/failed.log" >&2
+    fail "restore failed for a reason other than maintenance_work_mem"
+}
+grep -q 'Your current data is unchanged' "$INSTALL_DIR/failed.log" || fail "failed restore did not say the data is unchanged"
+[ "$(snapshot_state)" = "$before_force" ] || fail "a failed pg_restore changed the live data"
+leftover=$(psql_q -d postgres -c "SELECT string_agg(datname, ',') FROM pg_database WHERE datname LIKE 'morphik\_%'")
+[ -z "$leftover" ] || fail "failed restore left databases behind: $leftover"
+rm -f "$INSTALL_DIR/failed.log"
+pass "a restore that fails in pg_restore leaves the live database and files unchanged"
+
 backup_tool restore "$backup_file" --force --no-start >"$INSTALL_DIR/force.log" 2>&1 || {
     cat "$INSTALL_DIR/force.log" >&2
     fail "restore --force failed"
@@ -346,6 +374,8 @@ safety=$(latest_file "$INSTALL_DIR/backups" '^morphik-.*-pre-restore\.backup$')
 [ -n "$safety" ] || fail "restore --force did not write a safety backup"
 grep -q '"documents" : 4' <<<"$(tar -xOf "$INSTALL_DIR/backups/$safety" manifest.json)" || fail "safety backup is missing the new document"
 [ "$(snapshot_state)" = "$expected" ] || fail "restore --force state differs from the backup"
+leftover=$(psql_q -d postgres -c "SELECT string_agg(datname, ',') FROM pg_database WHERE datname LIKE 'morphik\_%'")
+[ -z "$leftover" ] || fail "restore --force left databases behind: $leftover"
 pass "restore --force wrote $safety and replaced the data with the backup"
 
 # 5. Scheduled backups through the Compose service, with retention and verification

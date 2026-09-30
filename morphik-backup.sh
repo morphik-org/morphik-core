@@ -32,6 +32,11 @@ COMPOSE_FILE="${MORPHIK_COMPOSE_FILE:-docker-compose.run.yml}"
 PG_USER="${MORPHIK_PG_USER:-morphik}"
 PG_DB="${MORPHIK_PG_DATABASE:-morphik}"
 DEFAULT_TOOL_IMAGE="pgvector/pgvector:pg16"
+# pgvector builds an IVFFlat index by running k-means over at least 10000 sample vectors held in
+# memory. Core creates its indexes on empty tables, but pg_restore builds them after loading every
+# row, so a 1536-dimension index needs about 65 MB and fails under PostgreSQL's 64 MB default.
+# Restore and verify both use this value so verify cannot pass a backup that restore rejects.
+RESTORE_MAINTENANCE_WORK_MEM="${MORPHIK_RESTORE_MAINTENANCE_WORK_MEM:-512MB}"
 AWS_IMAGE="${MORPHIK_BACKUP_AWS_IMAGE:-amazon/aws-cli:latest}"
 ARCHIVE_IN_TOOL="/backup/archive.backup"
 
@@ -60,6 +65,7 @@ fi
 CLEANUP_PATHS=()
 PSQL_PID=""
 RESTORE_STAGE=""
+STAGING_DB=""
 SAFETY_BACKUP=""
 CREATED_BACKUP=""
 
@@ -80,6 +86,9 @@ cleanup() {
     for path in ${CLEANUP_PATHS[@]+"${CLEANUP_PATHS[@]}"}; do
         rm -rf "$path" 2>/dev/null || true
     done
+    if [ "$RESTORE_STAGE" = "database" ] && [ -n "$STAGING_DB" ]; then
+        drop_database "$STAGING_DB" >/dev/null 2>&1 || true
+    fi
     if [ -n "$RESTORE_STAGE" ]; then
         restore_failure_note
     fi
@@ -833,8 +842,11 @@ dump_database() {
 }
 
 # Run the statistics query outside a snapshot (after a restore, or against a verify database).
+# database_stats DB [command prefix...]
 database_stats() {
-    printf '%s\n%s\n' "$STATS_SESSION_SQL" "$STATS_SQL" | "$@" psql -X -At -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB"
+    local db=$1
+    shift
+    printf '%s\n%s\n' "$STATS_SESSION_SQL" "$STATS_SQL" | "$@" psql -X -At -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$db"
 }
 
 # ---------------------------------------------------------------------------
@@ -977,7 +989,7 @@ internal_verify() {
         die "initdb failed."
     }
     gosu postgres "$pg_bin/pg_ctl" -D "$root/data" -l "$root/server.log" -w \
-        -o "-c listen_addresses='' -k $sock -c fsync=off -c full_page_writes=off -c synchronous_commit=off -c maintenance_work_mem=256MB" \
+        -o "-c listen_addresses='' -k $sock -c fsync=off -c full_page_writes=off -c synchronous_commit=off -c maintenance_work_mem=$RESTORE_MAINTENANCE_WORK_MEM" \
         start >/dev/null || {
         cat "$root/server.log" >&2
         die "The temporary PostgreSQL server did not start."
@@ -994,7 +1006,7 @@ internal_verify() {
     fi
 
     info "Comparing row counts and checksums with the manifest..."
-    database_stats >"$tmp/stats.json"
+    database_stats "$PG_DB" >"$tmp/stats.json"
     json_tool compare "$tmp/manifest.json" "$tmp/stats.json" || status=1
 
     if [ "$(json_tool get "$tmp/manifest.json" storage.included)" = "true" ]; then
@@ -1264,12 +1276,12 @@ restore_failure_note() {
             warn "Restore stopped before changing any data. Start Morphik again with ./start-morphik.sh."
             ;;
         database)
-            warn "Restore failed while the database was being replaced. The morphik and worker services are still stopped."
-            warn "Fix the problem and run the restore again. ${SAFETY_BACKUP:+Your previous data is in $SAFETY_BACKUP.}"
+            warn "Restore failed before the live database was replaced. Your current data is unchanged."
+            warn "Start Morphik again with ./start-morphik.sh, or fix the problem and run the restore again."
             ;;
         storage | config)
-            warn "Restore failed after the database was restored. The morphik and worker services are still stopped."
-            warn "Run the restore again. ${SAFETY_BACKUP:+Your previous data is in $SAFETY_BACKUP.}"
+            warn "Restore failed after the database was replaced. The morphik and worker services are still stopped."
+            warn "Run the restore again. The previous database is kept as '${PG_DB}_before_restore' until then.${SAFETY_BACKUP:+ It is also in $SAFETY_BACKUP.}"
             ;;
     esac
 }
@@ -1282,6 +1294,33 @@ api_port() {
 
 target_data() {
     pg psql -X -At -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB" -c "$TARGET_DATA_SQL"
+}
+
+admin_sql() {
+    pg psql -X -At -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d postgres "$@"
+}
+
+drop_database() {
+    admin_sql -c "DROP DATABASE IF EXISTS \"$1\" WITH (FORCE)"
+}
+
+database_exists() {
+    [ "$(admin_sql -c "SELECT 1 FROM pg_database WHERE datname = '$1'")" = "1" ]
+}
+
+# Replace the live database with the staged one. Both renames run in one transaction, so a
+# failure leaves the live database in place. The old database is kept as PREVIOUS until the
+# restore finishes.
+swap_in_database() {
+    local staged=$1 previous=$2
+    drop_database "$previous" >/dev/null
+    admin_sql -c "SELECT pg_terminate_backend(pid, 10000) FROM pg_stat_activity WHERE datname = '$PG_DB' AND pid <> pg_backend_pid()" >/dev/null
+    if database_exists "$PG_DB"; then
+        admin_sql -1 -c "ALTER DATABASE \"$PG_DB\" RENAME TO \"$previous\"" \
+            -c "ALTER DATABASE \"$staged\" RENAME TO \"$PG_DB\"" >/dev/null
+    else
+        admin_sql -c "ALTER DATABASE \"$staged\" RENAME TO \"$PG_DB\"" >/dev/null
+    fi
 }
 
 storage_has_files() {
@@ -1411,25 +1450,33 @@ safety backup of the current data unless you pass --no-safety-backup."
         fi
     fi
 
+    # Restore into a separate database and swap it in only after it matches the manifest. If
+    # pg_restore fails (memory, disk space, a damaged dump), the live database is untouched.
+    local previous_db="${PG_DB}_before_restore"
     RESTORE_STAGE=database
-    info "Replacing the database..."
-    pg psql -X -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d postgres \
-        -c "DROP DATABASE IF EXISTS \"$PG_DB\" WITH (FORCE)" \
-        -c "CREATE DATABASE \"$PG_DB\"" >/dev/null
+    STAGING_DB="${PG_DB}_restore"
+    info "Restoring the database into '$STAGING_DB'. The current database is not changed yet..."
+    drop_database "$STAGING_DB" >/dev/null
+    admin_sql -c "CREATE DATABASE \"$STAGING_DB\"" >/dev/null
     run_tool "${archive_mount[@]}" -- _extract "$ARCHIVE_IN_TOOL" database.dump |
-        pg pg_restore -U "$PG_USER" -d "$PG_DB" --clean --if-exists --no-owner --single-transaction --exit-on-error
+        compose exec -T -e PGOPTIONS="-c maintenance_work_mem=$RESTORE_MAINTENANCE_WORK_MEM" postgres \
+            pg_restore -U "$PG_USER" -d "$STAGING_DB" --no-owner --single-transaction --exit-on-error
 
     info "Comparing the restored database with the manifest..."
-    database_stats pg >"$work/stats.json"
+    database_stats "$STAGING_DB" pg >"$work/stats.json"
     run_tool -v "$work:/work:ro" -- _json compare /work/manifest.json /work/stats.json >&2 ||
         die "The restored database does not match the backup manifest."
 
     : >"$work/stuck"
-    if [ "$(pg psql -X -At -q -U "$PG_USER" -d "$PG_DB" -c "SELECT to_regclass('public.documents') IS NOT NULL")" = "t" ]; then
-        pg psql -X -At -q -v ON_ERROR_STOP=1 -v backup_name="$name" -U "$PG_USER" -d "$PG_DB" \
+    if [ "$(pg psql -X -At -q -U "$PG_USER" -d "$STAGING_DB" -c "SELECT to_regclass('public.documents') IS NOT NULL")" = "t" ]; then
+        pg psql -X -At -q -v ON_ERROR_STOP=1 -v backup_name="$name" -U "$PG_USER" -d "$STAGING_DB" \
             <<<"$STUCK_DOCUMENTS_SQL" >"$work/stuck"
     fi
     stuck_count=$(grep -c . "$work/stuck" || true)
+
+    info "Replacing the database..."
+    swap_in_database "$STAGING_DB" "$previous_db"
+    STAGING_DB=""
 
     RESTORE_STAGE=storage
     if [ "$(run_tool -v "$work:/work:ro" -- _json get /work/manifest.json storage.included)" = "true" ]; then
@@ -1457,6 +1504,7 @@ safety backup of the current data unless you pass --no-safety-backup."
         fi
     fi
     RESTORE_STAGE=""
+    drop_database "$previous_db" >/dev/null || warn "Could not drop the previous database '$previous_db'. The next restore drops it."
 
     info ""
     info "Restore complete."
