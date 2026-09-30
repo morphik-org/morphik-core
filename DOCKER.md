@@ -204,9 +204,15 @@ Restore validates the file first. It stops without changing anything when:
 Add `--force` to replace existing data. Restore then writes a safety backup of the current data first, named
 `*-pre-restore.backup`. `--no-safety-backup` skips it.
 
-Once the checks pass, restore stops the `morphik` and `worker` services. It recreates the database, runs
-`pg_restore --clean --if-exists --no-owner`, and compares the result with the manifest. Then it replaces
-`./storage` and runs `./start-morphik.sh`. Nothing is re-embedded. Add `--no-start` to leave the services stopped.
+Once the checks pass, restore stops the `morphik` and `worker` services. It runs `pg_restore --no-owner` into a
+separate `morphik_restore` database and compares the result with the manifest. Only then does it swap that database
+in for the live one, so a failed `pg_restore` leaves your current data as it was. The swap needs free disk space for
+a second copy of the database while it runs. Restore then replaces `./storage` and runs `./start-morphik.sh`.
+Nothing is re-embedded. Add `--no-start` to leave the services stopped.
+
+`pg_restore` rebuilds the IVFFlat vector indexes after loading the rows, which needs more than PostgreSQL's 64 MB
+default `maintenance_work_mem` once a deployment has about 10,000 chunks of 1536-dimension embeddings. Restore and
+verify raise it to 512 MB for their own sessions. Set `MORPHIK_RESTORE_MAINTENANCE_WORK_MEM` to change that.
 
 Documents that were still ingesting when the backup was taken come back as `failed`, with their ingestion revision
 increased by one. Any old queued job for them is then skipped. Restore writes their IDs to
