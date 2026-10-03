@@ -1,4 +1,5 @@
 import logging
+import os
 import re  # Import re for parsing model name
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
@@ -235,6 +236,21 @@ class LiteLLMCompletionModel(BaseCompletionModel):
             raise ValueError(f"Model '{model_key}' not found in registered_models configuration")
 
         self.model_config = settings.REGISTERED_MODELS[model_key]
+
+        # Resolve an api_key_env reference (e.g., "ORCAROUTER_API_KEY") into the
+        # api_key passed to LiteLLM, so keys stay in the environment rather than
+        # in morphik.toml.
+        api_key_env = self.model_config.get("api_key_env")
+        if api_key_env:
+            api_key = os.environ.get(api_key_env)
+            if api_key:
+                self.model_config["api_key"] = api_key
+            else:
+                logger.warning(
+                    f"Model '{model_key}' references api_key_env '{api_key_env}', "
+                    "but it is not set in the environment. Continuing without an api_key."
+                )
+            self.model_config.pop("api_key_env", None)
 
         # Check if it's an Ollama model for potential direct usage
         self.is_ollama = "ollama" in self.model_config.get("model_name", "").lower()
