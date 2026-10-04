@@ -145,6 +145,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    REDIS_SSL_CHECK_HOSTNAME: Optional[bool] = None
 
     # Worker configuration
     ARQ_MAX_JOBS: int = 1
@@ -407,6 +408,8 @@ def get_settings() -> Settings:
                 "REDIS_PORT": redis_cfg.get("port", 6379),
             }
         )
+        if "ssl_check_hostname" in redis_cfg:
+            settings_dict["REDIS_SSL_CHECK_HOSTNAME"] = redis_cfg["ssl_check_hostname"]
 
     # Load worker config
     if "worker" in config:

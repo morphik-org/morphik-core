@@ -43,6 +43,28 @@ jobs:
           echo "=== After cleanup ==="
           df -h
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: python -m pip install --upgrade uv
+
+      - name: Test Redis settings regression
+        run: >
+          uv run --no-project
+          --with pytest
+          --with pytest-asyncio
+          --with arq
+          --with fastapi
+          --with pydantic-settings
+          --with tomli
+          --with requests
+          --with uvicorn
+          --with python-dotenv
+          pytest -q core/tests/unit/test_redis_settings.py
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

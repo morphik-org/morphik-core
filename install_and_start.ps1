@@ -7,8 +7,8 @@
     ./install_and_start.ps1
 
   Requirements:
-    - Docker Desktop running (used for local Redis container and optional services)
     - Python 3.10+ (3.12 recommended)
+    - Docker Desktop running when using the default local Redis configuration
 #>
 
 Set-StrictMode -Version Latest
@@ -18,18 +18,6 @@ function Write-Info($msg) { Write-Host "`n[INFO] $msg" -ForegroundColor Cyan }
 function Write-Step($msg) { Write-Host "`n[STEP] $msg" -ForegroundColor Yellow }
 function Write-Ok($msg)   { Write-Host "`n[OK]   $msg" -ForegroundColor Green }
 function Write-Err($msg)  { Write-Host "`n[ERR]  $msg" -ForegroundColor Red }
-
-function Assert-Docker {
-  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Err "Docker is required (used to run a local Redis container). Install Docker Desktop first."
-    throw "Docker not found"
-  }
-  cmd.exe /c "docker info >NUL 2>&1"
-  if ($LASTEXITCODE -ne 0) {
-    Write-Err "Docker is installed but not running. Please start Docker Desktop and re-run."
-    throw "Docker not running"
-  }
-}
 
 function Ensure-Uv {
   $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
@@ -111,32 +99,29 @@ $arch = $env:PROCESSOR_ARCHITECTURE
 if (-not $arch) { $arch = "unknown" }
 Write-Info "Detected OS: Windows | Arch: $arch"
 
-# 1) Check Docker
-Assert-Docker
-
-# 2) Ensure uv is available
+# 1) Ensure uv is available
 Ensure-Uv
 
-# 3) Create/Sync virtual environment and install project deps
+# 2) Create/Sync virtual environment and install project deps
 Write-Step "Installing project dependencies with uv..."
 $py312 = Ensure-Py312
 uv sync --python $py312
 
-# 4) Ensure .env exists
+# 3) Ensure .env exists
 Ensure-EnvFile
 
-# 4b) Ensure we install into the project's venv (not a global Conda/Python)
+# 3b) Ensure we install into the project's venv (not a global Conda/Python)
 $venvPython = Join-Path (Get-Location) '.venv\Scripts\python.exe'
 if (-not (Test-Path $venvPython)) {
   Write-Err "Project virtual environment was not created at .venv. Please re-run 'uv sync'."
   throw ".venv not found"
 }
 
-# 5) Install ColPali engine (multimodal search)
+# 4) Install ColPali engine (multimodal search)
 Write-Step "Installing ColPali engine..."
 uv pip install --python $venvPython `
   colpali-engine@git+https://github.com/illuin-tech/colpali@80fb72c9b827ecdb5687a3a8197077d0d01791b3
 
-# 6) Start the server
+# 5) Start the server
 Write-Host "`nStarting Morphik server...`n" -ForegroundColor Green
 uv run --python $venvPython start_server.py
