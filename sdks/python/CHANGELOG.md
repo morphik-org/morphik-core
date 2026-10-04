@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Restored SDK import and test collection compatibility on Python 3.9 by avoiding newer runtime annotation syntax.
+
 ## [1.2.6] - 2026-06-19
 
 ### Changed

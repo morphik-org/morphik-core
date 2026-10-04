@@ -3,7 +3,7 @@ import logging
 import warnings
 from io import BytesIO
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Dict, List, Literal, Optional, Type, Union
+from typing import Any, BinaryIO, Callable, Dict, List, Literal, Optional, Tuple, Type, Union
 from urllib.parse import quote
 
 import httpx
@@ -1483,7 +1483,7 @@ class Morphik(_ScopedOperationsMixin):
         end_user_id: Optional[str],
         use_colpali: bool,
         on_conflict: Literal["skip", "fail"],
-    ) -> tuple[str, Document]:
+    ) -> Tuple[str, Document]:
         serialized_metadata, inferred_types = self._logic._serialize_metadata_map(metadata)
         metadata_type_payload = {**inferred_types, **(metadata_types or {})}
         metadata_type_payload = {
