@@ -370,6 +370,36 @@ async def test_query_does_not_fail_over_on_client_error():
 
 
 @pytest.mark.asyncio
+async def test_image_query_fails_over_to_next_endpoint(monkeypatch):
+    from PIL import Image
+
+    monkeypatch.setattr(asyncio, "sleep", _instant_sleep())
+    calls: list[tuple[str, str]] = []
+
+    def handler(request):
+        calls.append((request.url.host, json.loads(request.content)["input_type"]))
+        if request.url.host == "embed-a":
+            raise httpx.ConnectTimeout("dead host", request=request)
+        return httpx.Response(200, content=_npz_response_bytes(1))
+
+    model = _make_model(httpx.MockTransport(handler))
+    result = await model.generate_embeddings(Image.new("RGB", (8, 8)))
+    assert result.shape == (4, 128)
+    assert calls == [("embed-a", "image"), ("embed-a", "image"), ("embed-b", "image")]
+
+
+def test_query_timeout_only_shortens_connect():
+    from core.embedding import colpali_api_embedding_model as mod
+
+    # Live servers can take over a minute to answer a query under ingestion
+    # load, so only the connect timeout may differ from the client default.
+    assert mod._QUERY_TIMEOUT.connect == 5.0
+    assert mod._QUERY_TIMEOUT.read == mod._CLIENT_TIMEOUT.read
+    assert mod._QUERY_TIMEOUT.write == mod._CLIENT_TIMEOUT.write
+    assert mod._QUERY_TIMEOUT.pool == mod._CLIENT_TIMEOUT.pool
+
+
+@pytest.mark.asyncio
 async def test_retry_after_is_capped(monkeypatch):
     sleeps = []
     real_sleep = asyncio.sleep

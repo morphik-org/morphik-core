@@ -30,9 +30,12 @@ _MAX_RETRY_AFTER_S = 30.0
 # Total retry budget per endpoint call: with a 600s read timeout, unbounded
 # retries could otherwise spend ~40 minutes inside a single call.
 _RETRY_DEADLINE_S = 900.0
+_CLIENT_TIMEOUT = Timeout(read=600.0, connect=30.0, write=600.0, pool=60.0)
 # Queries fail over to the next endpoint, so a dead host must be detected
-# quickly instead of waiting out the 30s ingestion connect timeout.
-_QUERY_TIMEOUT = Timeout(60.0, connect=5.0)
+# quickly instead of waiting out the 30s connect timeout. Only connect is
+# shortened: a live server can legitimately take over a minute to answer
+# a query under ingestion load.
+_QUERY_TIMEOUT = Timeout(read=600.0, connect=5.0, write=600.0, pool=60.0)
 
 
 class EmbeddingUnavailableError(RuntimeError):
@@ -88,9 +91,8 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         per-call client paid a TCP+TLS handshake for every 16-page batch.
         """
         if self._http_client is None or self._http_client.is_closed:
-            timeout = Timeout(read=600.0, connect=30.0, write=600.0, pool=60.0)
             self._http_client = AsyncClient(
-                timeout=timeout,
+                timeout=_CLIENT_TIMEOUT,
                 limits=Limits(max_connections=32, max_keepalive_connections=8),
             )
         return self._http_client
@@ -416,18 +418,23 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
 
         return embeddings
 
-    async def embed_for_query(self, text: str) -> MultiVector:
-        # Queries are user-facing: retry once per endpoint, not the full ingestion
-        # ladder, then fail over to the next endpoint so one dead embedding server
-        # cannot take down retrieval. Healthy endpoints go first, in config order;
-        # unhealthy ones are a last resort.
+    async def _embed_query_input(self, payload: str, input_type: str) -> MultiVector:
+        """Embed a single query input, failing over across endpoints.
+
+        Queries are user-facing: retry once per endpoint, not the full ingestion
+        ladder, then fail over to the next endpoint so one dead embedding server
+        cannot take down retrieval. Healthy endpoints go first, in config order;
+        unhealthy ones are a last resort.
+        """
         self._recover_endpoints()
         ordered = [ep for ep in self.endpoints if ep in self.healthy_endpoints]
         ordered += [ep for ep in self.endpoints if ep not in self.healthy_endpoints]
         last_exc: Optional[EmbeddingUnavailableError] = None
         for endpoint in ordered:
             try:
-                data = await self._call_api_endpoint(endpoint, [text], "text", max_retries=1, timeout=_QUERY_TIMEOUT)
+                data = await self._call_api_endpoint(
+                    endpoint, [payload], input_type, max_retries=1, timeout=_QUERY_TIMEOUT
+                )
             except EmbeddingUnavailableError as exc:
                 logger.warning("ColPali query failed on %s, trying next endpoint: %s", endpoint, exc)
                 self.healthy_endpoints.discard(endpoint)
@@ -441,6 +448,9 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
             return data[0]
         raise last_exc
 
+    async def embed_for_query(self, text: str) -> MultiVector:
+        return await self._embed_query_input(text, "text")
+
     async def generate_embeddings(self, content: Union[str, Image]) -> np.ndarray:
         """Generate embeddings for either text or image content.
 
@@ -450,21 +460,12 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         Returns:
             numpy array of embeddings.
         """
-        self._recover_endpoints()
-        endpoint = next(iter(self.healthy_endpoints), self.endpoints[0])
-
         if isinstance(content, Image):
-            # Convert PIL Image to base64. Query path: retry once only.
             buffer = io.BytesIO()
             content.save(buffer, format="PNG")
             image_b64 = base64.b64encode(buffer.getvalue()).decode()
-            data = await self._call_api_endpoint(endpoint, [image_b64], "image", max_retries=1)
-        else:
-            data = await self._call_api_endpoint(endpoint, [content], "text", max_retries=1)
-
-        if not data:
-            raise RuntimeError("No embeddings returned from Morphik Embedding API")
-        return np.asarray(data[0])
+            return np.asarray(await self._embed_query_input(image_b64, "image"))
+        return np.asarray(await self._embed_query_input(content, "text"))
 
     def latest_ingest_metrics(self) -> Dict[str, float]:
         """Return endpoint latency metrics from the most recent embed_for_ingestion call."""
