@@ -30,6 +30,9 @@ _MAX_RETRY_AFTER_S = 30.0
 # Total retry budget per endpoint call: with a 600s read timeout, unbounded
 # retries could otherwise spend ~40 minutes inside a single call.
 _RETRY_DEADLINE_S = 900.0
+# Queries fail over to the next endpoint, so a dead host must be detected
+# quickly instead of waiting out the 30s ingestion connect timeout.
+_QUERY_TIMEOUT = Timeout(60.0, connect=5.0)
 
 
 class EmbeddingUnavailableError(RuntimeError):
@@ -307,7 +310,12 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         return results
 
     async def _call_api_endpoint(
-        self, endpoint: str, inputs: List[str], input_type: str, max_retries: Optional[int] = None
+        self,
+        endpoint: str,
+        inputs: List[str],
+        input_type: str,
+        max_retries: Optional[int] = None,
+        timeout: Optional[Timeout] = None,
     ) -> List[MultiVector]:
         """
         Call a specific ColPali API endpoint, retrying transient failures.
@@ -324,6 +332,8 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
             input_type: Either "text" or "image".
             max_retries: Transient retries before giving up. Defaults to the
                 ingestion policy; latency-sensitive query paths pass 1.
+            timeout: Per-request timeout override. Defaults to the shared
+                client's ingestion-sized timeout.
 
         Returns:
             List of MultiVector embeddings.
@@ -363,7 +373,11 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
                 )
                 await asyncio.sleep(delay)
             try:
-                candidate = await client.post(endpoint, content=body, headers=headers)
+                # httpx treats timeout=None as "no timeout", so only override when set.
+                if timeout is None:
+                    candidate = await client.post(endpoint, content=body, headers=headers)
+                else:
+                    candidate = await client.post(endpoint, content=body, headers=headers, timeout=timeout)
                 candidate.raise_for_status()
                 resp = candidate
                 break
@@ -403,14 +417,29 @@ class ColpaliApiEmbeddingModel(BaseEmbeddingModel):
         return embeddings
 
     async def embed_for_query(self, text: str) -> MultiVector:
-        # Use first healthy endpoint for queries (single text, fast).
-        # Queries are user-facing: retry once, not the full ingestion ladder.
+        # Queries are user-facing: retry once per endpoint, not the full ingestion
+        # ladder, then fail over to the next endpoint so one dead embedding server
+        # cannot take down retrieval. Healthy endpoints go first, in config order;
+        # unhealthy ones are a last resort.
         self._recover_endpoints()
-        endpoint = next(iter(self.healthy_endpoints), self.endpoints[0])
-        data = await self._call_api_endpoint(endpoint, [text], "text", max_retries=1)
-        if not data:
-            raise RuntimeError("No embeddings returned from Morphik Embedding API")
-        return data[0]
+        ordered = [ep for ep in self.endpoints if ep in self.healthy_endpoints]
+        ordered += [ep for ep in self.endpoints if ep not in self.healthy_endpoints]
+        last_exc: Optional[EmbeddingUnavailableError] = None
+        for endpoint in ordered:
+            try:
+                data = await self._call_api_endpoint(endpoint, [text], "text", max_retries=1, timeout=_QUERY_TIMEOUT)
+            except EmbeddingUnavailableError as exc:
+                logger.warning("ColPali query failed on %s, trying next endpoint: %s", endpoint, exc)
+                self.healthy_endpoints.discard(endpoint)
+                self._endpoint_unhealthy_since[endpoint] = time.monotonic()
+                last_exc = exc
+                continue
+            self.healthy_endpoints.add(endpoint)
+            self._endpoint_unhealthy_since.pop(endpoint, None)
+            if not data:
+                raise RuntimeError("No embeddings returned from Morphik Embedding API")
+            return data[0]
+        raise last_exc
 
     async def generate_embeddings(self, content: Union[str, Image]) -> np.ndarray:
         """Generate embeddings for either text or image content.

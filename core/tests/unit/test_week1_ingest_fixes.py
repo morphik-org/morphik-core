@@ -305,16 +305,68 @@ def test_chunk_metadata_roundtrip_serializable():
 @pytest.mark.asyncio
 async def test_query_path_retries_once_only(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", _instant_sleep())
-    calls = {"n": 0}
+    calls: dict[str, int] = {}
 
     def handler(request):
-        calls["n"] += 1
+        calls[request.url.host] = calls.get(request.url.host, 0) + 1
         return httpx.Response(503)
 
     model = _make_model(httpx.MockTransport(handler))
     with pytest.raises(EmbeddingUnavailableError):
         await model.embed_for_query("hello")
-    assert calls["n"] == 2, "query path must retry once, not the full ingestion ladder"
+    assert calls == {"embed-a": 2, "embed-b": 2}, "query path must retry once per endpoint, not the full ladder"
+
+
+@pytest.mark.asyncio
+async def test_query_fails_over_to_next_endpoint_and_marks_dead_one(monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", _instant_sleep())
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.host)
+        if request.url.host == "embed-a":
+            raise httpx.ConnectTimeout("dead host", request=request)
+        return httpx.Response(200, content=_npz_response_bytes(1))
+
+    model = _make_model(httpx.MockTransport(handler))
+    result = await model.embed_for_query("hello")
+    assert result.shape == (4, 128)
+    assert calls == ["embed-a", "embed-a", "embed-b"]
+    assert model.healthy_endpoints == {"http://embed-b/embeddings"}
+
+    # While embed-a is in cooldown, queries go straight to embed-b.
+    calls.clear()
+    await model.embed_for_query("hello")
+    assert calls == ["embed-b"]
+
+
+@pytest.mark.asyncio
+async def test_query_prefers_config_order_among_healthy_endpoints():
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.host)
+        return httpx.Response(200, content=_npz_response_bytes(1))
+
+    model = _make_model(httpx.MockTransport(handler))
+    for _ in range(5):
+        await model.embed_for_query("hello")
+    assert calls == ["embed-a"] * 5
+
+
+@pytest.mark.asyncio
+async def test_query_does_not_fail_over_on_client_error():
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.host)
+        return httpx.Response(401)
+
+    model = _make_model(httpx.MockTransport(handler))
+    with pytest.raises(httpx.HTTPStatusError):
+        await model.embed_for_query("hello")
+    assert calls == ["embed-a"]
+    assert model.healthy_endpoints == set(model.endpoints)
 
 
 @pytest.mark.asyncio
