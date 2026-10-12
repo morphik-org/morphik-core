@@ -2,6 +2,7 @@ import logging
 from typing import List, Union
 
 import litellm
+import tiktoken
 
 from core.config import get_settings
 from core.embedding.base_embedding_model import BaseEmbeddingModel
@@ -9,6 +10,10 @@ from core.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
 PGVECTOR_MAX_DIMENSIONS = 2000  # Maximum dimensions for pgvector
+# OpenAI embedding models reject the whole request if any single input exceeds 8192 tokens.
+# Chunks are sized in characters, and CJK text costs ~2 tokens per character, so a
+# 6000-character chunk can exceed this.
+OPENAI_EMBEDDING_MAX_TOKENS = 8191
 
 
 class LiteLLMEmbeddingModel(BaseEmbeddingModel):
@@ -42,7 +47,30 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
             )
             or "ollama" in model_name_lower
         )
+        # Only OpenAI models have a tokenizer we can count with exactly; others are sent as-is.
+        self._encoding = None
+        try:
+            self._encoding = tiktoken.encoding_for_model(model_name_lower.split("/")[-1])
+        except Exception:
+            pass
         logger.info(f"Initialized LiteLLM embedding model with model_key={model_key}, config={self.model_config}")
+
+    def _truncate_to_token_limit(self, texts: List[str]) -> List[str]:
+        """Cut inputs that exceed the OpenAI per-input token limit so one chunk can't fail the batch."""
+        if self._encoding is None:
+            return texts
+        result = []
+        for text in texts:
+            # Every token is at least one byte, so short inputs can't be over the limit.
+            if len(text.encode("utf-8")) > OPENAI_EMBEDDING_MAX_TOKENS:
+                tokens = self._encoding.encode(text, disallowed_special=())
+                if len(tokens) > OPENAI_EMBEDDING_MAX_TOKENS:
+                    logger.warning(
+                        "Truncating embedding input from %d to %d tokens", len(tokens), OPENAI_EMBEDDING_MAX_TOKENS
+                    )
+                    text = self._encoding.decode(tokens[:OPENAI_EMBEDDING_MAX_TOKENS])
+            result.append(text)
+        return result
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
@@ -78,7 +106,9 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
                 model_params["api_key"] = get_settings().LITELLM_DUMMY_API_KEY
 
             # Call LiteLLM with retries for transient provider errors (e.g. OpenAI 500s)
-            response = await litellm.aembedding(input=texts, num_retries=3, **model_params)
+            response = await litellm.aembedding(
+                input=self._truncate_to_token_limit(texts), num_retries=3, **model_params
+            )
 
             embeddings = [data["embedding"] for data in response.data]
 
