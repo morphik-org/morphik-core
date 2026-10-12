@@ -63,7 +63,7 @@ npm run dev              # Development server
 
 # Build and quality
 npm run build            # Production build
-npm run build:package    # Package build
+npm start                # Serve the production build
 npm run lint             # ESLint
 npm run format           # Prettier formatting
 npm run format:check     # Check formatting
