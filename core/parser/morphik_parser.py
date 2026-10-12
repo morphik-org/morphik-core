@@ -76,8 +76,9 @@ class RecursiveCharacterTextSplitter:
             splits = list(text)
         chunks = []
         current = ""
-        for part in splits:
-            add_part = part + (sep if sep and part != splits[-1] else "")
+        last_index = len(splits) - 1
+        for index, part in enumerate(splits):
+            add_part = part + (sep if sep and index != last_index else "")
             if self.length_function(current + add_part) > self.chunk_size:
                 if current:
                     chunks.append(current)
