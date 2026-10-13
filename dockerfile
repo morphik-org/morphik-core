@@ -89,6 +89,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg62-turbo \
     libopenjp2-7 \
     fonts-dejavu-core \
+    fonts-noto-core \
+    fonts-noto-color-emoji \
     postgresql-client \
     poppler-utils \
     gcc \

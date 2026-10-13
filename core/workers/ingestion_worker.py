@@ -674,25 +674,6 @@ async def _process_ingestion_job_locked(
                 content_type_hint=content_type,
             )
 
-            # Optional: render HTML to PDF to mimic printed output and speed up parsing
-            html_conversion_start = time.time()
-            html_converted = False
-            if mime_type in {"text/html", "application/xhtml+xml"}:
-                try:
-                    from weasyprint import HTML  # type: ignore
-
-                    html_str = file_content.decode("utf-8", errors="replace")
-                    pdf_bytes = HTML(string=html_str).write_pdf()
-                    if pdf_bytes:
-                        file_content = pdf_bytes
-                        content_type = "application/pdf"
-                        mime_type = "application/pdf"
-                        html_converted = True
-                        logger.info("Converted HTML to PDF for ingestion (WeasyPrint)")
-                except Exception as html_exc:
-                    logger.warning("HTML->PDF conversion failed; falling back to raw HTML: %s", html_exc)
-            phase_times["html_to_pdf"] = time.time() - html_conversion_start
-
             # Check if we're using ColPali
             using_colpali = bool(
                 use_colpali and ingestion_service.colpali_embedding_model and ingestion_service.colpali_vector_store
@@ -703,6 +684,30 @@ async def _process_ingestion_job_locked(
                 f"has_store={bool(ingestion_service.colpali_vector_store)}, "
                 f"using_colpali={using_colpali}"
             )
+
+            # Text is always parsed from the original HTML. Text pulled back out of a WeasyPrint PDF is
+            # unreliable: when a font lacks a glyph (emoji, Devanagari, CJK), WeasyPrint gives that font a
+            # custom CMap that docling-parse < 5.4 decodes as GLYPH<0> noise and dropped characters.
+            # The PDF is only rendered for ColPali, which needs page images.
+            is_html = mime_type in {"text/html", "application/xhtml+xml"}
+            text_parse_content = file_content
+            html_conversion_start = time.time()
+            html_converted = False
+            if is_html and using_colpali:
+                try:
+                    from weasyprint import HTML  # type: ignore
+
+                    html_str = file_content.decode("utf-8", errors="replace")
+                    pdf_bytes = HTML(string=html_str).write_pdf()
+                    if pdf_bytes:
+                        file_content = pdf_bytes
+                        content_type = "application/pdf"
+                        mime_type = "application/pdf"
+                        html_converted = True
+                        logger.info("Converted HTML to PDF for ColPali page images (WeasyPrint)")
+                except Exception as html_exc:
+                    logger.warning("HTML->PDF conversion failed; falling back to raw HTML: %s", html_exc)
+            phase_times["html_to_pdf"] = time.time() - html_conversion_start
 
             colpali_native_format = is_colpali_native_format(mime_type)
 
@@ -722,9 +727,10 @@ async def _process_ingestion_job_locked(
             # provided original_filename (often .pdf) can mislead the parser when
             # the stored object is a pre-extracted text file (e.g. .pdf.txt).
             parse_filename = os.path.basename(file_key) if file_key else original_filename
-            if html_converted:
+            if is_html and not (parse_filename or "").lower().endswith((".html", ".htm", ".xhtml")):
+                # Docling picks its backend from the extension, so keep HTML on the HTML backend.
                 base_name = os.path.splitext(original_filename or parse_filename or "document")[0]
-                parse_filename = f"{base_name}.pdf"
+                parse_filename = f"{base_name}.html"
 
             parse_start = time.time()
 
@@ -748,7 +754,7 @@ async def _process_ingestion_job_locked(
             else:
                 # Normal text parsing required
                 additional_metadata, text = await ingestion_service.parser.parse_file_to_text(
-                    file_content, parse_filename
+                    text_parse_content, parse_filename
                 )
                 # Clean the extracted text to remove NULL and other problematic control characters.
                 # Keeps tabs, newlines, carriage returns, and all printable (incl. Unicode) characters.
@@ -947,7 +953,7 @@ async def _process_ingestion_job_locked(
                 )
                 fallback_parse_start = time.time()
                 fallback_metadata, fallback_text = await ingestion_service.parser.parse_file_to_text(
-                    file_content, parse_filename
+                    text_parse_content, parse_filename
                 )
 
                 fallback_text = clean_control_chars(fallback_text)
@@ -1005,7 +1011,7 @@ async def _process_ingestion_job_locked(
                         original_filename,
                     )
                     deep_parse_start = time.time()
-                    deep_metadata, deep_text = await deep_parse(file_content, parse_filename)
+                    deep_metadata, deep_text = await deep_parse(text_parse_content, parse_filename)
                     deep_text = clean_control_chars(deep_text)
                     phase_times["deep_parse_file"] = time.time() - deep_parse_start
 
