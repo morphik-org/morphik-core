@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
     USE_CONTEXTUAL_CHUNKING: bool = False
+    IMAGE_OCR_MODEL: Optional[str] = None
     PARSER_XML: ParserXMLSettings = ParserXMLSettings()
 
     # Reranker configuration
@@ -274,6 +275,10 @@ def get_settings() -> Settings:
             "USE_CONTEXTUAL_CHUNKING": config["parser"].get("use_contextual_chunking", False),
         }
     )
+    image_ocr_model = config["parser"].get("image_ocr_model") or None
+    if image_ocr_model and image_ocr_model not in settings_dict.get("REGISTERED_MODELS", {}):
+        raise ValueError(f"[parser] image_ocr_model '{image_ocr_model}' is not a key in [registered_models]")
+    settings_dict["IMAGE_OCR_MODEL"] = image_ocr_model
 
     # Load parser XML config
     if "xml" in config["parser"]:

@@ -118,6 +118,30 @@ COMPOSE_PROJECT_NAME=morphik         # Set once before the first start
 `docker-compose.run.yml` mounts `./morphik.toml` read-only into both the API and worker containers. Edit that file and
 run `./start-morphik.sh` again to apply changes.
 
+### 5. Text in images
+
+By default, Docling reads text in uploaded images with RapidOCR on the worker's CPU. RapidOCR downloads its model files
+from www.modelscope.cn the first time it runs, and again whenever the worker container is recreated.
+
+To send images to a vision model instead, point `image_ocr_model` at a key in `[registered_models]`:
+
+```toml
+[registered_models]
+openai_gpt4-1-mini = { model_name = "gpt-4.1-mini" }
+
+[parser]
+image_ocr_model = "openai_gpt4-1-mini"
+```
+
+PNG, JPEG, GIF, WebP, BMP and TIFF files then go to that model, which returns the text as Markdown, or a one or two
+sentence description when an image has little text. Images are converted to PNG and scaled to at most 2048 px on the
+longest side before sending. PDFs and Office files still use Docling. Rate limits, timeouts and provider outages are
+retried like other transient ingestion errors; an invalid key fails the document. With `use_colpali=true`, images go to
+ColPali and skip this step.
+
+The setting only applies to new ingests. To re-read images already indexed with local OCR, requeue them with
+`POST /ingest/requeue`.
+
 ## Accessing services
 
 - Morphik API: http://localhost:8000
