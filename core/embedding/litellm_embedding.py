@@ -9,6 +9,11 @@ from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
+
+# litellm's default aiohttp transport caches one ClientSession per client for an hour, then drops it without
+# closing it, which logs "Unclosed client session" from both the API and the worker. httpx doesn't.
+litellm.disable_aiohttp_transport = True
+
 PGVECTOR_MAX_DIMENSIONS = 2000  # Maximum dimensions for pgvector
 # OpenAI embedding models reject the whole request if any single input exceeds 8192 tokens.
 # Chunks are sized in characters, and CJK text costs ~2 tokens per character, so a

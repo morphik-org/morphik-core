@@ -349,6 +349,11 @@ const DocumentsSection = React.forwardRef<
             const updatedDoc = await response.json();
             return updatedDoc;
           }
+          if (response.status === 404) {
+            // Deleted while processing. Refreshing drops it from the list, which stops polling it.
+            console.log(`Document ${doc.external_id} no longer exists`);
+            return { deleted: true };
+          }
           return null;
         });
 
@@ -357,7 +362,9 @@ const DocumentsSection = React.forwardRef<
         // Check if any documents have changed status
         let hasChanges = false;
         updatedDocs.forEach(updatedDoc => {
-          if (updatedDoc && updatedDoc.system_metadata?.status !== "processing") {
+          if (updatedDoc?.deleted) {
+            hasChanges = true;
+          } else if (updatedDoc && updatedDoc.system_metadata?.status !== "processing") {
             hasChanges = true;
             console.log(`Document ${updatedDoc.external_id} status changed to: ${updatedDoc.system_metadata?.status}`);
           }
