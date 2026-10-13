@@ -18,6 +18,10 @@ from .base_completion import BaseCompletionModel
 
 logger = logging.getLogger(__name__)
 
+# litellm's default aiohttp transport caches one ClientSession per client for an hour, then drops it without
+# closing it, which logs "Unclosed client session" from both the API and the worker. httpx doesn't.
+litellm.disable_aiohttp_transport = True
+
 
 def get_system_message(inline_citations: bool = False) -> Dict[str, str]:
     """Return the standard system message for Morphik's query agent."""

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import logging
@@ -366,29 +367,42 @@ class MorphikParser(BaseParser):
     @staticmethod
     def _office_suffix(filename: str) -> Optional[str]:
         suffix = Path(filename).suffix.lower()
-        if suffix in {".docx", ".doc", ".pptx", ".ppt"}:
+        if suffix in {".docx", ".doc", ".pptx", ".ppt", ".xls", ".rtf", ".odt", ".odp", ".ods"}:
             return suffix
         return None
 
+    # Docling only reads the OOXML formats, so LibreOffice converts these first.
+    _LEGACY_OFFICE_TARGETS = {
+        ".doc": "docx",
+        ".rtf": "docx",
+        ".odt": "docx",
+        ".ppt": "pptx",
+        ".odp": "pptx",
+        ".xls": "xlsx",
+        ".ods": "xlsx",
+    }
+
     @staticmethod
-    def _convert_office_to_pdf_bytes(file: bytes, suffix: str) -> Optional[bytes]:
-        """Convert Office bytes to PDF bytes for fallback parsing."""
+    def _convert_with_libreoffice(file: bytes, suffix: str, target: str) -> Optional[bytes]:
+        """Convert document bytes to the `target` format (pdf, docx, pptx, xlsx) with LibreOffice."""
         if not shutil.which("soffice"):
-            logger.warning("LibreOffice (soffice) not found in PATH; cannot run Office-to-PDF parse fallback.")
+            logger.warning("LibreOffice (soffice) not found in PATH; cannot convert %s to %s.", suffix, target)
             return None
 
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_input:
             temp_input.write(file)
             temp_input_path = temp_input.name
 
-        with tempfile.TemporaryDirectory() as output_dir:
+        with tempfile.TemporaryDirectory() as output_dir, tempfile.TemporaryDirectory() as profile_dir:
             try:
                 result = subprocess.run(
                     [
                         "soffice",
+                        # A private profile per call. Concurrent conversions sharing the default one fail.
+                        f"-env:UserInstallation={Path(profile_dir).as_uri()}",
                         "--headless",
                         "--convert-to",
-                        "pdf",
+                        target,
                         "--outdir",
                         output_dir,
                         temp_input_path,
@@ -399,28 +413,46 @@ class MorphikParser(BaseParser):
                 )
                 if result.returncode != 0:
                     logger.warning(
-                        "LibreOffice fallback conversion failed: %s",
+                        "LibreOffice %s to %s conversion failed: %s",
+                        suffix,
+                        target,
                         result.stderr.strip() or result.stdout.strip(),
                     )
                     return None
 
-                pdf_path = Path(output_dir) / f"{Path(temp_input_path).stem}.pdf"
-                if not pdf_path.exists() or pdf_path.stat().st_size == 0:
-                    logger.warning("LibreOffice fallback conversion produced no PDF content")
+                output_path = Path(output_dir) / f"{Path(temp_input_path).stem}.{target}"
+                if not output_path.exists() or output_path.stat().st_size == 0:
+                    logger.warning("LibreOffice %s to %s conversion produced no output", suffix, target)
                     return None
 
-                return pdf_path.read_bytes()
+                return output_path.read_bytes()
             except subprocess.TimeoutExpired:
-                logger.warning("LibreOffice fallback conversion timed out")
+                logger.warning("LibreOffice %s to %s conversion timed out", suffix, target)
                 return None
             except Exception as e:
-                logger.warning("LibreOffice fallback conversion failed unexpectedly: %s", e)
+                logger.warning("LibreOffice %s to %s conversion failed unexpectedly: %s", suffix, target, e)
                 return None
             finally:
                 try:
                     os.unlink(temp_input_path)
                 except OSError:
                     pass
+
+    @classmethod
+    def _convert_office_to_pdf_bytes(cls, file: bytes, suffix: str) -> Optional[bytes]:
+        """Convert Office bytes to PDF bytes for fallback parsing."""
+        return cls._convert_with_libreoffice(file, suffix, "pdf")
+
+    async def _convert_legacy_office(self, file: bytes, filename: str) -> Tuple[bytes, str]:
+        """Convert .doc, .ppt, .xls and similar to the OOXML format Docling reads. Other files pass through."""
+        suffix = Path(filename).suffix.lower()
+        target = self._LEGACY_OFFICE_TARGETS.get(suffix)
+        if not target:
+            return file, filename
+        converted = await asyncio.to_thread(self._convert_with_libreoffice, file, suffix, target)
+        if not converted:
+            return file, filename
+        return converted, f"{Path(filename).stem}.{target}"
 
     @staticmethod
     def _build_deep_pdf_converter() -> DocumentConverter:
@@ -669,6 +701,8 @@ class MorphikParser(BaseParser):
             except UnicodeDecodeError:
                 text = file.decode("latin-1")
             return {}, text
+
+        file, filename = await self._convert_legacy_office(file, filename)
 
         # Fast path for Excel files — openpyxl is orders of magnitude faster than Docling
         if self._is_fast_excel_file(filename):

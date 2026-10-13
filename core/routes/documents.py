@@ -156,15 +156,13 @@ async def get_document(document_id: str, auth: AuthContext = Depends(verify_toke
 
     Returns the :class:`Document` metadata if found or raises 404.
     """
-    try:
-        doc = await document_service.db.get_document(document_id, auth)
-        logger.debug(f"Found document: {doc}")
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-        return doc
-    except HTTPException as e:
-        logger.error(f"Error getting document: {e}")
-        raise e
+    doc = await document_service.db.get_document(document_id, auth)
+    if not doc:
+        # Clients poll documents that may since have been deleted, so a miss is not a server error.
+        logger.debug(f"Document {document_id} not found")
+        raise HTTPException(status_code=404, detail="Document not found")
+    logger.debug(f"Found document: {doc}")
+    return doc
 
 
 @router.get("/{document_id}/status", response_model=Dict[str, Any])
