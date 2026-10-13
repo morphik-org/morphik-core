@@ -1,3 +1,4 @@
+import base64
 import io
 import logging
 import os
@@ -8,11 +9,13 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import litellm
 import openpyxl
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from httpx import AsyncClient, Timeout
+from PIL import Image
 
 from core.config import get_settings
 from core.models.chunk import Chunk
@@ -25,6 +28,17 @@ from core.storage.utils_file_extensions import detect_content_type
 
 
 logger = logging.getLogger(__name__)
+
+# Raster formats a vision model can read once converted to PNG. SVG is vector and is left to Docling.
+OCR_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/tiff"}
+# OpenAI scales high-detail images to fit 2048 px anyway; downscaling first only saves upload bytes.
+OCR_MAX_SIDE = 2048
+OCR_PROMPT = (
+    "Transcribe all text in this image exactly as written, in reading order. Keep the structure with "
+    "Markdown: headings, lists, and tables for tabular content such as forms and grids. Do not translate, "
+    "summarize, or correct anything. If the image has little or no text, describe what it shows in one or "
+    "two sentences instead. Reply with the transcription only."
+)
 
 
 class BaseChunker(ABC):
@@ -207,6 +221,7 @@ class MorphikParser(BaseParser):
         anthropic_api_key: Optional[str] = None,
         frame_sample_rate: int = 1,
         use_contextual_chunking: bool = False,
+        image_ocr_model: Optional[str] = None,
     ):
         # Initialize basic configuration
         self._assemblyai_api_key = assemblyai_api_key
@@ -224,6 +239,16 @@ class MorphikParser(BaseParser):
 
         # Initialize logger
         self.logger = logging.getLogger(__name__)
+
+        # Images go to this registered vision model instead of Docling's OCR when set
+        self._image_ocr_model = image_ocr_model
+        self._image_ocr_config: Dict[str, Any] = {}
+        if image_ocr_model:
+            registered = getattr(self.settings, "REGISTERED_MODELS", {}) or {}
+            if image_ocr_model not in registered:
+                raise ValueError(f"image_ocr_model '{image_ocr_model}' is not a key in registered_models")
+            self._image_ocr_config = registered[image_ocr_model]
+            self.logger.info(f"Image OCR uses vision model {image_ocr_model}")
 
         # Setup for API mode parsing
         self._parse_api_endpoints: Optional[List[str]] = None
@@ -261,6 +286,60 @@ class MorphikParser(BaseParser):
         except Exception as e:
             logging.error(f"Error detecting file type: {str(e)}")
             return filename.lower().endswith(".mp4")
+
+    def _is_ocr_image(self, file: bytes, filename: str) -> bool:
+        """True when images should go to the vision model and this file is a raster image."""
+        if not self._image_ocr_model:
+            return False
+        try:
+            return detect_content_type(content=file, filename=filename) in OCR_IMAGE_TYPES
+        except Exception:
+            return False
+
+    @staticmethod
+    def _image_to_png(file: bytes) -> bytes:
+        """First frame as RGB(A) PNG, longest side at most OCR_MAX_SIDE. Covers formats the API rejects (BMP, TIFF)."""
+        with Image.open(io.BytesIO(file)) as image:
+            image.seek(0)
+            frame = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+        if max(frame.size) > OCR_MAX_SIDE:
+            frame.thumbnail((OCR_MAX_SIDE, OCR_MAX_SIDE), Image.LANCZOS)
+        output = io.BytesIO()
+        frame.save(output, format="PNG")
+        return output.getvalue()
+
+    async def _transcribe_image(self, file: bytes, filename: str) -> str:
+        """Read an image's text with the configured vision model."""
+        image_url = "data:image/png;base64," + base64.b64encode(self._image_to_png(file)).decode()
+        params: Dict[str, Any] = {
+            "model": self._image_ocr_config["model_name"],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": OCR_PROMPT},
+                        {"type": "image_url", "image_url": {"url": image_url, "detail": "high"}},
+                    ],
+                }
+            ],
+            "max_tokens": 4096,
+        }
+        params.update({k: v for k, v in self._image_ocr_config.items() if k not in ("model_name", "vision")})
+        try:
+            response = await litellm.acompletion(**params)
+        except (
+            litellm.RateLimitError,
+            litellm.Timeout,
+            litellm.APIConnectionError,
+            litellm.InternalServerError,
+            litellm.ServiceUnavailableError,
+        ) as e:
+            # A later retry can fix these. ConnectionError makes the ingestion worker retry the job.
+            raise ConnectionError(f"Image OCR call to {self._image_ocr_model} failed: {e}") from e
+        text = response.choices[0].message.content or ""
+        if not text.strip():
+            self.logger.warning(f"Image OCR returned no text for {filename}")
+        return text
 
     def _is_xml_file(self, filename: str, content_type: Optional[str] = None) -> bool:
         """Check if the file is an XML file."""
@@ -601,6 +680,9 @@ class MorphikParser(BaseParser):
             except Exception as e:
                 self.logger.warning(f"Fast Excel parser failed for {filename}: {e}, falling back to Docling")
 
+        if self._is_ocr_image(file, filename):
+            return {}, await self._transcribe_image(file, filename)
+
         # For complex formats, use API if configured, otherwise local Docling
         if self._parse_api_endpoints:
             try:
@@ -629,6 +711,9 @@ class MorphikParser(BaseParser):
         """Run an expensive parse fallback after normal parsing produced no usable chunks."""
         if self._is_plain_text_file(filename):
             return await self.parse_file_to_text(file, filename)
+        if self._is_ocr_image(file, filename):
+            # The vision model already read this image. Docling would only rerun local OCR.
+            return {"parse_fallback": "deep"}, ""
 
         parse_file = file
         parse_filename = filename

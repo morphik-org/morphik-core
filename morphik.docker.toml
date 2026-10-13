@@ -85,6 +85,9 @@ chunk_size = 6000
 chunk_overlap = 300
 use_contextual_chunking = false
 contextual_chunking_model = "openai_gpt4-1-mini"  # Reference to a key in registered_models
+# Read text in images (PNG, JPEG, GIF, WebP, BMP, TIFF) with this registered vision model instead of
+# Docling's local OCR. Leave unset to keep local OCR.
+# image_ocr_model = "openai_gpt4-1-mini"
 
 [parser.xml]
 max_tokens = 350
