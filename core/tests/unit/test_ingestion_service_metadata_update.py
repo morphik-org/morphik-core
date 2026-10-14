@@ -301,3 +301,62 @@ async def test_queued_text_update_preserves_identity_metadata_and_queues_reindex
     assert queued["payload"]["file_key"] == "ingest_uploads/replacement/report.txt"
     assert queued["payload"]["_job_id"] == "ingest:doc-1:1"
     assert queued["payload"]["ingestion_revision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_file_ingest_persists_use_colpali_on_initial_record():
+    doc = _document()
+    db = FakeStoreFailureDatabase(doc)
+    service = IngestionService(db, None, None, None, None)
+
+    async def noop_limit_check(auth, content_length, document_id):
+        return None
+
+    service._verify_ingest_and_storage_limits = noop_limit_check
+    service._resolve_content_type = lambda content, filename, content_type: "text/plain"
+
+    with pytest.raises(HTTPException):
+        await service.ingest_file_content(
+            file_content_bytes=b"hello",
+            filename="report.txt",
+            content_type="text/plain",
+            metadata={},
+            auth=_auth(),
+            redis=None,
+            metadata_types={},
+            use_colpali=True,
+            external_id="doc-1",
+        )
+
+    # A requeue of a document that never completed reads this flag back.
+    assert db.store_calls[0]["document"].system_metadata["use_colpali"] is True
+
+
+@pytest.mark.asyncio
+async def test_queued_file_update_persists_use_colpali():
+    doc = _document()
+    service, db = _service(doc)
+
+    async def noop_limit_check(auth, content_length, document_id):
+        return None
+
+    async def fake_upload(*, content_bytes, filename, content_type):
+        return "app-1", "ingest_uploads/replacement/report.txt", "report.txt"
+
+    async def noop_record(*args, **kwargs):
+        return None
+
+    service._verify_ingest_and_storage_limits = noop_limit_check
+    service._upload_content_bytes = fake_upload
+    service._record_storage_usage = noop_record
+    service._get_storage_object_size = noop_record
+
+    await service.queue_document_update(
+        document_id="doc-1",
+        auth=_auth(),
+        redis=FakeRedis(),
+        content="replacement text",
+        use_colpali=True,
+    )
+
+    assert db.update_calls[-1]["updates"]["system_metadata"]["use_colpali"] is True

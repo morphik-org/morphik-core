@@ -629,6 +629,8 @@ class IngestionService:
         )
         doc.system_metadata = self._reset_processing_metadata(doc.system_metadata)
         doc.system_metadata["ingestion_revision"] = 0
+        # Persist the requested mode so a requeue of a never-completed document keeps it.
+        doc.system_metadata["use_colpali"] = bool(use_colpali)
 
         await self._verify_ingest_and_storage_limits(auth, len(file_content_bytes), doc.external_id)
 
@@ -844,6 +846,7 @@ class IngestionService:
 
         doc.system_metadata = self._reset_processing_metadata(doc.system_metadata)
         doc.system_metadata["ingestion_revision"] = int(doc.system_metadata.get("ingestion_revision", 0)) + 1
+        doc.system_metadata["use_colpali"] = bool(use_colpali)
 
         updates = {
             "metadata": doc.metadata,
