@@ -41,9 +41,9 @@ from core.models.folders import Folder
 from core.parser.base_parser import BaseParser
 from core.storage.base_storage import BaseStorage
 from core.storage.utils_file_extensions import detect_content_type, detect_file_type
+from core.utils.arq_jobs import enqueue_job_clearing_stale_result
 from core.utils.fast_ops import bytes_to_data_uri, encode_base64
 from core.utils.folder_utils import normalize_folder_path, normalize_ingest_folder_inputs
-from core.utils.arq_jobs import enqueue_job_clearing_stale_result
 from core.utils.storage_usage import extract_storage_bytes
 from core.utils.typed_metadata import MetadataBundle, canonicalize_type_name, merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
@@ -595,6 +595,8 @@ class IngestionService:
             folder_path=folder_path,
         )
         doc.system_metadata = self._reset_processing_metadata(doc.system_metadata)
+        # Persist the requested mode so a requeue of a never-completed document keeps it.
+        doc.system_metadata["use_colpali"] = bool(use_colpali)
 
         await self._verify_ingest_and_storage_limits(auth, len(file_content_bytes), doc.external_id)
 
@@ -788,6 +790,7 @@ class IngestionService:
             raise HTTPException(status_code=500, detail=f"Failed to upload updated file to storage: {str(e)}")
 
         doc.system_metadata = self._reset_processing_metadata(doc.system_metadata)
+        doc.system_metadata["use_colpali"] = bool(use_colpali)
 
         updates = {
             "metadata": doc.metadata,

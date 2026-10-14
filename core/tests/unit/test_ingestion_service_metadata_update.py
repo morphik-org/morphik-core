@@ -3,7 +3,7 @@
 import os
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -65,6 +65,18 @@ class FakeStoreFailureDatabase(FakeDatabase):
             }
         )
         return False
+
+
+class FakeRedis:
+    def __init__(self):
+        self.calls = []
+
+    async def delete(self, key):
+        return 0
+
+    async def enqueue_job(self, function_name, **payload):
+        self.calls.append({"function_name": function_name, "payload": payload})
+        return SimpleNamespace(job_id=payload["_job_id"])
 
 
 def _auth() -> AuthContext:
@@ -234,3 +246,62 @@ async def test_queued_metadata_only_update_allows_unchanged_managed_metadata_fie
     assert updated is doc
     assert doc.metadata["custom"] == "queued"
     assert len(db.update_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_file_ingest_persists_use_colpali_on_initial_record():
+    doc = _document()
+    db = FakeStoreFailureDatabase(doc)
+    service = IngestionService(db, None, None, None, None)
+
+    async def noop_limit_check(auth, content_length, document_id):
+        return None
+
+    service._verify_ingest_and_storage_limits = noop_limit_check
+    service._resolve_content_type = lambda content, filename, content_type: "text/plain"
+
+    with pytest.raises(HTTPException):
+        await service.ingest_file_content(
+            file_content_bytes=b"hello",
+            filename="report.txt",
+            content_type="text/plain",
+            metadata={},
+            auth=_auth(),
+            redis=None,
+            metadata_types={},
+            use_colpali=True,
+            external_id="doc-1",
+        )
+
+    # A requeue of a document that never completed reads this flag back.
+    assert db.store_calls[0]["document"].system_metadata["use_colpali"] is True
+
+
+@pytest.mark.asyncio
+async def test_queued_file_update_persists_use_colpali():
+    doc = _document()
+    service, db = _service(doc)
+
+    async def noop_limit_check(auth, content_length, document_id):
+        return None
+
+    async def fake_upload(*, content_bytes, filename, content_type):
+        return "app-1", "ingest_uploads/replacement/report.txt", "report.txt"
+
+    async def noop_record(*args, **kwargs):
+        return None
+
+    service._verify_ingest_and_storage_limits = noop_limit_check
+    service._upload_content_bytes = fake_upload
+    service._record_storage_usage = noop_record
+    service._get_storage_object_size = noop_record
+
+    await service.queue_document_update(
+        document_id="doc-1",
+        auth=_auth(),
+        redis=FakeRedis(),
+        content="replacement text",
+        use_colpali=True,
+    )
+
+    assert db.update_calls[-1]["updates"]["system_metadata"]["use_colpali"] is True
