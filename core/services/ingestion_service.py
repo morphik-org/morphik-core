@@ -64,6 +64,10 @@ def _page_render_matrix(page: fitz.Page, dpi: int) -> fitz.Matrix:
     return fitz.Matrix(zoom, zoom)
 
 
+# Smallest image side the ColPali model accepts.
+MIN_COLPALI_IMAGE_SIDE = 28
+
+
 class PdfConversionError(Exception):
     """Raised when PDF conversion to images fails."""
 
@@ -1570,11 +1574,21 @@ class IngestionService:
                 max_width = 256
                 if img.width > max_width:
                     ratio = max_width / float(img.width)
-                    new_height = int(float(img.height) * ratio)
+                    new_height = max(1, int(float(img.height) * ratio))
                     img = img.resize((max_width, new_height))
+                img = img.convert("RGB")
+                if min(img.size) < MIN_COLPALI_IMAGE_SIDE:
+                    # The ColPali model rejects images with a side under 28 px; pad instead of failing.
+                    padded = PILImage.new(
+                        "RGB",
+                        (max(img.width, MIN_COLPALI_IMAGE_SIDE), max(img.height, MIN_COLPALI_IMAGE_SIDE)),
+                        "white",
+                    )
+                    padded.paste(img, (0, 0))
+                    img = padded
 
                 buffered = BytesIO()
-                img.convert("RGB").save(buffered, format="JPEG", quality=70, optimize=True)
+                img.save(buffered, format="JPEG", quality=70, optimize=True)
                 jpeg_bytes = buffered.getvalue()
                 img_b64 = bytes_to_data_uri(jpeg_bytes, "image/jpeg")
                 return [

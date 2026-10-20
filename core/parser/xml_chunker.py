@@ -308,6 +308,23 @@ class XMLChunker:
 
         return chunks
 
+    def _raw_text_chunks(self) -> List[Dict[str, Any]]:
+        """Treat the whole document as plain text."""
+        text_content = self.content.decode("utf-8-sig", errors="ignore")
+        if not text_content.strip():
+            return []
+        return [
+            {
+                "text": text_content,
+                "unit": "fallback_text",
+                "xml_id": None,
+                "breadcrumbs": [],
+                "source_path": "fallback",
+                "prev": None,
+                "next": None,
+            }
+        ]
+
     def chunk(self) -> List[Dict[str, Any]]:
         """
         Main chunking method that processes XML content and returns chunks.
@@ -344,25 +361,17 @@ class XMLChunker:
 
             # Create chunks
             chunks = self._chunkify(root, unit_tag)
+            if not chunks:
+                # Attribute-only XML (e.g. config files) has no text nodes; keep the raw markup searchable.
+                logger.info("XML has no text content, falling back to raw text")
+                return self._raw_text_chunks()
 
             logger.info(f"Successfully created {len(chunks)} chunks using unit tag '{unit_tag}'")
             return chunks
 
         except ET.ParseError as e:
             logger.error(f"Failed to parse XML: {e}")
-            # Fallback: treat as plain text
-            text_content = self.content.decode("utf-8", errors="ignore")
-            return [
-                {
-                    "text": text_content,
-                    "unit": "fallback_text",
-                    "xml_id": None,
-                    "breadcrumbs": [],
-                    "source_path": "fallback",
-                    "prev": None,
-                    "next": None,
-                }
-            ]
+            return self._raw_text_chunks()
         except Exception as e:
             logger.error(f"Unexpected error during XML chunking: {e}")
             raise
