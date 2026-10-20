@@ -19,6 +19,8 @@ from .utils import build_store_metrics
 logger = logging.getLogger(__name__)
 Base = declarative_base()
 PGVECTOR_MAX_DIMENSIONS = 2000  # Maximum dimensions for pgvector
+# Rows per INSERT statement. At 12 columns or fewer this stays under asyncpg's 32,767-parameter limit.
+INSERT_ROWS_PER_STATEMENT = 1000
 
 
 class Vector(UserDefinedType):
@@ -425,7 +427,11 @@ class PGVectorStore(BaseVectorStore):
 
         write_start = time.perf_counter()
         async with self.get_session_with_retry() as session:
-            await session.execute(VectorEmbedding.__table__.insert().values(rows))
+            # asyncpg caps one statement at 32,767 parameters, which a multi-row VALUES passes after a few
+            # thousand chunks. Insert in slices, all in one transaction.
+            for start in range(0, len(rows), INSERT_ROWS_PER_STATEMENT):
+                batch = rows[start : start + INSERT_ROWS_PER_STATEMENT]
+                await session.execute(VectorEmbedding.__table__.insert().values(batch))
             await session.commit()
         write_duration = time.perf_counter() - write_start
 

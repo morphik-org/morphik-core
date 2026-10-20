@@ -1,10 +1,14 @@
-"""Inputs over the OpenAI per-input token limit are truncated instead of failing the whole batch."""
+"""Inputs over the OpenAI per-input and per-request token limits no longer fail the whole batch."""
 
 import pytest
 import tiktoken
 
 from core.embedding import litellm_embedding
-from core.embedding.litellm_embedding import OPENAI_EMBEDDING_MAX_TOKENS, LiteLLMEmbeddingModel
+from core.embedding.litellm_embedding import (
+    OPENAI_EMBEDDING_MAX_REQUEST_TOKENS,
+    OPENAI_EMBEDDING_MAX_TOKENS,
+    LiteLLMEmbeddingModel,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -73,6 +77,36 @@ async def test_models_without_known_tokenizer_are_sent_as_is(captured):
     await model.embed_documents([long_text])
 
     assert captured[0] == [long_text]
+
+
+@pytest.mark.asyncio
+async def test_batches_over_the_request_limit_are_split(captured):
+    encoding = tiktoken.encoding_for_model("text-embedding-3-small")
+    model = _make_model("text-embedding-3-small", encoding)
+    # Spreadsheet-like rows: 100 chunks of ~6000 characters that each cost several thousand tokens,
+    # together well over the 300,000-token request limit.
+    row = "| 2025-04-22 | 7781.25 | 0.0432 | PHL-TQC | 15:01:44 |\n"
+    chunks = [(f"{i} " + row * 120)[:6000] for i in range(100)]
+    total = sum(len(encoding.encode(c)) for c in chunks)
+    assert total > 300_000
+
+    embeddings = await model.embed_documents(chunks)
+
+    assert len(embeddings) == 100
+    assert len(captured) > 1
+    assert [text for request in captured for text in request] == chunks
+    for request in captured:
+        assert sum(len(encoding.encode(text)) for text in request) <= OPENAI_EMBEDDING_MAX_REQUEST_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_small_batches_stay_one_request(captured):
+    encoding = tiktoken.encoding_for_model("text-embedding-3-small")
+    model = _make_model("text-embedding-3-small", encoding)
+
+    await model.embed_documents(["first", "second", "third"])
+
+    assert captured == [["first", "second", "third"]]
 
 
 def test_encoding_resolves_for_provider_prefixed_openai_models():

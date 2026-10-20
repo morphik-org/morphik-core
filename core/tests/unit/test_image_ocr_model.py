@@ -15,6 +15,8 @@ pytestmark = pytest.mark.unit
 
 REGISTERED = {
     "vision_ocr": {"model_name": "gpt-4.1-mini", "vision": True, "api_base": "https://llm.internal/v1"},
+    "reasoning_ocr": {"model_name": "gpt-6.1-sol", "reasoning_effort": "low"},
+    "local_ocr": {"model_name": "ollama_chat/qwen2.5vl:latest", "api_base": "http://localhost:11434", "vision": True},
 }
 
 
@@ -156,3 +158,45 @@ async def test_auth_errors_fail_without_retry(make_parser, monkeypatch):
 def test_unknown_model_key_is_rejected(make_parser):
     with pytest.raises(ValueError, match="registered_models"):
         make_parser(image_ocr_model="missing")
+
+
+@pytest.mark.asyncio
+async def test_openai_models_get_max_completion_tokens(make_parser, completions):
+    # OpenAI's reasoning models reject max_tokens, and LiteLLM only renames it for models it already knows.
+    await make_parser().parse_file_to_text(_image("PNG"), "image.png")
+    await make_parser("reasoning_ocr").parse_file_to_text(_image("PNG"), "image.png")
+
+    for call in completions:
+        assert "max_tokens" not in call
+        assert call["max_completion_tokens"] == morphik_parser.OCR_MAX_OUTPUT_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_reasoning_effort_is_passed_through(make_parser, completions):
+    await make_parser("reasoning_ocr").parse_file_to_text(_image("PNG"), "image.png")
+
+    (call,) = completions
+    assert call["model"] == "gpt-6.1-sol"
+    assert call["reasoning_effort"] == "low"
+    assert call["allowed_openai_params"] == ["reasoning_effort"]
+
+
+@pytest.mark.asyncio
+async def test_other_providers_keep_max_tokens(make_parser, completions):
+    await make_parser("local_ocr").parse_file_to_text(_image("PNG"), "image.png")
+
+    (call,) = completions
+    assert call["max_tokens"] == morphik_parser.OCR_MAX_OUTPUT_TOKENS
+    assert "max_completion_tokens" not in call
+
+
+@pytest.mark.asyncio
+async def test_running_out_of_tokens_before_any_text_fails_the_document(make_parser, monkeypatch):
+    async def all_reasoning(**params):
+        message = SimpleNamespace(content="")
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="length")])
+
+    monkeypatch.setattr(morphik_parser.litellm, "acompletion", all_reasoning)
+
+    with pytest.raises(ValueError, match="reasoning_effort"):
+        await make_parser("reasoning_ocr").parse_file_to_text(_image("PNG"), "image.png")

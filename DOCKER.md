@@ -120,8 +120,10 @@ run `./start-morphik.sh` again to apply changes.
 
 ### 5. Text in images
 
-By default, Docling reads text in uploaded images with RapidOCR on the worker's CPU. RapidOCR downloads its model files
-from www.modelscope.cn the first time it runs, and again whenever the worker container is recreated.
+Unless `image_ocr_model` is set, Docling reads text in uploaded images with RapidOCR on the worker's CPU. Nothing is
+sent to a model provider. RapidOCR downloads its model files from www.modelscope.cn the first time it runs, and again
+whenever the worker container is recreated. Docling often marks a screenshot, or panels of one, as pictures; Morphik
+keeps the OCR text it finds inside them.
 
 To send images to a vision model instead, point `image_ocr_model` at a key in `[registered_models]`:
 
@@ -137,10 +139,23 @@ PNG, JPEG, GIF, WebP, BMP and TIFF files then go to that model, which returns th
 sentence description when an image has little text. Images are converted to PNG and scaled to at most 2048 px on the
 longest side before sending. PDFs and Office files still use Docling. Rate limits, timeouts and provider outages are
 retried like other transient ingestion errors; an invalid key fails the document. With `use_colpali=true`, images go to
-ColPali and skip this step.
+ColPali and skip this step. To go back to local OCR, delete the `image_ocr_model` line and run `./start-morphik.sh`.
 
-The setting only applies to new ingests. To re-read images already indexed with local OCR, requeue them with
-`POST /ingest/requeue`.
+Any OpenAI vision model works. OpenAI retires the GPT-4.1 and GPT-4o families on January 14, 2027. For a reasoning
+model such as `gpt-6.1-sol`, register a separate key with `reasoning_effort = "low"`. Transcription needs little
+reasoning, and at the default effort the model spends more output tokens and time per image:
+
+```toml
+[registered_models]
+openai_gpt6-1-sol_ocr = { model_name = "gpt-6.1-sol", reasoning_effort = "low" }
+
+[parser]
+image_ocr_model = "openai_gpt6-1-sol_ocr"
+```
+
+Keep that key out of `[completion]` and the other model settings; only image OCR passes `reasoning_effort` through.
+
+The setting only applies to new ingests. To re-read images already indexed, requeue them with `POST /ingest/requeue`.
 
 ## Accessing services
 
