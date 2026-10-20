@@ -22,6 +22,7 @@ class FakePage:
     def __init__(self, image_bytes: bytes | None = None, error: Exception | None = None):
         self._image_bytes = image_bytes
         self._error = error
+        self.rect = ingestion_module.fitz.Rect(0, 0, 612, 792)
 
     def get_pixmap(self, matrix):
         if self._error:
@@ -166,3 +167,24 @@ def test_office_conversion_keeps_every_page(monkeypatch):
     assert all(chunk.metadata["is_image"] is True for chunk in chunks)
     assert all(chunk.content.startswith("data:image/png;base64,") for chunk in chunks)
     assert fake_document.closed is True
+
+
+def test_page_render_matrix_keeps_dpi_for_normal_pages():
+    document = ingestion_module.fitz.open()
+    page = document.new_page(width=595, height=842)
+
+    matrix = ingestion_module._page_render_matrix(page, 150)
+
+    assert matrix.a == pytest.approx(150 / 72)
+    assert matrix.d == pytest.approx(150 / 72)
+
+
+def test_page_render_matrix_caps_large_format_pages():
+    document = ingestion_module.fitz.open()
+    page = document.new_page(width=14400, height=14400)
+
+    matrix = ingestion_module._page_render_matrix(page, 150)
+
+    rendered_pixels = page.rect.width * matrix.a * page.rect.height * matrix.d
+    assert rendered_pixels <= ingestion_module.MAX_RENDERED_PAGE_PIXELS * 1.001
+    assert matrix.a == pytest.approx(matrix.d)

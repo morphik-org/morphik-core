@@ -50,6 +50,19 @@ from core.vector_store.base_vector_store import BaseVectorStore
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# Large-format pages (drawings, schematics) can render to hundreds of megapixels at the
+# configured DPI, which image decoders downstream reject. Scale those pages down.
+MAX_RENDERED_PAGE_PIXELS = 16_000_000
+
+
+def _page_render_matrix(page: fitz.Page, dpi: int) -> fitz.Matrix:
+    """Return a render matrix for ``dpi``, scaled down so the page stays under the pixel cap."""
+    zoom = dpi / 72
+    pixels = page.rect.width * page.rect.height * zoom * zoom
+    if pixels > MAX_RENDERED_PAGE_PIXELS:
+        zoom *= (MAX_RENDERED_PAGE_PIXELS / pixels) ** 0.5
+    return fitz.Matrix(zoom, zoom)
+
 
 class PdfConversionError(Exception):
     """Raised when PDF conversion to images fails."""
@@ -1488,7 +1501,7 @@ class IngestionService:
             for page_index, page in enumerate(pdf_document):
                 page_count += 1
                 try:
-                    mat = fitz.Matrix(dpi / 72, dpi / 72)
+                    mat = _page_render_matrix(page, dpi)
                     pix = page.get_pixmap(matrix=mat)
                     png_bytes = pix.tobytes("png")
                 except Exception as e:
@@ -1724,7 +1737,7 @@ class IngestionService:
                 for page_num in range(batch_start, batch_end):
                     page = pdf_document[page_num]
                     try:
-                        mat = fitz.Matrix(dpi / 72, dpi / 72)
+                        mat = _page_render_matrix(page, dpi)
                         pix = page.get_pixmap(matrix=mat)
                         png_bytes = pix.tobytes("png")
                         # Explicitly release pixmap memory - this is the key memory optimization
@@ -1854,8 +1867,7 @@ class IngestionService:
                     for page_num in range(total_pages):
                         page = pdf_document[page_num]
                         try:
-                            dpi = settings.COLPALI_PDF_DPI
-                            mat = fitz.Matrix(dpi / 72, dpi / 72)
+                            mat = _page_render_matrix(page, settings.COLPALI_PDF_DPI)
                             pix = page.get_pixmap(matrix=mat)
                             img_data = pix.tobytes("png")
                             img = PILImage.open(BytesIO(img_data))
