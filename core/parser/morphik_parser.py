@@ -15,6 +15,7 @@ import openpyxl
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling_core.types.doc import DoclingDocument, PictureItem, TextItem
 from httpx import AsyncClient, Timeout
 from PIL import Image
 
@@ -34,12 +35,42 @@ logger = logging.getLogger(__name__)
 OCR_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/tiff"}
 # OpenAI scales high-detail images to fit 2048 px anyway; downscaling first only saves upload bytes.
 OCR_MAX_SIDE = 2048
+# Reasoning models (gpt-5 and later) spend part of this budget thinking before they write the transcription.
+OCR_MAX_OUTPUT_TOKENS = 16384
+# Stands in for each picture while exporting Docling markdown, then replaced by the text OCR found inside it.
+PICTURE_MARKER = "\x00morphik-picture\x00"
 OCR_PROMPT = (
     "Transcribe all text in this image exactly as written, in reading order. Keep the structure with "
     "Markdown: headings, lists, and tables for tabular content such as forms and grids. Do not translate, "
     "summarize, or correct anything. If the image has little or no text, describe what it shows in one or "
     "two sentences instead. Reply with the transcription only."
 )
+
+
+def docling_markdown(document: DoclingDocument) -> str:
+    """Docling markdown with the text OCR found inside each picture in place of its <!-- image --> placeholder.
+
+    Docling's layout model often classifies a whole screenshot, or the panels of one, as pictures. Their OCR text
+    is kept as children of the picture, which export_to_markdown skips, so a screenshot of a form came back as
+    nothing but placeholders.
+    """
+    markdown = document.export_to_markdown(image_placeholder=PICTURE_MARKER)
+    # Same top-level traversal the markdown export uses, so the pictures line up with the markers.
+    pictures = [item for item, _ in document.iterate_items() if isinstance(item, PictureItem)]
+    parts = markdown.split(PICTURE_MARKER)
+    result = [parts[0]]
+    for index, part in enumerate(parts[1:]):
+        text = ""
+        if index < len(pictures):
+            lines = [
+                item.text.strip()
+                for item, _ in document.iterate_items(root=pictures[index], traverse_pictures=True)
+                if isinstance(item, TextItem) and item.text.strip()
+            ]
+            text = "\n".join(lines)
+        result.append(text)
+        result.append(part)
+    return "".join(result)
 
 
 class BaseChunker(ABC):
@@ -323,9 +354,21 @@ class MorphikParser(BaseParser):
                     ],
                 }
             ],
-            "max_tokens": 4096,
         }
         params.update({k: v for k, v in self._image_ocr_config.items() if k not in ("model_name", "vision")})
+        provider = None
+        try:
+            provider = litellm.get_llm_provider(params["model"])[1]
+        except Exception:
+            pass
+        # OpenAI's reasoning models reject max_tokens, and LiteLLM only renames it for models it already knows.
+        # Every current OpenAI chat model accepts max_completion_tokens; older Azure API versions don't.
+        token_param = "max_completion_tokens" if provider == "openai" else "max_tokens"
+        if "max_tokens" not in params and "max_completion_tokens" not in params:
+            params[token_param] = OCR_MAX_OUTPUT_TOKENS
+        if "reasoning_effort" in params:
+            # LiteLLM refuses reasoning_effort for OpenAI models newer than its model list unless allowed.
+            params.setdefault("allowed_openai_params", ["reasoning_effort"])
         try:
             response = await litellm.acompletion(**params)
         except (
@@ -337,8 +380,16 @@ class MorphikParser(BaseParser):
         ) as e:
             # A later retry can fix these. ConnectionError makes the ingestion worker retry the job.
             raise ConnectionError(f"Image OCR call to {self._image_ocr_model} failed: {e}") from e
-        text = response.choices[0].message.content or ""
+        choice = response.choices[0]
+        text = choice.message.content or ""
         if not text.strip():
+            if getattr(choice, "finish_reason", None) == "length":
+                # A reasoning model used the whole output budget before writing anything. Storing "" would
+                # index the image as blank and report success.
+                raise ValueError(
+                    f"Image OCR model {self._image_ocr_model} hit its output limit before returning text for "
+                    f"{filename}; set reasoning_effort = \"low\" on it in [registered_models]"
+                )
             self.logger.warning(f"Image OCR returned no text for {filename}")
         return text
 
@@ -645,7 +696,7 @@ class MorphikParser(BaseParser):
         try:
             converter = self._get_docling_converter()
             result = converter.convert(temp_path)
-            text = result.document.export_to_markdown()
+            text = docling_markdown(result.document)
 
             if not text.strip():
                 self.logger.warning(f"Docling returned no text for {filename}")
@@ -679,7 +730,7 @@ class MorphikParser(BaseParser):
         try:
             converter = self._build_deep_pdf_converter()
             result = converter.convert(temp_path)
-            text = result.document.export_to_markdown()
+            text = docling_markdown(result.document)
             if not text.strip():
                 self.logger.warning(f"Deep Docling fallback returned no text for {filename}")
             return text

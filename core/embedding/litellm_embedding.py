@@ -1,5 +1,5 @@
 import logging
-from typing import List, Union
+from typing import List, Tuple, Union
 
 import litellm
 import tiktoken
@@ -19,6 +19,9 @@ PGVECTOR_MAX_DIMENSIONS = 2000  # Maximum dimensions for pgvector
 # Chunks are sized in characters, and CJK text costs ~2 tokens per character, so a
 # 6000-character chunk can exceed this.
 OPENAI_EMBEDDING_MAX_TOKENS = 8191
+# OpenAI also rejects a request whose inputs add up to more than 300,000 tokens. 100 spreadsheet chunks of
+# 6000 characters can pass that, since numbers and short cells tokenize densely. Leave room for counting drift.
+OPENAI_EMBEDDING_MAX_REQUEST_TOKENS = 250_000
 
 
 class LiteLLMEmbeddingModel(BaseEmbeddingModel):
@@ -60,22 +63,39 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
             pass
         logger.info(f"Initialized LiteLLM embedding model with model_key={model_key}, config={self.model_config}")
 
-    def _truncate_to_token_limit(self, texts: List[str]) -> List[str]:
-        """Cut inputs that exceed the OpenAI per-input token limit so one chunk can't fail the batch."""
+    def _truncate_to_token_limit(self, texts: List[str]) -> Tuple[List[str], List[int]]:
+        """Cut inputs over the OpenAI per-input token limit so one chunk can't fail the batch.
+
+        Also returns each input's token count, or an empty list when the model has no known tokenizer.
+        """
         if self._encoding is None:
-            return texts
-        result = []
+            return texts, []
+        result, counts = [], []
         for text in texts:
-            # Every token is at least one byte, so short inputs can't be over the limit.
-            if len(text.encode("utf-8")) > OPENAI_EMBEDDING_MAX_TOKENS:
-                tokens = self._encoding.encode(text, disallowed_special=())
-                if len(tokens) > OPENAI_EMBEDDING_MAX_TOKENS:
-                    logger.warning(
-                        "Truncating embedding input from %d to %d tokens", len(tokens), OPENAI_EMBEDDING_MAX_TOKENS
-                    )
-                    text = self._encoding.decode(tokens[:OPENAI_EMBEDDING_MAX_TOKENS])
+            tokens = self._encoding.encode(text, disallowed_special=())
+            if len(tokens) > OPENAI_EMBEDDING_MAX_TOKENS:
+                logger.warning(
+                    "Truncating embedding input from %d to %d tokens", len(tokens), OPENAI_EMBEDDING_MAX_TOKENS
+                )
+                text = self._encoding.decode(tokens[:OPENAI_EMBEDDING_MAX_TOKENS])
             result.append(text)
-        return result
+            counts.append(min(len(tokens), OPENAI_EMBEDDING_MAX_TOKENS))
+        return result, counts
+
+    @staticmethod
+    def _split_by_request_tokens(texts: List[str], counts: List[int]) -> List[List[str]]:
+        """Group inputs into requests that stay under OPENAI_EMBEDDING_MAX_REQUEST_TOKENS."""
+        if not counts:
+            return [texts]
+        groups: List[List[str]] = [[]]
+        total = 0
+        for text, count in zip(texts, counts):
+            if groups[-1] and total + count > OPENAI_EMBEDDING_MAX_REQUEST_TOKENS:
+                groups.append([])
+                total = 0
+            groups[-1].append(text)
+            total += count
+        return groups
 
     async def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
@@ -110,12 +130,11 @@ class LiteLLMEmbeddingModel(BaseEmbeddingModel):
                 # Use a harmless placeholder; some LiteLLM providers demand a key even if backend ignores it
                 model_params["api_key"] = get_settings().LITELLM_DUMMY_API_KEY
 
-            # Call LiteLLM with retries for transient provider errors (e.g. OpenAI 500s)
-            response = await litellm.aembedding(
-                input=self._truncate_to_token_limit(texts), num_retries=3, **model_params
-            )
-
-            embeddings = [data["embedding"] for data in response.data]
+            embeddings = []
+            for group in self._split_by_request_tokens(*self._truncate_to_token_limit(texts)):
+                # Call LiteLLM with retries for transient provider errors (e.g. OpenAI 500s)
+                response = await litellm.aembedding(input=group, num_retries=3, **model_params)
+                embeddings.extend(data["embedding"] for data in response.data)
 
             # Validate dimensions
             if embeddings and len(embeddings[0]) != self.dimensions:
