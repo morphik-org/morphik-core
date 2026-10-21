@@ -1,3 +1,4 @@
+import base64
 import subprocess
 from io import BytesIO
 from pathlib import Path
@@ -188,3 +189,16 @@ def test_page_render_matrix_caps_large_format_pages():
     rendered_pixels = page.rect.width * matrix.a * page.rect.height * matrix.d
     assert rendered_pixels <= ingestion_module.MAX_RENDERED_PAGE_PIXELS * 1.001
     assert matrix.a == pytest.approx(matrix.d)
+
+
+@pytest.mark.parametrize("size", [(900, 90), (16, 16), (4, 64)])
+def test_small_images_are_padded_for_colpali(size):
+    service = IngestionService(None, None, None, None, None)
+    output = BytesIO()
+    Image.new("RGB", size, "black").save(output, format="PNG")
+
+    chunks = service._create_chunks_multivector("image/png", None, output.getvalue(), [])
+
+    encoded = chunks[0].content.split(",", 1)[1]
+    width, height = Image.open(BytesIO(base64.b64decode(encoded))).size
+    assert min(width, height) >= ingestion_module.MIN_COLPALI_IMAGE_SIDE
