@@ -278,6 +278,24 @@ def get_settings() -> Settings:
     image_ocr_model = config["parser"].get("image_ocr_model") or None
     if image_ocr_model and image_ocr_model not in settings_dict.get("REGISTERED_MODELS", {}):
         raise ValueError(f"[parser] image_ocr_model '{image_ocr_model}' is not a key in [registered_models]")
+    if image_ocr_model:
+        import litellm
+
+        ocr_config = settings_dict["REGISTERED_MODELS"][image_ocr_model]
+        try:
+            litellm.get_llm_provider(
+                ocr_config["model_name"],
+                custom_llm_provider=ocr_config.get("custom_llm_provider"),
+                api_base=ocr_config.get("api_base"),
+            )
+        except Exception as e:
+            # Otherwise the server starts and every image fails at ingest. Docker installs use LiteLLM's bundled
+            # model list (LITELLM_LOCAL_MODEL_COST_MAP=True), which doesn't know models released after it.
+            raise ValueError(
+                f"[registered_models] {image_ocr_model}: LiteLLM can't find a provider for model_name "
+                f"'{ocr_config['model_name']}'. For an OpenAI model newer than LiteLLM's model list, use "
+                f"model_name = \"openai/{ocr_config['model_name']}\"."
+            ) from e
     settings_dict["IMAGE_OCR_MODEL"] = image_ocr_model
 
     # Load parser XML config

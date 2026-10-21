@@ -147,11 +147,15 @@ reasoning, and at the default effort the model spends more output tokens and tim
 
 ```toml
 [registered_models]
-openai_gpt6-1-sol_ocr = { model_name = "gpt-6.1-sol", reasoning_effort = "low" }
+openai_gpt6-1-sol_ocr = { model_name = "openai/gpt-6.1-sol", reasoning_effort = "low" }
 
 [parser]
 image_ocr_model = "openai_gpt6-1-sol_ocr"
 ```
+
+The Docker install runs LiteLLM with its bundled model list (`LITELLM_LOCAL_MODEL_COST_MAP=True`), and that list
+predates `gpt-6.1-sol`. Models newer than the list need the `openai/` prefix, or LiteLLM can't tell which provider to
+call. Morphik checks this at startup and refuses to start if LiteLLM can't resolve the `image_ocr_model`.
 
 Keep that key out of `[completion]` and the other model settings; only image OCR passes `reasoning_effort` through.
 

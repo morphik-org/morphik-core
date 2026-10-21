@@ -2,20 +2,25 @@
 
 import base64
 import io
+from pathlib import Path
 from types import SimpleNamespace
 
 import litellm
 import pytest
 from PIL import Image
 
+from core import config
 from core.parser import morphik_parser
 from core.parser.morphik_parser import OCR_MAX_SIDE, MorphikParser
 
 pytestmark = pytest.mark.unit
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 REGISTERED = {
     "vision_ocr": {"model_name": "gpt-4.1-mini", "vision": True, "api_base": "https://llm.internal/v1"},
-    "reasoning_ocr": {"model_name": "gpt-6.1-sol", "reasoning_effort": "low"},
+    # As documented in DOCKER.md. The conftest runs LiteLLM on its bundled model list, which predates gpt-6.1-sol.
+    "reasoning_ocr": {"model_name": "openai/gpt-6.1-sol", "reasoning_effort": "low"},
     "local_ocr": {"model_name": "ollama_chat/qwen2.5vl:latest", "api_base": "http://localhost:11434", "vision": True},
 }
 
@@ -176,7 +181,7 @@ async def test_reasoning_effort_is_passed_through(make_parser, completions):
     await make_parser("reasoning_ocr").parse_file_to_text(_image("PNG"), "image.png")
 
     (call,) = completions
-    assert call["model"] == "gpt-6.1-sol"
+    assert call["model"] == "openai/gpt-6.1-sol"
     assert call["reasoning_effort"] == "low"
     assert call["allowed_openai_params"] == ["reasoning_effort"]
 
@@ -200,3 +205,38 @@ async def test_running_out_of_tokens_before_any_text_fails_the_document(make_par
 
     with pytest.raises(ValueError, match="reasoning_effort"):
         await make_parser("reasoning_ocr").parse_file_to_text(_image("PNG"), "image.png")
+
+
+@pytest.fixture
+def load_docker_config(tmp_path, monkeypatch):
+    """Load morphik.docker.toml with one extra registered model set as image_ocr_model."""
+
+    def load(model_name):
+        toml = (REPO_ROOT / "morphik.docker.toml").read_text()
+        toml = toml.replace(
+            "[registered_models]\n", f'[registered_models]\nocr_model = {{ model_name = "{model_name}" }}\n', 1
+        )
+        toml = toml.replace('# image_ocr_model = "openai_gpt4-1-mini"', 'image_ocr_model = "ocr_model"', 1)
+        (tmp_path / "morphik.toml").write_text(toml)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("POSTGRES_URI", "postgresql+asyncpg://morphik:morphik@postgres:5432/morphik")
+        config.get_settings.cache_clear()
+        try:
+            return config.get_settings()
+        finally:
+            config.get_settings.cache_clear()
+
+    return load
+
+
+def test_documented_reasoning_model_loads(load_docker_config):
+    settings = load_docker_config("openai/gpt-6.1-sol")
+
+    assert settings.IMAGE_OCR_MODEL == "ocr_model"
+    assert litellm.get_llm_provider(settings.REGISTERED_MODELS["ocr_model"]["model_name"])[1] == "openai"
+
+
+def test_model_missing_from_litellm_list_fails_at_startup(load_docker_config):
+    # LiteLLM 1.74.7's bundled list doesn't have gpt-6.1-sol. Without the check, every image fails at ingest.
+    with pytest.raises(ValueError, match=r'ocr_model.*use model_name = "openai/gpt-6.1-sol"'):
+        load_docker_config("gpt-6.1-sol")
