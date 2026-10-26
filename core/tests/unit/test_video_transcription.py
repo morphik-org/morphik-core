@@ -265,3 +265,71 @@ def test_transcription_model_must_be_openai(tmp_path, monkeypatch):
             config.get_settings()
     finally:
         config.get_settings.cache_clear()
+
+
+def _vision_client(model_config):
+    client = object.__new__(parse_video.VisionModelClient)
+    client.model_key = "frames"
+    client.model_config = {"vision": True, **model_config}
+    return client
+
+
+def _frame_completions(monkeypatch, content="A dialog reads Error 4012.", finish_reason="stop", error=None):
+    calls = []
+
+    async def fake_acompletion(**params):
+        calls.append(params)
+        if error:
+            raise error
+        message = SimpleNamespace(content=content)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=finish_reason)])
+
+    monkeypatch.setattr(parse_video.litellm, "acompletion", fake_acompletion)
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_reasoning_models_describe_frames_with_max_completion_tokens(monkeypatch):
+    calls = _frame_completions(monkeypatch)
+    client = _vision_client({"model_name": "openai/gpt-6.1-sol", "reasoning_effort": "low"})
+
+    assert await client.get_frame_description("aW1hZ2U=", "Describe this frame.") == "A dialog reads Error 4012."
+    call = calls[0]
+    assert call["max_completion_tokens"] == parse_video.FRAME_MAX_OUTPUT_TOKENS
+    assert "max_tokens" not in call
+    assert call["reasoning_effort"] == "low"
+    assert call["allowed_openai_params"] == ["reasoning_effort"]
+
+
+@pytest.mark.asyncio
+async def test_other_providers_keep_max_tokens_and_registered_limits_win(monkeypatch):
+    calls = _frame_completions(monkeypatch)
+    await _vision_client({"model_name": "claude-sonnet-4-5"}).get_frame_description("aW1hZ2U=", "Describe.")
+    await _vision_client({"model_name": "openai/gpt-6.1-sol", "max_completion_tokens": 900}).get_frame_description(
+        "aW1hZ2U=", "Describe."
+    )
+    await _vision_client({"model_name": "ollama/llava", "api_base": "http://localhost:11434"}).get_frame_description(
+        "aW1hZ2U=", "Describe."
+    )
+
+    assert calls[0]["max_tokens"] == parse_video.FRAME_MAX_OUTPUT_TOKENS
+    assert "max_completion_tokens" not in calls[0]
+    assert calls[1]["max_completion_tokens"] == 900
+    assert "max_tokens" not in calls[2] and "max_completion_tokens" not in calls[2]
+
+
+@pytest.mark.asyncio
+async def test_frame_description_that_ran_out_of_output_fails_instead_of_indexing_blank(monkeypatch):
+    _frame_completions(monkeypatch, content="", finish_reason="length")
+
+    with pytest.raises(ValueError, match='reasoning_effort = "low"'):
+        await _vision_client({"model_name": "openai/gpt-6.1-sol"}).get_frame_description("aW1hZ2U=", "Describe.")
+
+
+@pytest.mark.asyncio
+async def test_transient_frame_description_errors_are_retried(monkeypatch):
+    error = parse_video.litellm.RateLimitError("slow down", llm_provider="openai", model="gpt-6.1-sol")
+    _frame_completions(monkeypatch, error=error)
+
+    with pytest.raises(ConnectionError, match="frames"):
+        await _vision_client({"model_name": "openai/gpt-6.1-sol"}).get_frame_description("aW1hZ2U=", "Describe.")

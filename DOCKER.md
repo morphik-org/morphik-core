@@ -186,6 +186,9 @@ sampled frame goes to the `[parser.vision]` model, except frames that look the s
 recording that stays on one page is described once. A new line of text or a dialog counts as a change; a moving cursor
 doesn't. Set it to 0 to describe every sampled frame.
 
+Any registered vision model works for frames, including OpenAI reasoning models such as `openai/gpt-6.1-sol`;
+set `reasoning_effort = "low"` on those so they don't spend long thinking about each frame.
+
 To transcribe the audio with OpenAI, register a transcription model and set `transcription_model`:
 
 ```toml

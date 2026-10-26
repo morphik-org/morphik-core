@@ -23,6 +23,7 @@ from core.config import get_settings
 from core.models.chunk import Chunk
 from core.parser.base_parser import BaseParser
 from core.parser.email_parser import is_email_filename, parse_email
+from core.parser.model_params import add_output_limit
 from core.parser.text_files import decode_text, is_plain_text_filename
 from core.parser.video.parse_video import VideoParser, format_timestamp, load_config
 from core.parser.xml_chunker import XMLChunker
@@ -372,19 +373,7 @@ class MorphikParser(BaseParser):
             ],
         }
         params.update({k: v for k, v in self._image_ocr_config.items() if k not in ("model_name", "vision")})
-        provider = None
-        try:
-            provider = litellm.get_llm_provider(params["model"])[1]
-        except Exception:
-            pass
-        # OpenAI's reasoning models reject max_tokens, and LiteLLM only renames it for models it already knows.
-        # Every current OpenAI chat model accepts max_completion_tokens; older Azure API versions don't.
-        token_param = "max_completion_tokens" if provider == "openai" else "max_tokens"
-        if "max_tokens" not in params and "max_completion_tokens" not in params:
-            params[token_param] = OCR_MAX_OUTPUT_TOKENS
-        if "reasoning_effort" in params:
-            # LiteLLM refuses reasoning_effort for OpenAI models newer than its model list unless allowed.
-            params.setdefault("allowed_openai_params", ["reasoning_effort"])
+        add_output_limit(params, OCR_MAX_OUTPUT_TOKENS)
         try:
             response = await litellm.acompletion(**params)
         except (
