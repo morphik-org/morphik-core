@@ -161,6 +161,55 @@ Keep that key out of `[completion]` and the other model settings; only image OCR
 
 The setting only applies to new ingests. To re-read images already indexed, requeue them with `POST /ingest/requeue`.
 
+### 6. Code, config files and email
+
+These files are indexed as plain text without Docling: `.sql`, `.py`, `.ps1`, `.sh`, `.bat`, `.cmd`, `.js`, `.ts`,
+`.css`, `.ini`, `.cfg`, `.conf`, `.toml` and `.properties`, plus the existing `.txt`, `.md`, `.json`, `.csv`, `.tsv`,
+`.log`, `.rst`, `.yaml` and `.yml`. Files with a UTF-8 or UTF-16 byte order mark are decoded by it; SQL Server
+Management Studio saves UTF-16. Other files are read as UTF-8, then Windows-1252.
+
+Emails (`.eml`, and `.msg` from Outlook) become one document each: From, To, Cc, Date and Subject lines, the body
+(plain text, or the HTML body as text), then the names of attached files. The attachments themselves are not indexed.
+An `.msg` file that isn't an Outlook message fails with the reason in the document status.
+
+`.xlsb` workbooks are converted to `.xlsx` with LibreOffice, like `.xls`.
+
+### 7. Video
+
+Videos (`.mp4`, `.webm`, `.mov` and other formats ffmpeg reads) are indexed as text: timestamped frame descriptions
+and, when transcription is configured, a timestamped transcript. Each line starts with its time in the video, for
+example `[01:15]`, so retrieved chunks point to the moment they describe.
+
+Frame descriptions are off until `[parser.vision] frame_sample_rate` is set to a positive number of frames. Every
+sampled frame goes to the `[parser.vision]` model, except frames that look the same as the last described frame:
+`frame_change_threshold` (default 0.025) is how much one part of the picture must change, from 0 to 1. A screen
+recording that stays on one page is described once. A new line of text or a dialog counts as a change; a moving cursor
+doesn't. Set it to 0 to describe every sampled frame.
+
+To transcribe the audio with OpenAI, register a transcription model and set `transcription_model`:
+
+```toml
+[registered_models]
+openai_gpt_transcribe = { model_name = "openai/gpt-transcribe" }
+
+[parser]
+transcription_model = "openai_gpt_transcribe"
+
+[parser.vision]
+model = "openai_gpt4-1-mini"
+frame_sample_rate = 60    # one frame every 2 seconds at 30 fps
+```
+
+Morphik checks with ffprobe whether the video has an audio track; screen recordings without one skip transcription.
+ffmpeg extracts the audio as mono MP3 and sends it in two-minute pieces, which keeps every request under OpenAI's
+25 MB upload limit. `gpt-transcribe` returns text without timestamps, so each piece is timed by its start;
+`whisper-1` returns segment timestamps, which are used instead. `language` and `prompt` on the registered model are
+passed to OpenAI. For an OpenAI-compatible server, add `api_base` and `api_key` to the model. Rate limits, timeouts
+and outages are retried like other transient ingestion errors. `transcription_model` takes precedence over
+`ASSEMBLYAI_API_KEY`.
+
+The settings apply to new ingests. Requeue indexed videos with `POST /ingest/requeue` to describe them again.
+
 ## Accessing services
 
 - Morphik API: http://localhost:8000

@@ -1964,6 +1964,7 @@ async def startup(ctx):
         anthropic_api_key=settings.ANTHROPIC_API_KEY,
         use_contextual_chunking=settings.USE_CONTEXTUAL_CHUNKING,
         image_ocr_model=settings.IMAGE_OCR_MODEL,
+        transcription_model=settings.TRANSCRIPTION_MODEL,
     )
     ctx["parser"] = parser
 
