@@ -89,6 +89,10 @@ contextual_chunking_model = "ollama_qwen_vision"  # Reference to a key in regist
 # image_ocr_model = "openai_gpt4-1-mini"
 # OpenAI models newer than LiteLLM's bundled model list need the "openai/" prefix in model_name, e.g. in
 # [registered_models]: openai_gpt6-1-sol_ocr = { model_name = "openai/gpt-6.1-sol", reasoning_effort = "low" }
+# Transcribe the audio of videos with this registered OpenAI transcription model instead of AssemblyAI. Needs
+# OPENAI_API_KEY, or api_key and api_base on the model for an OpenAI-compatible server. Videos without audio skip it.
+# [registered_models]: openai_gpt_transcribe = { model_name = "openai/gpt-transcribe" }
+# transcription_model = "openai_gpt_transcribe"
 
 [parser.xml]
 max_tokens = 350
@@ -101,6 +105,9 @@ model = "ollama_qwen_vision"  # Reference to a key in registered_models
 [parser.vision]
 model = "ollama_qwen_vision"  # Reference to a key in registered_models
 frame_sample_rate = -1  # Set to -1 to disable frame captioning
+# A sampled frame is captioned only when part of it changed by at least this much (0-1) since the last captioned
+# frame. 0 captions every sampled frame.
+# frame_change_threshold = 0.025
 
 [reranker]
 use_reranker = false

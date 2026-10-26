@@ -116,10 +116,11 @@ def _fake_video_parser_class(ParseVideoResult, TimeSeriesData):
     class _FakeVideoParser:
         instances = []
 
-        def __init__(self, video_path, assemblyai_api_key=None, frame_sample_rate=None):
+        def __init__(self, video_path, assemblyai_api_key=None, frame_sample_rate=None, transcription_config=None):
             self.video_path = video_path
             self.assemblyai_api_key = assemblyai_api_key
             self.frame_sample_rate = frame_sample_rate
+            self.transcription_config = transcription_config
             self.instances.append(self)
 
         async def process_video(self):
@@ -148,12 +149,13 @@ async def test_parse_video_skips_transcript_without_assemblyai_key(monkeypatch, 
     )
     parser = object.__new__(video_modules.MorphikParser)
     parser._assemblyai_api_key = None
+    parser._transcription_config = None
     parser.frame_sample_rate = 1
 
     metadata, text = await parser._parse_video(b"video bytes")
 
     assert fake_video_parser.instances[0].assemblyai_api_key is None
-    assert text == "Frame Descriptions:\nvisible frame"
+    assert text == "Frame Descriptions:\n[00:00] visible frame"
     assert metadata["frame_timestamps"] == [0.0]
     assert "transcript_timestamps" not in metadata
     assert "Transcript" not in text
@@ -170,12 +172,13 @@ async def test_parse_video_includes_transcript_when_assemblyai_key_is_configured
     )
     parser = object.__new__(video_modules.MorphikParser)
     parser._assemblyai_api_key = "assembly-key"
+    parser._transcription_config = None
     parser.frame_sample_rate = 1
 
     metadata, text = await parser._parse_video(b"video bytes")
 
     assert fake_video_parser.instances[0].assemblyai_api_key == "assembly-key"
-    assert text == "Frame Descriptions:\nvisible frame\n\nTranscript:\nspoken words"
+    assert text == "Frame Descriptions:\n[00:00] visible frame\n\nTranscript:\n[00:00] spoken words"
     assert metadata["frame_timestamps"] == [0.0]
     assert metadata["transcript_timestamps"] == [0.5]
 
@@ -235,6 +238,8 @@ async def test_frame_descriptions_do_not_mention_transcripts_when_transcript_is_
     parser.cap = _FakeCapture()
     parser.fps = 1.0
     parser.frame_sample_rate = 1
+    parser.frame_change_threshold = 0
+    parser.frames_unchanged = 0
     parser.transcript = video_modules.TimeSeriesData(time_to_content={})
     parser.vision_client = _FakeVisionClient()
     parser.frame_to_base64 = lambda frame: "image"
@@ -244,3 +249,25 @@ async def test_frame_descriptions_do_not_mention_transcripts_when_transcript_is_
     assert result.time_to_content == {0.0: "visible frame"}
     assert len(parser.vision_client.contexts) == 1
     assert "transcript" not in parser.vision_client.contexts[0].lower()
+
+
+@pytest.mark.asyncio
+async def test_parse_video_includes_transcript_from_the_transcription_model(monkeypatch, video_modules):
+    fake_video_parser = _fake_video_parser_class(video_modules.ParseVideoResult, video_modules.TimeSeriesData)
+    monkeypatch.setattr(video_modules.morphik_parser_module, "VideoParser", fake_video_parser)
+    monkeypatch.setattr(
+        video_modules.morphik_parser_module,
+        "load_config",
+        lambda: {"parser": {"vision": {"frame_sample_rate": 5}}},
+    )
+    parser = object.__new__(video_modules.MorphikParser)
+    parser._assemblyai_api_key = None
+    parser._transcription_config = {"model_name": "openai/gpt-transcribe"}
+    parser.frame_sample_rate = 1
+
+    metadata, text = await parser._parse_video(b"video bytes", "repro.webm")
+
+    assert fake_video_parser.instances[0].transcription_config == {"model_name": "openai/gpt-transcribe"}
+    assert fake_video_parser.instances[0].video_path.endswith(".webm")
+    assert text.endswith("Transcript:\n[00:00] spoken words")
+    assert metadata["transcript_timestamps"] == [0.5]

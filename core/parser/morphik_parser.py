@@ -22,7 +22,9 @@ from PIL import Image
 from core.config import get_settings
 from core.models.chunk import Chunk
 from core.parser.base_parser import BaseParser
-from core.parser.video.parse_video import VideoParser, load_config
+from core.parser.email_parser import is_email_filename, parse_email
+from core.parser.text_files import decode_text, is_plain_text_filename
+from core.parser.video.parse_video import VideoParser, format_timestamp, load_config
 from core.parser.xml_chunker import XMLChunker
 from core.storage.utils_file_extensions import detect_content_type
 
@@ -254,6 +256,7 @@ class MorphikParser(BaseParser):
         frame_sample_rate: int = 1,
         use_contextual_chunking: bool = False,
         image_ocr_model: Optional[str] = None,
+        transcription_model: Optional[str] = None,
     ):
         # Initialize basic configuration
         self._assemblyai_api_key = assemblyai_api_key
@@ -281,6 +284,16 @@ class MorphikParser(BaseParser):
                 raise ValueError(f"image_ocr_model '{image_ocr_model}' is not a key in registered_models")
             self._image_ocr_config = registered[image_ocr_model]
             self.logger.info(f"Image OCR uses vision model {image_ocr_model}")
+
+        # Video audio goes to this registered transcription model instead of AssemblyAI when set
+        self._transcription_model = transcription_model
+        self._transcription_config: Optional[Dict[str, Any]] = None
+        if transcription_model:
+            registered = getattr(self.settings, "REGISTERED_MODELS", {}) or {}
+            if transcription_model not in registered:
+                raise ValueError(f"transcription_model '{transcription_model}' is not a key in registered_models")
+            self._transcription_config = registered[transcription_model]
+            self.logger.info(f"Video transcription uses model {transcription_model}")
 
         # Setup for API mode parsing
         self._parse_api_endpoints: Optional[List[str]] = None
@@ -313,7 +326,10 @@ class MorphikParser(BaseParser):
     def _is_video_file(self, file: bytes, filename: str) -> bool:
         """Check if the file is a video file."""
         try:
-            mime_type = detect_content_type(content=file, filename=filename)
+            # mimetypes calls .ts (TypeScript) MPEG transport stream video, so text names only count by content
+            mime_type = detect_content_type(
+                content=file, filename=None if self._is_plain_text_file(filename) else filename
+            )
             return mime_type.startswith("video/")
         except Exception as e:
             logging.error(f"Error detecting file type: {str(e)}")
@@ -403,9 +419,7 @@ class MorphikParser(BaseParser):
 
     def _is_plain_text_file(self, filename: str) -> bool:
         """Check if the file is a plain text file that should be read directly without partitioning."""
-        plain_text_extensions = {".txt", ".md", ".markdown", ".json", ".csv", ".tsv", ".log", ".rst", ".yaml", ".yml"}
-        lower_filename = filename.lower()
-        return any(lower_filename.endswith(ext) for ext in plain_text_extensions)
+        return is_plain_text_filename(filename)
 
     # Extensions that openpyxl can handle directly (much faster than Docling)
     _FAST_EXCEL_EXTENSIONS = {".xlsx", ".xlsm"}
@@ -418,7 +432,7 @@ class MorphikParser(BaseParser):
     @staticmethod
     def _office_suffix(filename: str) -> Optional[str]:
         suffix = Path(filename).suffix.lower()
-        if suffix in {".docx", ".doc", ".pptx", ".ppt", ".xls", ".rtf", ".odt", ".odp", ".ods"}:
+        if suffix in {".docx", ".doc", ".pptx", ".ppt", ".xls", ".xlsb", ".rtf", ".odt", ".odp", ".ods"}:
             return suffix
         return None
 
@@ -430,6 +444,7 @@ class MorphikParser(BaseParser):
         ".ppt": "pptx",
         ".odp": "pptx",
         ".xls": "xlsx",
+        ".xlsb": "xlsx",
         ".ods": "xlsx",
     }
 
@@ -589,10 +604,10 @@ class MorphikParser(BaseParser):
         wb.close()
         return "\n".join(parts)
 
-    async def _parse_video(self, file: bytes) -> Tuple[Dict[str, Any], str]:
+    async def _parse_video(self, file: bytes, filename: str = "") -> Tuple[Dict[str, Any], str]:
         """Parse video file to extract frame descriptions and, when configured, transcript."""
         # Save video to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix.lower() or ".mp4") as temp_file:
             temp_file.write(file)
             video_path = temp_file.name
 
@@ -608,26 +623,28 @@ class MorphikParser(BaseParser):
                 video_path,
                 assemblyai_api_key=self._assemblyai_api_key,
                 frame_sample_rate=frame_sample_rate,
+                transcription_config=self._transcription_config,
             )
             results = await parser.process_video()
+            transcribed = bool(self._transcription_config or self._assemblyai_api_key)
 
-            # Combine frame descriptions and optional transcript
-            frame_text = "\n".join(results.frame_descriptions.time_to_content.values())
+            # Combine frame descriptions and optional transcript. [mm:ss] prefixes keep each chunk's place in the video.
+            def timed_lines(series) -> str:
+                return "\n".join(f"[{format_timestamp(t)}] {c}" for t, c in zip(series.timestamps, series.contents))
+
             text_sections = []
-            if frame_text:
-                text_sections.append(f"Frame Descriptions:\n{frame_text}")
-            if self._assemblyai_api_key:
-                transcript_text = "\n".join(results.transcript.time_to_content.values())
-                if transcript_text:
-                    text_sections.append(f"Transcript:\n{transcript_text}")
+            if results.frame_descriptions.time_to_content:
+                text_sections.append(f"Frame Descriptions:\n{timed_lines(results.frame_descriptions)}")
+            if transcribed and results.transcript.time_to_content:
+                text_sections.append(f"Transcript:\n{timed_lines(results.transcript)}")
             combined_text = "\n\n".join(text_sections)
 
             metadata = {
                 "video_metadata": results.metadata,
-                "frame_timestamps": list(results.frame_descriptions.time_to_content.keys()),
+                "frame_timestamps": results.frame_descriptions.timestamps,
             }
-            if self._assemblyai_api_key:
-                metadata["transcript_timestamps"] = list(results.transcript.time_to_content.keys())
+            if transcribed:
+                metadata["transcript_timestamps"] = results.transcript.timestamps
 
             return metadata, combined_text
         finally:
@@ -747,11 +764,9 @@ class MorphikParser(BaseParser):
         """Parse document using Docling (local or API), or read directly for plain text files."""
         # For plain text files, read directly without parsing
         if self._is_plain_text_file(filename):
-            try:
-                text = file.decode("utf-8")
-            except UnicodeDecodeError:
-                text = file.decode("latin-1")
-            return {}, text
+            return {}, decode_text(file)
+        if is_email_filename(filename):
+            return {}, parse_email(file, filename)
 
         file, filename = await self._convert_legacy_office(file, filename)
 
@@ -784,7 +799,7 @@ class MorphikParser(BaseParser):
     async def parse_file_to_text(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Parse file content into text based on file type"""
         if self._is_video_file(file, filename):
-            return await self._parse_video(file)
+            return await self._parse_video(file, filename)
         elif self._is_xml_file(filename):
             # For XML files, we'll handle parsing and chunking together
             # This method should not be called for XML files in normal flow
@@ -794,7 +809,7 @@ class MorphikParser(BaseParser):
 
     async def parse_file_to_text_deep(self, file: bytes, filename: str) -> Tuple[Dict[str, Any], str]:
         """Run an expensive parse fallback after normal parsing produced no usable chunks."""
-        if self._is_plain_text_file(filename):
+        if self._is_plain_text_file(filename) or is_email_filename(filename):
             return await self.parse_file_to_text(file, filename)
         if self._is_ocr_image(file, filename):
             # The vision model already read this image. Docling would only rerun local OCR.

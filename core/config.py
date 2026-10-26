@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int
     USE_CONTEXTUAL_CHUNKING: bool = False
     IMAGE_OCR_MODEL: Optional[str] = None
+    TRANSCRIPTION_MODEL: Optional[str] = None
     PARSER_XML: ParserXMLSettings = ParserXMLSettings()
 
     # Reranker configuration
@@ -275,28 +276,35 @@ def get_settings() -> Settings:
             "USE_CONTEXTUAL_CHUNKING": config["parser"].get("use_contextual_chunking", False),
         }
     )
-    image_ocr_model = config["parser"].get("image_ocr_model") or None
-    if image_ocr_model and image_ocr_model not in settings_dict.get("REGISTERED_MODELS", {}):
-        raise ValueError(f"[parser] image_ocr_model '{image_ocr_model}' is not a key in [registered_models]")
-    if image_ocr_model:
-        import litellm
+    for option, setting in (("image_ocr_model", "IMAGE_OCR_MODEL"), ("transcription_model", "TRANSCRIPTION_MODEL")):
+        model_key = config["parser"].get(option) or None
+        if model_key and model_key not in settings_dict.get("REGISTERED_MODELS", {}):
+            raise ValueError(f"[parser] {option} '{model_key}' is not a key in [registered_models]")
+        if model_key:
+            import litellm
 
-        ocr_config = settings_dict["REGISTERED_MODELS"][image_ocr_model]
-        try:
-            litellm.get_llm_provider(
-                ocr_config["model_name"],
-                custom_llm_provider=ocr_config.get("custom_llm_provider"),
-                api_base=ocr_config.get("api_base"),
-            )
-        except Exception as e:
-            # Otherwise the server starts and every image fails at ingest. Docker installs use LiteLLM's bundled
-            # model list (LITELLM_LOCAL_MODEL_COST_MAP=True), which doesn't know models released after it.
-            raise ValueError(
-                f"[registered_models] {image_ocr_model}: LiteLLM can't find a provider for model_name "
-                f"'{ocr_config['model_name']}'. For an OpenAI model newer than LiteLLM's model list, use "
-                f"model_name = \"openai/{ocr_config['model_name']}\"."
-            ) from e
-    settings_dict["IMAGE_OCR_MODEL"] = image_ocr_model
+            model_config = settings_dict["REGISTERED_MODELS"][model_key]
+            try:
+                provider = litellm.get_llm_provider(
+                    model_config["model_name"],
+                    custom_llm_provider=model_config.get("custom_llm_provider"),
+                    api_base=model_config.get("api_base"),
+                )[1]
+            except Exception as e:
+                # Otherwise the server starts and every file fails at ingest. Docker installs use LiteLLM's bundled
+                # model list (LITELLM_LOCAL_MODEL_COST_MAP=True), which doesn't know models released after it.
+                raise ValueError(
+                    f"[registered_models] {model_key}: LiteLLM can't find a provider for model_name "
+                    f"'{model_config['model_name']}'. For an OpenAI model newer than LiteLLM's model list, use "
+                    f"model_name = \"openai/{model_config['model_name']}\"."
+                ) from e
+            if option == "transcription_model" and provider != "openai":
+                # Transcription calls the OpenAI SDK, which also reaches OpenAI-compatible servers through api_base.
+                raise ValueError(
+                    f"[registered_models] {model_key}: transcription_model needs an OpenAI model, e.g. "
+                    f'model_name = "openai/gpt-transcribe", or an OpenAI-compatible server with api_base.'
+                )
+        settings_dict[setting] = model_key
 
     # Load parser XML config
     if "xml" in config["parser"]:

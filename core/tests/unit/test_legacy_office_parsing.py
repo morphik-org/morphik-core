@@ -60,11 +60,12 @@ async def test_legacy_files_reach_docling_converted(parser, monkeypatch, filenam
 
 
 @pytest.mark.asyncio
-async def test_converted_xls_uses_fast_excel_path(parser, monkeypatch):
+@pytest.mark.parametrize("filename", ["budget.xls", "budget.xlsb"])
+async def test_converted_xls_uses_fast_excel_path(parser, monkeypatch, filename):
     monkeypatch.setattr(MorphikParser, "_convert_with_libreoffice", staticmethod(lambda file, suffix, to: b"xlsx"))
     monkeypatch.setattr(parser, "_parse_excel_to_markdown", lambda file: f"sheet from {file.decode()}")
 
-    _, text = await parser.parse_file_to_text(b"legacy", "budget.xls")
+    _, text = await parser.parse_file_to_text(b"legacy", filename)
 
     assert text == "sheet from xlsx"
     assert parser.docling_calls == []
