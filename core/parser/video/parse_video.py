@@ -17,6 +17,7 @@ from openai import AsyncOpenAI
 
 from core.config import get_settings
 from core.models.video import ParseVideoResult, TimeSeriesData
+from core.parser.model_params import add_output_limit
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ TRANSCRIPTION_SEGMENT_SECONDS = 120
 DEFAULT_FRAME_CHANGE_THRESHOLD = 0.025
 FRAME_COMPARE_SIZE = (128, 72)
 FRAME_COMPARE_GRID = 8
+# Frame descriptions are short; the headroom is for reasoning models, which think before they write.
+FRAME_MAX_OUTPUT_TOKENS = 4096
 # Keys of a registered transcription model passed on to the transcription request
 TRANSCRIPTION_OPTIONS = ("language", "prompt", "temperature", "response_format")
 
@@ -186,17 +189,36 @@ class VisionModelClient:
             model_params = {
                 "model": model_name,
                 "messages": messages,
-                "max_tokens": 300,
             }
 
         # Add all additional parameters from the model config
         for key, value in self.model_config.items():
             if key not in ["model_name", "vision"]:
                 model_params[key] = value
+        if "ollama" not in model_name.lower():
+            add_output_limit(model_params, FRAME_MAX_OUTPUT_TOKENS)
 
         # Use litellm for the completion
-        response = await litellm.acompletion(**model_params)
-        return response.choices[0].message.content
+        try:
+            response = await litellm.acompletion(**model_params)
+        except (
+            litellm.RateLimitError,
+            litellm.Timeout,
+            litellm.APIConnectionError,
+            litellm.InternalServerError,
+            litellm.ServiceUnavailableError,
+        ) as e:
+            # A later retry can fix these. ConnectionError makes the ingestion worker retry the job.
+            raise ConnectionError(f"Frame description call to {self.model_key} failed: {e}") from e
+        choice = response.choices[0]
+        text = choice.message.content or ""
+        if not text.strip() and getattr(choice, "finish_reason", None) == "length":
+            # A reasoning model used the whole output budget before writing anything.
+            raise ValueError(
+                f"Vision model {self.model_key} hit its output limit before describing a frame; "
+                f'set reasoning_effort = "low" on it in [registered_models]'
+            )
+        return text
 
 
 class VideoParser:
