@@ -169,6 +169,10 @@ pip install -r test_requirements.txt
 
 Then run the tests:
 
+These live tests mutate server state and may leave residual folders or scoped
+artifacts behind. Run them only against a local or disposable test server or
+tenant, never against production or shared data.
+
 ```bash
 # Run all tests (requires a running Morphik server)
 pytest morphik/tests/ -v
@@ -180,20 +184,24 @@ pytest morphik/tests/test_async.py -v
 # Skip tests if you don't have a running server
 SKIP_LIVE_TESTS=1 pytest morphik/tests/ -v
 
-# Specify a custom server URL for tests
-MORPHIK_TEST_URL=http://custom-server:8000 pytest morphik/tests/ -v
+# Specify a custom disposable test server URI
+# Use direct http(s) endpoints inline; source credential-bearing morphik:// URIs
+# from a local secret store or uncommitted env file instead of shell history or CI logs
+MORPHIK_TEST_URI=http://custom-server:8000 pytest morphik/tests/ -v
 ```
 
 ### Example Usage Script
 
-The SDK comes with an example script that demonstrates basic usage:
+The SDK comes with an example script that demonstrates basic usage. It creates
+server data and only partially cleans it up, so run it only against a local or
+disposable test environment.
 
 ```bash
 # Run synchronous example
-python -m morphik.tests.example_usage
+uv run python -m morphik.tests.example_usage
 
 # Run asynchronous example
-python -m morphik.tests.example_usage --async
+uv run python -m morphik.tests.example_usage --run-async
 ```
 
 The example script demonstrates:
