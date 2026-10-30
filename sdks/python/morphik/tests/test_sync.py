@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 from pathlib import Path
+from typing import List
 
 import pytest
 from morphik.sync import Morphik
@@ -22,7 +23,7 @@ TEST_DOCS_DIR = Path(__file__).parent / "test_docs"
 
 class StructuredOutputSchema(BaseModel):
     summary: str = Field(..., description="A short summary of the input text")
-    key_points: list[str] = Field(..., description="A list of key points from the text")
+    key_points: List[str] = Field(..., description="A list of key points from the text")
 
 
 class TestMorphik:
