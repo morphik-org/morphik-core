@@ -3,7 +3,7 @@ from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional
 
 import tomli
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
 from utils.env_loader import load_local_env
@@ -150,6 +150,7 @@ class Settings(BaseSettings):
 
     # Worker configuration
     ARQ_MAX_JOBS: int = 1
+    ARQ_POLL_DELAY: float = Field(default=2.0, gt=0, allow_inf_nan=False)
     COLPALI_STORE_BATCH_SIZE: int = 16
 
     # PDF processing configuration
@@ -440,6 +441,7 @@ def get_settings() -> Settings:
         )
 
     # Load worker config
+    settings_dict["ARQ_POLL_DELAY"] = config.get("worker", {}).get("poll_delay", 2.0)
     if "worker" in config:
         worker_cfg = config["worker"]
         settings_dict.update(

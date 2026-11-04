@@ -143,6 +143,7 @@ port = 6379
 
 [worker]
 arq_max_jobs = 1  # Maximum concurrent jobs for ARQ worker
+poll_delay = 2.0  # Seconds between queue checks; use 0.1 for lower latency with more frequent Redis reads
 colpali_store_batch_size = 16  # Batch size for ColPali vector storage
 
 [pdf]
