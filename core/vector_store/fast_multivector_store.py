@@ -67,6 +67,13 @@ if not any(
 # Constants for external storage
 DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
 
+# Per-attempt timeout for TurboPuffer read queries on the retrieval path. These queries
+# normally finish in well under a second, but a request occasionally hangs with no
+# response; with the client default (60 s read timeout) the caller then waits a minute
+# or more before the SDK retries. A short per-attempt timeout lets the SDK's built-in
+# retries recover from a stuck request in seconds. Writes keep the client default.
+TPUF_QUERY_TIMEOUT_S = 10.0
+
 
 # TurboPuffer + FDE imports - required when using morphik provider or dual ingestion
 if get_settings().MULTIVECTOR_STORE_PROVIDER == "morphik" or get_settings().ENABLE_DUAL_MULTIVECTOR_INGESTION:
@@ -550,6 +557,7 @@ class FastMultiVectorStore(BaseVectorStore):
             top_k=min(10 * k, 75),
             include_attributes=["id", "document_id", "chunk_number", "content", "metadata", "multivector"],
             consistency={"level": "eventual"},
+            timeout=TPUF_QUERY_TIMEOUT_S,
         )
         t2 = time.perf_counter()
         logger.info(f"query_similar timing - ns.query: {(t2 - t1)*1000:.2f} ms")
@@ -577,9 +585,7 @@ class FastMultiVectorStore(BaseVectorStore):
                 # (subscript) but NOT row.get(...). Using .get() here would raise
                 # AttributeError and 500 the whole query on exactly this degraded
                 # path, defeating the purpose of the fix.
-                logger.warning(
-                    "query_similar: skipping candidate %s — failed to load multivector: %s", row["id"], mv
-                )
+                logger.warning("query_similar: skipping candidate %s — failed to load multivector: %s", row["id"], mv)
                 continue
             candidate_rows.append(row)
             multivectors.append(mv)
@@ -665,6 +671,7 @@ class FastMultiVectorStore(BaseVectorStore):
             filters=("id", "In", [f"{doc_id}-{chunk_num}" for doc_id, chunk_num in chunk_identifiers]),
             include_attributes=["id", "document_id", "chunk_number", "content", "metadata"],
             top_k=len(chunk_identifiers),
+            timeout=TPUF_QUERY_TIMEOUT_S,
         )
         storage_retrieval_tasks = []
         parsed_metadata = []
