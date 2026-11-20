@@ -899,12 +899,12 @@ async def _process_ingestion_job_locked(
                     )
                 except PdfConversionError as conversion_error:
                     logger.error(
-                        "PDF conversion failed for document %s (%s): %s",
+                        "Page image conversion failed for document %s (%s): %s",
                         document_id,
                         original_filename,
                         conversion_error,
                     )
-                    error_code = "pdf_conversion_failed"
+                    error_code = conversion_error.error_code
                     error_message = str(conversion_error)
                     current_span = get_current_span()
                     current_span.set_status(Status(StatusCode.ERROR, error_message))
