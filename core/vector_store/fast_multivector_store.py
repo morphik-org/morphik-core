@@ -73,6 +73,10 @@ DEFAULT_APP_ID = "default"  # Fallback for local usage when app_id is None
 # or more before the SDK retries. A short per-attempt timeout lets the SDK's built-in
 # retries recover from a stuck request in seconds. Writes keep the client default.
 TPUF_QUERY_TIMEOUT_S = 10.0
+# A whole namespace can also stop answering for about a minute. 6 retries keep trying for
+# about 85 s in total (7 tries plus backoff), so such a stall still ends in an answer, seconds
+# after it clears, rather than an error. Longer than that, callers have usually given up.
+TPUF_QUERY_MAX_RETRIES = 6
 
 
 # TurboPuffer + FDE imports - required when using morphik provider or dual ingestion
@@ -326,6 +330,9 @@ class FastMultiVectorStore(BaseVectorStore):
         )
         # TODO: Cache namespaces, and send a warming request
         self.ns = lambda app_id: self.tpuf.namespace(app_id)
+        # Same connection pool, more retries: used only for the read queries on the retrieval path.
+        tpuf_reads = self.tpuf.with_options(max_retries=TPUF_QUERY_MAX_RETRIES)
+        self.read_ns = lambda app_id: tpuf_reads.namespace(app_id)
         self.chunk_storage, self.chunk_bucket = self._init_chunk_storage()
         self.vector_storage, self.vector_bucket = self._init_vector_storage()
         # Maintain legacy attribute for backwards compatibility with other components
@@ -551,7 +558,7 @@ class FastMultiVectorStore(BaseVectorStore):
         logger.info(f"query_similar timing - encode_query: {(t1 - t0)*1000:.2f} ms")
 
         # 2) ANN search on Turbopuffer namespace
-        result = await self.ns(app_id).query(
+        result = await self.read_ns(app_id).query(
             filters=("document_id", "In", doc_ids),
             rank_by=("vector", "ANN", encoded_query_embedding),
             top_k=min(10 * k, 75),
@@ -667,7 +674,7 @@ class FastMultiVectorStore(BaseVectorStore):
         app_id: Optional[str] = None,
         skip_image_content: bool = False,
     ) -> List[DocumentChunk]:
-        result = await self.ns(app_id).query(
+        result = await self.read_ns(app_id).query(
             filters=("id", "In", [f"{doc_id}-{chunk_num}" for doc_id, chunk_num in chunk_identifiers]),
             include_attributes=["id", "document_id", "chunk_number", "content", "metadata"],
             top_k=len(chunk_identifiers),
