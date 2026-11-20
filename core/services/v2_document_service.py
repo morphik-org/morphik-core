@@ -1,9 +1,6 @@
 import logging
 import os
 import re
-import shutil
-import subprocess
-import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
 from html import escape as html_escape
@@ -26,6 +23,7 @@ from core.parser.morphik_parser import MorphikParser
 from core.storage.base_storage import BaseStorage
 from core.storage.utils_file_extensions import detect_content_type
 from core.utils.folder_utils import normalize_folder_path, normalize_ingest_folder_inputs
+from core.utils.libreoffice import LibreOfficeConversionError, convert_with_libreoffice
 from core.utils.typed_metadata import MetadataBundle, normalize_metadata
 from core.vector_store.chunk_v2_store import ChunkV2Store
 
@@ -348,49 +346,10 @@ class V2DocumentService:
 
     @staticmethod
     def _convert_office_to_pdf_bytes(file_bytes: bytes, suffix: str, doc_type: str) -> bytes:
-        if not shutil.which("soffice"):
-            raise HTTPException(
-                status_code=500,
-                detail=f"LibreOffice is required to convert {doc_type} to PDF. Install 'soffice' and retry.",
-            )
-
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_input:
-            temp_input.write(file_bytes)
-            temp_input_path = temp_input.name
-
-        with tempfile.TemporaryDirectory() as output_dir:
-            try:
-                result = subprocess.run(
-                    [
-                        "soffice",
-                        "--headless",
-                        "--convert-to",
-                        "pdf",
-                        "--outdir",
-                        output_dir,
-                        temp_input_path,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                if result.returncode != 0:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"LibreOffice conversion failed: {result.stderr.strip() or result.stdout.strip()}",
-                    )
-
-                base_filename = Path(temp_input_path).stem
-                pdf_path = Path(output_dir) / f"{base_filename}.pdf"
-                if not pdf_path.exists() or pdf_path.stat().st_size == 0:
-                    raise HTTPException(status_code=500, detail="LibreOffice produced an empty PDF.")
-
-                return pdf_path.read_bytes()
-            finally:
-                try:
-                    os.unlink(temp_input_path)
-                except OSError:
-                    pass
+        try:
+            return convert_with_libreoffice(file_bytes, suffix, "pdf", timeout_s=30)
+        except LibreOfficeConversionError as e:
+            raise HTTPException(status_code=500, detail=f"Could not convert {doc_type} to PDF: {e}") from e
 
     async def _build_xml_chunks(
         self,

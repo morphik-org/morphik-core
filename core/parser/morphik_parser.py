@@ -3,8 +3,6 @@ import base64
 import io
 import logging
 import os
-import shutil
-import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -28,6 +26,7 @@ from core.parser.text_files import decode_text, is_plain_text_filename
 from core.parser.video.parse_video import VideoParser, format_timestamp, load_config
 from core.parser.xml_chunker import XMLChunker
 from core.storage.utils_file_extensions import detect_content_type
+from core.utils.libreoffice import LibreOfficeConversionError, convert_with_libreoffice
 
 # Custom RecursiveCharacterTextSplitter replaces langchain's version
 
@@ -393,7 +392,7 @@ class MorphikParser(BaseParser):
                 # index the image as blank and report success.
                 raise ValueError(
                     f"Image OCR model {self._image_ocr_model} hit its output limit before returning text for "
-                    f"{filename}; set reasoning_effort = \"low\" on it in [registered_models]"
+                    f'{filename}; set reasoning_effort = "low" on it in [registered_models]'
                 )
             self.logger.warning(f"Image OCR returned no text for {filename}")
         return text
@@ -439,59 +438,12 @@ class MorphikParser(BaseParser):
 
     @staticmethod
     def _convert_with_libreoffice(file: bytes, suffix: str, target: str) -> Optional[bytes]:
-        """Convert document bytes to the `target` format (pdf, docx, pptx, xlsx) with LibreOffice."""
-        if not shutil.which("soffice"):
-            logger.warning("LibreOffice (soffice) not found in PATH; cannot convert %s to %s.", suffix, target)
+        """Convert document bytes to `target` (pdf, docx, pptx, xlsx); None if LibreOffice fails."""
+        try:
+            return convert_with_libreoffice(file, suffix, target)
+        except LibreOfficeConversionError as e:
+            logger.warning("LibreOffice %s to %s conversion failed: %s", suffix, target, e)
             return None
-
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_input:
-            temp_input.write(file)
-            temp_input_path = temp_input.name
-
-        with tempfile.TemporaryDirectory() as output_dir, tempfile.TemporaryDirectory() as profile_dir:
-            try:
-                result = subprocess.run(
-                    [
-                        "soffice",
-                        # A private profile per call. Concurrent conversions sharing the default one fail.
-                        f"-env:UserInstallation={Path(profile_dir).as_uri()}",
-                        "--headless",
-                        "--convert-to",
-                        target,
-                        "--outdir",
-                        output_dir,
-                        temp_input_path,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                )
-                if result.returncode != 0:
-                    logger.warning(
-                        "LibreOffice %s to %s conversion failed: %s",
-                        suffix,
-                        target,
-                        result.stderr.strip() or result.stdout.strip(),
-                    )
-                    return None
-
-                output_path = Path(output_dir) / f"{Path(temp_input_path).stem}.{target}"
-                if not output_path.exists() or output_path.stat().st_size == 0:
-                    logger.warning("LibreOffice %s to %s conversion produced no output", suffix, target)
-                    return None
-
-                return output_path.read_bytes()
-            except subprocess.TimeoutExpired:
-                logger.warning("LibreOffice %s to %s conversion timed out", suffix, target)
-                return None
-            except Exception as e:
-                logger.warning("LibreOffice %s to %s conversion failed unexpectedly: %s", suffix, target, e)
-                return None
-            finally:
-                try:
-                    os.unlink(temp_input_path)
-                except OSError:
-                    pass
 
     @classmethod
     def _convert_office_to_pdf_bytes(cls, file: bytes, suffix: str) -> Optional[bytes]:
