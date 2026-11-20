@@ -1,8 +1,6 @@
 import io
 import logging
 import os
-import shutil
-import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -20,6 +18,7 @@ from core.parser.base_parser import BaseParser
 from core.parser.video.parse_video import VideoParser, load_config
 from core.parser.xml_chunker import XMLChunker
 from core.storage.utils_file_extensions import detect_content_type
+from core.utils.libreoffice import LibreOfficeConversionError, convert_with_libreoffice
 
 # Custom RecursiveCharacterTextSplitter replaces langchain's version
 
@@ -293,55 +292,12 @@ class MorphikParser(BaseParser):
 
     @staticmethod
     def _convert_office_to_pdf_bytes(file: bytes, suffix: str) -> Optional[bytes]:
-        """Convert Office bytes to PDF bytes for fallback parsing."""
-        if not shutil.which("soffice"):
-            logger.warning("LibreOffice (soffice) not found in PATH; cannot run Office-to-PDF parse fallback.")
+        """Convert Office bytes to PDF bytes for fallback parsing; None if LibreOffice fails."""
+        try:
+            return convert_with_libreoffice(file, suffix, "pdf")
+        except LibreOfficeConversionError as e:
+            logger.warning("LibreOffice %s to pdf conversion failed: %s", suffix, e)
             return None
-
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_input:
-            temp_input.write(file)
-            temp_input_path = temp_input.name
-
-        with tempfile.TemporaryDirectory() as output_dir:
-            try:
-                result = subprocess.run(
-                    [
-                        "soffice",
-                        "--headless",
-                        "--convert-to",
-                        "pdf",
-                        "--outdir",
-                        output_dir,
-                        temp_input_path,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                )
-                if result.returncode != 0:
-                    logger.warning(
-                        "LibreOffice fallback conversion failed: %s",
-                        result.stderr.strip() or result.stdout.strip(),
-                    )
-                    return None
-
-                pdf_path = Path(output_dir) / f"{Path(temp_input_path).stem}.pdf"
-                if not pdf_path.exists() or pdf_path.stat().st_size == 0:
-                    logger.warning("LibreOffice fallback conversion produced no PDF content")
-                    return None
-
-                return pdf_path.read_bytes()
-            except subprocess.TimeoutExpired:
-                logger.warning("LibreOffice fallback conversion timed out")
-                return None
-            except Exception as e:
-                logger.warning("LibreOffice fallback conversion failed unexpectedly: %s", e)
-                return None
-            finally:
-                try:
-                    os.unlink(temp_input_path)
-                except OSError:
-                    pass
 
     @staticmethod
     def _build_deep_pdf_converter() -> DocumentConverter:

@@ -17,7 +17,6 @@ import asyncio
 import json
 import logging
 import os
-import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -44,6 +43,7 @@ from core.storage.utils_file_extensions import detect_content_type, detect_file_
 from core.utils.arq_jobs import enqueue_job_clearing_stale_result
 from core.utils.fast_ops import bytes_to_data_uri, encode_base64
 from core.utils.folder_utils import normalize_folder_path, normalize_ingest_folder_inputs
+from core.utils.libreoffice import LibreOfficeConversionError, convert_with_libreoffice
 from core.utils.storage_usage import extract_storage_bytes
 from core.utils.typed_metadata import MetadataBundle, canonicalize_type_name, merge_metadata, normalize_metadata
 from core.vector_store.base_vector_store import BaseVectorStore
@@ -72,7 +72,13 @@ MIN_COLPALI_IMAGE_SIDE = 28
 class PdfConversionError(Exception):
     """Raised when PDF conversion to images fails."""
 
-    pass
+    error_code = "pdf_conversion_failed"
+
+
+class OfficeConversionError(PdfConversionError):
+    """Raised when a Word or PowerPoint file cannot be turned into page images for ColPali."""
+
+    error_code = "office_conversion_failed"
 
 
 class IngestionService:
@@ -1575,14 +1581,16 @@ class IngestionService:
                 ]
 
             case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/msword":
-                return self._process_word_for_colpali(file_content, chunks)
+                suffix = ".doc" if normalized_mime == "application/msword" else ".docx"
+                return self._convert_office_to_images(file_content, suffix, "Word document")
 
             case (
                 "application/vnd.ms-powerpoint"
                 | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 | "application/vnd.openxmlformats-officedocument.presentationml.slideshow"
             ):
-                return self._process_powerpoint_for_colpali(file_content, normalized_mime, chunks)
+                suffix = ".ppt" if normalized_mime == "application/vnd.ms-powerpoint" else ".pptx"
+                return self._convert_office_to_images(file_content, suffix, "PowerPoint presentation")
 
             case (
                 "application/vnd.ms-excel"
@@ -1726,188 +1734,27 @@ class IngestionService:
         finally:
             pdf_document.close()
 
-    def _process_word_for_colpali(self, file_content: bytes, chunks: List[Chunk]) -> List[Chunk]:
-        """Process Word document for ColPali embedding."""
-        logger.info("Working with Word document!")
+    def _convert_office_to_images(self, file_content: bytes, suffix: str, doc_type: str) -> List[Chunk]:
+        """Render a Word or PowerPoint file to one page image per page via a LibreOffice PDF conversion.
 
-        if not file_content or len(file_content) == 0:
-            logger.error("Word document content is empty")
-            return [Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks]
-
-        return self._convert_office_to_images(file_content, ".docx", "Word document", chunks)
-
-    def _process_powerpoint_for_colpali(self, file_content: bytes, mime_type: str, chunks: List[Chunk]) -> List[Chunk]:
-        """Process PowerPoint presentation for ColPali embedding."""
-        logger.info("Working with PowerPoint presentation!")
-
-        if not file_content or len(file_content) == 0:
-            logger.error("PowerPoint presentation content is empty")
-            return [Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks]
-
-        suffix = ".ppt" if mime_type == "application/vnd.ms-powerpoint" else ".pptx"
-        return self._convert_office_to_images(file_content, suffix, "PowerPoint presentation", chunks)
-
-    def _convert_office_to_images(
-        self, file_content: bytes, suffix: str, doc_type: str, chunks: List[Chunk]
-    ) -> List[Chunk]:
+        ColPali was requested for this document, so a failure raises instead of falling back to text.
         """
-        Convert Office document to images via LibreOffice PDF conversion.
-
-        Args:
-            file_content: Raw bytes of the Office document
-            suffix: File extension (e.g., ".docx", ".pptx", ".xlsx")
-            doc_type: Human-readable document type for logging
-            chunks: Fallback text chunks if conversion fails
-
-        Returns:
-            List of image chunks for ColPali processing
-        """
-        import shutil
-        import subprocess
-
-        # Check if LibreOffice is available
-        if not shutil.which("soffice"):
-            logger.warning(f"LibreOffice (soffice) not found in PATH. Falling back to text extraction for {doc_type}.")
-            logger.info("To enable visual processing, install LibreOffice: apt-get install libreoffice")
-            return [Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks]
-
-        # Create temporary files
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_input:
-            temp_input.write(file_content)
-            temp_input_path = temp_input.name
-
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
-            temp_pdf_path = temp_pdf.name
-
-        expected_pdf_path = None
-
+        if not file_content:
+            raise OfficeConversionError(f"{doc_type} content is empty")
         try:
-            base_filename = os.path.splitext(os.path.basename(temp_input_path))[0]
-            output_dir = os.path.dirname(temp_pdf_path)
-            expected_pdf_path = os.path.join(output_dir, f"{base_filename}.pdf")
-
-            # Convert to PDF with timeout
-            result = subprocess.run(
-                [
-                    "soffice",
-                    "--headless",
-                    "--convert-to",
-                    "pdf",
-                    "--outdir",
-                    output_dir,
-                    temp_input_path,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-
-            if result.returncode != 0:
-                logger.warning(f"LibreOffice conversion failed for {doc_type}: {result.stderr}")
-                logger.info(f"Falling back to text extraction for {doc_type}")
-                return [
-                    Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks
-                ]
-
-            if not os.path.exists(expected_pdf_path) or os.path.getsize(expected_pdf_path) == 0:
-                logger.warning(f"Generated PDF is empty or doesn't exist at: {expected_pdf_path}")
-                logger.info(f"Falling back to text extraction for {doc_type}")
-                return [
-                    Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks
-                ]
-
-            # Process the PDF
-            with open(expected_pdf_path, "rb") as pdf_file:
-                pdf_content = pdf_file.read()
-
-            try:
-                pdf_document = fitz.open("pdf", pdf_content)
-                images_payload: List[Tuple[str, bytes]] = []
-                total_pages = len(pdf_document)
-                render_failures = 0
-
-                try:
-                    for page_num in range(total_pages):
-                        page = pdf_document[page_num]
-                        try:
-                            mat = _page_render_matrix(page, settings.COLPALI_PDF_DPI)
-                            pix = page.get_pixmap(matrix=mat)
-                            img_data = pix.tobytes("png")
-                            img = PILImage.open(BytesIO(img_data))
-                            img_str, img_bytes = self.img_to_base64_with_bytes(img)
-                        except Exception as page_error:
-                            render_failures += 1
-                            logger.warning(
-                                "Replacing %s page %d with a placeholder because rendering failed: %s",
-                                doc_type,
-                                page_num + 1,
-                                page_error,
-                            )
-                            img_bytes = self._placeholder_page_png()
-                            img_str = bytes_to_data_uri(img_bytes, "image/png")
-                        images_payload.append((img_str, img_bytes))
-                finally:
-                    pdf_document.close()
-
-                if total_pages > 0 and render_failures == total_pages:
-                    raise RuntimeError(f"All {doc_type} pages failed to render with PyMuPDF")
-
-                logger.info(f"{doc_type} successfully processed {len(images_payload)} pages as images")
-                return [
-                    self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
-                    for image_b64, raw_bytes in images_payload
-                ]
-
-            except Exception as pymupdf_error:
-                logger.warning(f"PyMuPDF failed for {doc_type} ({pymupdf_error}), trying pdf2image")
-                try:
-                    images = pdf2image.convert_from_bytes(pdf_content)
-                    images_payload = []
-                    for page_num, image in enumerate(images):
-                        try:
-                            images_payload.append(self.img_to_base64_with_bytes(image))
-                        except Exception as page_error:
-                            logger.warning(
-                                "Replacing %s page %d with a placeholder because image conversion failed: %s",
-                                doc_type,
-                                page_num + 1,
-                                page_error,
-                            )
-                            png_bytes = self._placeholder_page_png()
-                            images_payload.append((bytes_to_data_uri(png_bytes, "image/png"), png_bytes))
-
-                    logger.info(f"{doc_type} processed {len(images_payload)} pages with pdf2image")
-                    return [
-                        self._image_bytes_to_chunk(raw_bytes, mime_type="image/png", base64_override=image_b64)
-                        for image_b64, raw_bytes in images_payload
-                    ]
-                except Exception as pdf2image_error:
-                    logger.warning(f"pdf2image also failed: {pdf2image_error}")
-                    logger.info(f"Falling back to text extraction for {doc_type}")
-                    return [
-                        Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False}))
-                        for chunk in chunks
-                    ]
-
-        except subprocess.TimeoutExpired:
-            logger.warning(f"LibreOffice conversion timed out for {doc_type}")
-            logger.info("Falling back to text extraction")
-            return [Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks]
-        except Exception as e:
-            logger.warning(f"Unexpected error processing {doc_type}: {str(e)}")
-            logger.info(f"Falling back to text extraction for {doc_type}")
-            return [Chunk(content=chunk.content, metadata=(chunk.metadata | {"is_image": False})) for chunk in chunks]
-        finally:
-            # Clean up temporary files
-            try:
-                if os.path.exists(temp_input_path):
-                    os.unlink(temp_input_path)
-                if os.path.exists(temp_pdf_path):
-                    os.unlink(temp_pdf_path)
-                if expected_pdf_path and os.path.exists(expected_pdf_path) and expected_pdf_path != temp_pdf_path:
-                    os.unlink(expected_pdf_path)
-            except Exception as cleanup_error:
-                logger.debug(f"Error cleaning up temporary files: {cleanup_error}")
+            pdf_bytes = convert_with_libreoffice(file_content, suffix, "pdf")
+        except LibreOfficeConversionError as e:
+            raise OfficeConversionError(str(e)) from e
+        try:
+            pages = self._process_pdf_for_colpali(pdf_bytes)
+        except PdfConversionError as e:
+            raise OfficeConversionError(
+                f"{doc_type} was converted to PDF but its pages could not be rendered: {e}"
+            ) from e
+        if not pages:
+            raise OfficeConversionError(f"{doc_type} was converted to a PDF with no pages")
+        logger.info("%s converted to %d page images", doc_type, len(pages))
+        return pages
 
     # -------------------------------------------------------------------------
     # Storage helpers

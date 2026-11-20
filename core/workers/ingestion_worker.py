@@ -46,7 +46,8 @@ from core.vector_store.pgvector_store import PGVectorStore
 # library can never break error classification. Used to recognise S3 / turbopuffer
 # backpressure (throttling, 5xx, connection blips) as transient-and-retryable.
 try:
-    from botocore.exceptions import BotoCoreError, ClientError as BotoClientError
+    from botocore.exceptions import BotoCoreError
+    from botocore.exceptions import ClientError as BotoClientError
 except Exception:  # noqa: BLE001
     BotoCoreError = BotoClientError = None
 
@@ -846,12 +847,12 @@ async def process_ingestion_job(
                     )
                 except PdfConversionError as conversion_error:
                     logger.error(
-                        "PDF conversion failed for document %s (%s): %s",
+                        "Page image conversion failed for document %s (%s): %s",
                         document_id,
                         original_filename,
                         conversion_error,
                     )
-                    error_code = "pdf_conversion_failed"
+                    error_code = conversion_error.error_code
                     error_message = str(conversion_error)
                     current_span = get_current_span()
                     current_span.set_status(Status(StatusCode.ERROR, error_message))

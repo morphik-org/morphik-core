@@ -1,13 +1,13 @@
 import base64
-import subprocess
 from io import BytesIO
-from pathlib import Path
 
 import pytest
 from PIL import Image
 
+from core.models.chunk import Chunk
 from core.services import ingestion_service as ingestion_module
-from core.services.ingestion_service import IngestionService
+from core.services.ingestion_service import IngestionService, OfficeConversionError
+from core.utils.libreoffice import LibreOfficeConversionError
 
 
 class FakePixmap:
@@ -150,24 +150,68 @@ def test_office_conversion_keeps_every_page(monkeypatch):
         ]
     )
 
-    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/soffice" if name == "soffice" else None)
+    monkeypatch.setattr(ingestion_module, "convert_with_libreoffice", lambda content, suffix, target: b"%PDF")
     monkeypatch.setattr(ingestion_module.fitz, "open", lambda *args, **kwargs: fake_document)
 
-    def fake_run(cmd, capture_output, text, timeout):
-        output_dir = Path(cmd[cmd.index("--outdir") + 1])
-        input_path = Path(cmd[-1])
-        expected_pdf_path = output_dir / f"{input_path.stem}.pdf"
-        expected_pdf_path.write_bytes(b"%PDF")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    monkeypatch.setattr("subprocess.run", fake_run)
-
-    chunks = service._convert_office_to_images(b"pptx-bytes", ".pptx", "PowerPoint presentation", [])
+    chunks = service._convert_office_to_images(b"pptx-bytes", ".pptx", "PowerPoint presentation")
 
     assert len(chunks) == 4
     assert all(chunk.metadata["is_image"] is True for chunk in chunks)
     assert all(chunk.content.startswith("data:image/png;base64,") for chunk in chunks)
     assert fake_document.closed is True
+
+
+def test_office_conversion_failure_raises_instead_of_falling_back_to_text(monkeypatch):
+    service = IngestionService(None, None, None, None, None)
+
+    def failing_convert(content, suffix, target):
+        raise LibreOfficeConversionError("LibreOffice did not finish converting .doc to pdf within 300s")
+
+    monkeypatch.setattr(ingestion_module, "convert_with_libreoffice", failing_convert)
+
+    with pytest.raises(OfficeConversionError, match="within 300s") as excinfo:
+        service._create_chunks_multivector(
+            "application/msword", None, b"doc-bytes", [Chunk(content="text", metadata={})]
+        )
+
+    assert excinfo.value.error_code == "office_conversion_failed"
+
+
+def test_office_conversion_to_a_pdf_without_pages_raises(monkeypatch):
+    service = IngestionService(None, None, None, None, None)
+    monkeypatch.setattr(ingestion_module, "convert_with_libreoffice", lambda content, suffix, target: b"%PDF")
+    monkeypatch.setattr(ingestion_module.fitz, "open", lambda *args, **kwargs: FakeDocument([]))
+
+    with pytest.raises(OfficeConversionError, match="no pages"):
+        service._convert_office_to_images(b"docx-bytes", ".docx", "Word document")
+
+
+@pytest.mark.parametrize(
+    "mime_type,suffix",
+    [
+        ("application/msword", ".doc"),
+        ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"),
+        ("application/vnd.ms-powerpoint", ".ppt"),
+        ("application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"),
+    ],
+)
+def test_office_files_are_converted_with_their_real_extension(monkeypatch, mime_type, suffix):
+    service = IngestionService(None, None, None, None, None)
+    conversions = []
+
+    def convert(content, file_suffix, target):
+        conversions.append((file_suffix, target))
+        return b"%PDF"
+
+    monkeypatch.setattr(ingestion_module, "convert_with_libreoffice", convert)
+    monkeypatch.setattr(
+        ingestion_module.fitz, "open", lambda *args, **kwargs: FakeDocument([FakePage(_non_blank_png_bytes())])
+    )
+
+    chunks = service._create_chunks_multivector(mime_type, None, b"office-bytes", [])
+
+    assert conversions == [(suffix, "pdf")]
+    assert [chunk.metadata["is_image"] for chunk in chunks] == [True]
 
 
 def test_page_render_matrix_keeps_dpi_for_normal_pages():
