@@ -25,7 +25,7 @@ dependencies = [
     "importlib>=1.0.4",
     "instructor>=1.8.1",
     "itsdangerous>=2.2.0",
-    "litellm>=1.69.1",
+    "litellm==1.82.6",
     "lxml>=5.2.2",
     "morphik==1.0.3",
     "ollama>=0.4.8",
