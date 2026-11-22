@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Note: Aggressive cleanup is safe - Docker builds are self-contained and don't need host toolchains
       - name: Free up disk space
@@ -73,7 +73,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Note: Aggressive cleanup is safe - Docker builds are self-contained and don't need host toolchains
       - name: Free up disk space
