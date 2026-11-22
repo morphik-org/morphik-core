@@ -1,0 +1,26 @@
+# Weekly dependency updates, grouped so each ecosystem opens one pull request instead of one per package.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+    ignore:
+      # Pinned to match the GPU boxes and the ColQwen model code; upgrade these by hand.
+      - dependency-name: torch
+      - dependency-name: torchvision
+      - dependency-name: transformers
+  - package-ecosystem: npm
+    directory: /ee/ui-component
+    schedule:
+      interval: weekly
+    groups:
+      ui:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

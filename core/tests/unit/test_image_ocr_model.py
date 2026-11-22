@@ -237,6 +237,6 @@ def test_documented_reasoning_model_loads(load_docker_config):
 
 
 def test_model_missing_from_litellm_list_fails_at_startup(load_docker_config):
-    # LiteLLM 1.74.7's bundled list doesn't have gpt-6.1-sol. Without the check, every image fails at ingest.
-    with pytest.raises(ValueError, match=r'ocr_model.*use model_name = "openai/gpt-6.1-sol"'):
-        load_docker_config("gpt-6.1-sol")
+    # A model LiteLLM's bundled list doesn't have. Without the check, every image fails at ingest.
+    with pytest.raises(ValueError, match=r'ocr_model.*use model_name = "openai/gpt-not-released-yet"'):
+        load_docker_config("gpt-not-released-yet")
