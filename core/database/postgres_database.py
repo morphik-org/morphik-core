@@ -1609,7 +1609,9 @@ class PostgresDatabase:
                     # No access without auth
                     return None
 
-                result = await session.execute(stmt.bindparams(**params))
+                # Each statement uses only one of name/full_path; execute() ignores the unused one,
+                # where bindparams() raised and made every lookup return None.
+                result = await session.execute(stmt, params)
                 folder_row = result.fetchone()
 
                 if folder_row:

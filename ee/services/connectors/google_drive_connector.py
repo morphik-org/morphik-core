@@ -1,7 +1,7 @@
 # This is the beginning of the GoogleDriveConnector implementation.
 
+import json
 import logging
-import pickle
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -32,7 +32,7 @@ class GoogleDriveConnector(BaseConnector):
         self._load_credentials()
 
     def _get_user_token_path(self) -> Path:
-        return self._build_storage_path(self.ee_settings.GOOGLE_TOKEN_STORAGE_PATH, "gdrive_token_", ".pickle")
+        return self._build_storage_path(self.ee_settings.GOOGLE_TOKEN_STORAGE_PATH, "gdrive_token_", ".json")
 
     def _save_credentials(self) -> None:
         if not self.creds:
@@ -40,8 +40,8 @@ class GoogleDriveConnector(BaseConnector):
             return
         token_path = self._get_user_token_path()
         try:
-            with open(token_path, "wb") as token_file:
-                pickle.dump(self.creds, token_file)
+            # JSON, not pickle: loading a pickle runs whatever code the file contains.
+            token_path.write_text(self.creds.to_json())
             logger.info(f"Successfully saved token for user {self.user_morphik_id} to {token_path}")
         except Exception as e:
             logger.error(f"Failed to save token for user {self.user_morphik_id} to {token_path}: {e}")
@@ -52,8 +52,7 @@ class GoogleDriveConnector(BaseConnector):
 
         if token_path.exists():
             try:
-                with open(token_path, "rb") as token_file:
-                    loaded_creds = pickle.load(token_file)
+                loaded_creds = Credentials.from_authorized_user_info(json.loads(token_path.read_text()))
                 logger.info(f"Successfully loaded token for user {self.user_morphik_id} from {token_path}")
             except Exception as e:
                 logger.error(f"Failed to load token for user {self.user_morphik_id} from {token_path}: {e}")

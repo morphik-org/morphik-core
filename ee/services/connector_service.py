@@ -43,7 +43,7 @@ class ConnectorService:
             return ZoteroConnector(user_morphik_id=self.user_identifier)
         # Add elif for other connectors here in the future
         else:
-            logger.error(f"Unsupported connector type: {connector_type}")
+            logger.warning(f"Unsupported connector type: {connector_type}")
             raise ValueError(f"Unsupported connector type: {connector_type}")
 
     async def ingest_file_from_connector(

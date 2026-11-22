@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from logging import getLogger
 from typing import Any, Optional
 
@@ -180,13 +179,12 @@ async def verify_token(
     token = authorization[7:]  # Strip "Bearer " prefix
 
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        # "require" rejects tokens without an expiry; jwt.decode already rejects expired ones.
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM], options={"require": ["exp"]}
+        )
     except jwt.InvalidTokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-
-    # Check expiry manually – jwt.decode does *not* enforce expiry on psycopg2.
-    if datetime.fromtimestamp(payload["exp"], UTC) < datetime.now(UTC):
-        raise HTTPException(status_code=401, detail="Token expired")
 
     # Extract user_id - support legacy "entity_id" for backward compatibility
     user_id = payload.get("user_id") or payload.get("entity_id")
@@ -194,6 +192,10 @@ async def verify_token(
         raise HTTPException(status_code=401, detail="Missing user_id in token")
 
     app_id = payload.get("app_id")
+    if settings.REQUIRE_APP_ID_IN_TOKEN and not app_id:
+        # Without an app_id nothing ties the token to a database record, so a leaked signing key
+        # would be enough to act as any user.
+        raise HTTPException(status_code=401, detail="Token is missing app_id")
     token_version = payload.get("token_version")
     await ensure_app_is_active(app_id, token_version=token_version, redis_pool=_get_redis_pool(request))
 
