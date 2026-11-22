@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import os
 from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional
@@ -11,6 +13,13 @@ from utils.env_loader import load_local_env
 # Default to loading from .env unless a secret manager (e.g., Infisical) is
 # injecting variables.
 load_local_env(override=True)
+
+
+# ColQwen model. The processor is loaded at a pinned revision: the upstream repository changed its
+# template files in August 2026 and the transformers version we run crashes on the newer layout.
+# (The revision cannot be passed to the model load, which would apply it to the base-weights repo too.)
+COLQWEN_MODEL_ID = "tsystems/colqwen2.5-3b-multilingual-v1.0"
+COLQWEN_REVISION = "0724953ed80e1bc45ca11b66d0b9e70c362d1cf9"
 
 
 class ParserXMLSettings(BaseModel):
@@ -49,6 +58,7 @@ class Settings(BaseSettings):
     # Auth configuration
     JWT_ALGORITHM: str
     bypass_auth_mode: bool = False
+    REQUIRE_APP_ID_IN_TOKEN: bool = False
     dev_user_id: str = "dev_user"
     ADMIN_SERVICE_SECRET: Optional[str] = None
     APP_AUTH_ACTIVE_TTL_SECONDS: int = 600
@@ -208,12 +218,17 @@ def get_settings() -> Settings:
         )
 
     # Load auth config
+    jwt_secret_key = os.environ.get("JWT_SECRET_KEY", "dev-secret-key")  # Default for bypass mode
+    # Without SESSION_SECRET_KEY, derive the cookie-signing key from the JWT secret, so a deployment
+    # never signs sessions with a value that is public in this repository.
+    session_secret_key = hmac.new(jwt_secret_key.encode(), b"morphik-session", hashlib.sha256).hexdigest()
     settings_dict.update(
         {
             "JWT_ALGORITHM": config["auth"]["jwt_algorithm"],
-            "JWT_SECRET_KEY": os.environ.get("JWT_SECRET_KEY", "dev-secret-key"),  # Default for bypass mode
-            "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY", "super-secret-dev-session-key"),
+            "JWT_SECRET_KEY": jwt_secret_key,
+            "SESSION_SECRET_KEY": os.environ.get("SESSION_SECRET_KEY") or session_secret_key,
             "bypass_auth_mode": config["auth"].get("bypass_auth_mode", config["auth"].get("dev_mode", False)),
+            "REQUIRE_APP_ID_IN_TOKEN": config["auth"].get("require_app_id", False),
             "dev_user_id": config["auth"].get("dev_user_id", config["auth"].get("dev_entity_id", "dev_user")),
         }
     )

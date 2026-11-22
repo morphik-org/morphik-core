@@ -11,7 +11,7 @@ from colpali_engine.models import ColQwen2_5, ColQwen2_5_Processor
 from PIL.Image import Image
 from PIL.Image import open as open_image
 
-from core.config import get_settings
+from core.config import COLQWEN_MODEL_ID, COLQWEN_REVISION, get_settings
 from core.embedding.base_embedding_model import BaseEmbeddingModel
 from core.models.chunk import Chunk
 from core.utils.fast_ops import data_uri_to_bytes
@@ -45,13 +45,14 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
                 )
 
         self.model = ColQwen2_5.from_pretrained(
-            "tsystems/colqwen2.5-3b-multilingual-v1.0",
+            COLQWEN_MODEL_ID,
             dtype=torch.bfloat16,  # preferred kwarg per upstream deprecation notice
             device_map=device,  # Automatically detect and use available device
             attn_implementation=attn_implementation,
         ).eval()
         self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
-            "tsystems/colqwen2.5-3b-multilingual-v1.0",
+            COLQWEN_MODEL_ID,
+            revision=COLQWEN_REVISION,
             use_fast=True,
         )
         self.settings = get_settings()

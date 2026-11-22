@@ -121,7 +121,7 @@ async def test_generate_embeddings_directly(embedding_model):
     text = "Test query for direct embedding generation"
 
     # Generate embeddings
-    result = embedding_model.generate_embeddings(text)
+    result = await embedding_model.generate_embeddings(text)
 
     # Check results
     assert isinstance(result, np.ndarray)
