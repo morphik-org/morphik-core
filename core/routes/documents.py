@@ -49,7 +49,7 @@ telemetry = TelemetryService()
 async def list_docs(
     request: ListDocsRequest,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None, openapi_extra={"style": "form", "explode": True}),
+    folder_name: Optional[Union[str, List[str]]] = Query(None),
     folder_depth: Optional[int] = Query(
         None,
         description="Folder scope depth: 0/None = exact, -1 = all descendants, n > 0 = include descendants up to n levels.",
@@ -260,7 +260,7 @@ async def delete_document(document_id: str, auth: AuthContext = Depends(verify_t
 async def get_document_by_filename(
     filename: str,
     auth: AuthContext = Depends(verify_token),
-    folder_name: Optional[Union[str, List[str]]] = Query(None, openapi_extra={"style": "form", "explode": True}),
+    folder_name: Optional[Union[str, List[str]]] = Query(None),
     folder_depth: Optional[int] = Query(
         None,
         description="Folder scope depth: 0/None = exact, -1 = all descendants, n > 0 = include descendants up to n levels.",
