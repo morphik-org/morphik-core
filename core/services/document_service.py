@@ -371,7 +371,7 @@ class DocumentService:
 
         if not doc_ids:
             logger.info("No authorized documents found")
-            return []
+            return ([], {}) if return_preloaded_docs else []
         logger.info(f"Found {len(doc_ids)} authorized documents")
 
         # Vector search phase

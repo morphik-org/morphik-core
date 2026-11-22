@@ -18,7 +18,7 @@ from core.models.auth import AuthContext
 from core.services.ingestion_service import IngestionService
 from core.utils.folder_utils import normalize_folder_path
 from ee.services.connector_service import ConnectorService
-from ee.services.connectors.base_connector import ConnectorAuthStatus, ConnectorFile  # Importing specific models
+from ee.services.connectors.base_connector import BaseConnector, ConnectorAuthStatus, ConnectorFile
 
 # from starlette.datastructures import URL  # Will be needed for oauth2callback
 
@@ -44,6 +44,13 @@ async def get_connector_service(auth: AuthContext = Depends(verify_token)) -> Co
         logger.error(f"Failed to initialize ConnectorService: {e}")
         # User-friendly error message
         raise HTTPException(status_code=500, detail="Connector service initialization error.")
+
+
+async def _get_connector_or_404(connector_service: ConnectorService, connector_type: str) -> BaseConnector:
+    try:
+        return await connector_service.get_connector(connector_type)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # Placeholder for IngestFromConnectorRequest Pydantic model
@@ -176,7 +183,7 @@ async def get_auth_status_for_connector(
         return status
     except ValueError as e:
         # Handle cases where the connector type is unsupported or other init errors
-        logger.error(
+        logger.warning(
             f"Value error getting auth status for {connector_type} for user {connector_service.user_identifier}: {e}"
         )
         raise HTTPException(status_code=404, detail=str(e))
@@ -553,7 +560,7 @@ async def get_status(
     connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """Get the authentication status for a connector."""
-    connector = await connector_service.get_connector(auth_request.connector_type, auth.user_id)
+    connector = await _get_connector_or_404(connector_service, auth_request.connector_type)
     return await connector.get_auth_status()
 
 
@@ -564,7 +571,7 @@ async def initiate_auth(
     connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """Initiate the OAuth flow for a connector."""
-    connector = await connector_service.get_connector(auth_request.connector_type, auth.user_id)
+    connector = await _get_connector_or_404(connector_service, auth_request.connector_type)
     return await connector.initiate_auth()
 
 
@@ -575,7 +582,7 @@ async def finalize_auth(
     connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """Finalize the OAuth flow and exchange the code for a token."""
-    connector = await connector_service.get_connector(auth_response.connector_type, auth.user_id)
+    connector = await _get_connector_or_404(connector_service, auth_response.connector_type)
     await connector.finalize_auth(auth_response.auth_response_data)
     return {"status": "success"}
 
@@ -587,7 +594,7 @@ async def disconnect(
     connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """Disconnect from a connector and remove credentials."""
-    connector = await connector_service.get_connector(auth_request.connector_type, auth.user_id)
+    connector = await _get_connector_or_404(connector_service, auth_request.connector_type)
     await connector.disconnect()
     return {"status": "success"}
 
@@ -599,5 +606,5 @@ async def list_files(
     connector_service: ConnectorService = Depends(get_connector_service),
 ):
     """List files from a connector."""
-    connector = await connector_service.get_connector(list_request.connector_type, auth.user_id)
+    connector = await _get_connector_or_404(connector_service, list_request.connector_type)
     return await connector.list_files(path=list_request.path, page_token=list_request.page_token)

@@ -87,7 +87,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -108,7 +108,7 @@ services:
       - POSTGRES_DB=morphik
       - PGDATA=/var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       # Defaults to a Docker-managed volume. Set MORPHIK_POSTGRES_DATA_PATH
       # to a host directory such as ./postgres-data for a bind mount.

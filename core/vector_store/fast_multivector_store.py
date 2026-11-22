@@ -16,7 +16,7 @@ import torch
 from colpali_engine.models import ColQwen2_5_Processor
 from psycopg_pool import ConnectionPool
 
-from core.config import get_settings
+from core.config import COLQWEN_MODEL_ID, COLQWEN_REVISION, get_settings
 from core.models.chunk import DocumentChunk
 from core.storage.base_storage import BaseStorage
 from core.storage.local_storage import LocalStorage
@@ -351,7 +351,7 @@ class FastMultiVectorStore(BaseVectorStore):
         self.max_retries = 3
         self.retry_delay = 1.0
         self.processor: ColQwen2_5_Processor = ColQwen2_5_Processor.from_pretrained(
-            "tsystems/colqwen2.5-3b-multilingual-v1.0"
+            COLQWEN_MODEL_ID, revision=COLQWEN_REVISION
         )
         self.device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
         # Reuse S3 upload concurrency cap for multivector uploads as well.

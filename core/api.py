@@ -11,7 +11,7 @@ import jwt
 import requests
 import sentry_sdk
 import tomli
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -960,8 +960,16 @@ async def get_available_models_for_selection(auth: AuthContext = Depends(verify_
     return {"models": models}
 
 
+# Failed password attempts on /local/generate_uri, per client address (this endpoint hands out
+# long-lived tokens, so guessing its password must be slow).
+LOCAL_URI_MAX_FAILURES = 5
+LOCAL_URI_FAILURE_WINDOW_S = 300
+_local_uri_failures: Dict[str, List[float]] = {}
+
+
 @app.post("/local/generate_uri", include_in_schema=True)
 async def generate_local_uri(
+    http_request: Request,
     name: str = Form("admin"),
     expiry_days: int = Form(5475),  # 15 years
     password_token: str = Form(...),
@@ -973,7 +981,14 @@ async def generate_local_uri(
         if not settings.LOCAL_URI_PASSWORD:
             raise HTTPException(status_code=500, detail="LOCAL_URI_PASSWORD not configured")
 
-        if password_token != settings.LOCAL_URI_PASSWORD:
+        client_ip = http_request.client.host if http_request.client else "unknown"
+        now = time.monotonic()
+        failures = [t for t in _local_uri_failures.get(client_ip, []) if now - t < LOCAL_URI_FAILURE_WINDOW_S]
+        if len(failures) >= LOCAL_URI_MAX_FAILURES:
+            raise HTTPException(status_code=429, detail="Too many failed attempts, try again later")
+
+        if not secrets.compare_digest(password_token.encode(), settings.LOCAL_URI_PASSWORD.encode()):
+            _local_uri_failures[client_ip] = failures + [now]
             raise HTTPException(status_code=401, detail="Invalid authentication token")
 
         # Clean name
