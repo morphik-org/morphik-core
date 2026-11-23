@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from core.config import get_settings
+from core.config import GEMINI_METADATA_DEFAULT, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -152,8 +152,16 @@ def build_morphik_on_the_fly_schema(schema_input: Dict[str, Any]) -> Dict[str, A
     }
 
 
-def normalize_model_name(model: Optional[str]) -> str:
-    selected = model or getattr(settings, "GEMINI_METADATA_MODEL", None) or "gemini-2.5-flash"
+def _is_native_gemini_endpoint(api_base_url: str) -> bool:
+    endpoint = httpx.URL(api_base_url)
+    return endpoint.scheme == "https" and endpoint.host == "generativelanguage.googleapis.com"
+
+
+def normalize_model_name(model: Optional[str], *, api_base_url: Optional[str] = None) -> str:
+    base_url = api_base_url or getattr(settings, "GEMINI_API_BASE_URL", "")
+    # A Gemini-compatible gateway can have an independent model catalog.
+    default = GEMINI_METADATA_DEFAULT if _is_native_gemini_endpoint(base_url) else "gemini-2.5-flash"
+    selected = model or getattr(settings, "GEMINI_METADATA_MODEL", None) or default
     return selected if selected.startswith("models/") else f"models/{selected}"
 
 
@@ -195,6 +203,9 @@ async def generate_morphik_on_the_fly_content(
 ) -> MorphikOnTheFlyGenerationResult:
     """
     Invoke the Morphik On-the-Fly layer to generate content, optionally enforcing structured output via schema.
+
+    The native Gemini default uses thinking levels rather than fixed token budgets.
+    Select a compatible model to continue sending a legacy thinking budget.
     """
     if not prompt or not prompt.strip():
         raise MorphikOnTheFlyContentError("Prompt is required for Morphik On-the-Fly generation")
@@ -228,12 +239,22 @@ async def generate_morphik_on_the_fly_content(
             }
         )
 
-    generation_config: Dict[str, Any] = {"temperature": temperature}
+    model_name = normalize_model_name(model, api_base_url=api_base_url)
+    native_flash_lite = _is_native_gemini_endpoint(api_base_url) and model_name == f"models/{GEMINI_METADATA_DEFAULT}"
+    generation_config: Dict[str, Any] = {}
+    # Flash-Lite no longer uses legacy sampling controls; keep configured alternatives unchanged.
+    if not native_flash_lite:
+        generation_config["temperature"] = temperature
     if response_schema:
         generation_config["responseMimeType"] = "application/json"
         generation_config["responseSchema"] = response_schema
     if thinking_budget is not None:
-        generation_config.setdefault("thinkingConfig", {})["thinkingBudget"] = thinking_budget
+        if native_flash_lite:
+            raise MorphikOnTheFlyContentError(
+                "The native Flash-Lite model does not support thinking_budget. "
+                "Omit the budget or select a model that supports it."
+            )
+        generation_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
 
     body: Dict[str, Any] = {
         "contents": [
@@ -251,7 +272,6 @@ async def generate_morphik_on_the_fly_content(
             "parts": [{"text": system_prompt}],
         }
 
-    model_name = normalize_model_name(model)
     url = f"{api_base_url}/v1beta/{model_name}:generateContent"
 
     timeout = httpx.Timeout(timeout_seconds)
