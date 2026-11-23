@@ -27,9 +27,9 @@ export const metadata: Metadata = {
   description: "Morphik - Multimodal RAG Platform",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Server-side read of sidebar cookie to avoid SSR flicker
-  const sidebarCookie = cookies().get("sidebar_state")?.value;
+  const sidebarCookie = (await cookies()).get("sidebar_state")?.value;
   const defaultOpen = sidebarCookie === undefined ? true : sidebarCookie === "true";
 
   return (
