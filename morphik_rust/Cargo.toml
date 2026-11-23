@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Python bindings
-pyo3 = { version = "0.22", features = ["extension-module"] }
+pyo3 = { version = "0.29", features = ["extension-module"] }
 
 # Fast base64 with SIMD support
 base64 = "0.22"
@@ -20,7 +20,7 @@ base64 = "0.22"
 rayon = "1.10"
 
 # NumPy interop for binary quantization
-numpy = "0.22"
+numpy = "0.29"
 
 [profile.release]
 opt-level = 3

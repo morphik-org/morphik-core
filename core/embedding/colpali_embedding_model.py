@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import logging
+import os
 import time
 from contextvars import ContextVar
 from typing import Any, Dict, List, Tuple, Union
@@ -33,6 +34,10 @@ class ColpaliEmbeddingModel(BaseEmbeddingModel):
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
             logger.info("Enabled TF32 for CUDA matmul operations")
+
+        if device == "mps":
+            # transformers 5 copies weights to the device from several threads, which crashes on MPS.
+            os.environ.setdefault("HF_DEACTIVATE_ASYNC_LOAD", "1")
 
         attn_implementation = "eager"
         if device == "cuda":
