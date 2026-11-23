@@ -132,7 +132,7 @@ pub fn binary_quantize_packed(py: Python<'_>, embedding: PyReadonlyArray1<f32>) 
         packed[chunks] = byte;
     }
 
-    PyBytes::new_bound(py, &packed).into()
+    PyBytes::new(py, &packed).into()
 }
 
 /// Quantize a batch of embeddings to packed bytes.
@@ -217,7 +217,7 @@ pub fn binary_quantize_batch_packed(
     // Convert to Python bytes (GIL required)
     Ok(packed_vecs
         .into_iter()
-        .map(|v| PyBytes::new_bound(py, &v).into())
+        .map(|v| PyBytes::new(py, &v).into())
         .collect())
 }
 

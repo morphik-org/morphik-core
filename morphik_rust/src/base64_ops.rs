@@ -33,7 +33,7 @@ pub fn encode_base64(data: &[u8]) -> String {
 #[pyfunction]
 pub fn decode_base64(py: Python<'_>, encoded: &str) -> PyResult<Py<PyBytes>> {
     match STANDARD.decode(encoded) {
-        Ok(decoded) => Ok(PyBytes::new_bound(py, &decoded).into()),
+        Ok(decoded) => Ok(PyBytes::new(py, &decoded).into()),
         Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!(
             "Invalid base64: {}",
             e
@@ -85,7 +85,7 @@ pub fn data_uri_to_bytes(py: Python<'_>, data_uri: &str) -> PyResult<Py<PyBytes>
     };
 
     match STANDARD.decode(base64_str) {
-        Ok(decoded) => Ok(PyBytes::new_bound(py, &decoded).into()),
+        Ok(decoded) => Ok(PyBytes::new(py, &decoded).into()),
         Err(e) => Err(pyo3::exceptions::PyValueError::new_err(format!(
             "Invalid base64: {}",
             e
@@ -117,7 +117,7 @@ pub fn decode_base64_batch(py: Python<'_>, encoded_list: Vec<String>) -> PyResul
     let mut py_results = Vec::with_capacity(results.len());
     for (i, result) in results.into_iter().enumerate() {
         match result {
-            Ok(decoded) => py_results.push(PyBytes::new_bound(py, &decoded).into()),
+            Ok(decoded) => py_results.push(PyBytes::new(py, &decoded).into()),
             Err(e) => {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
                     "Invalid base64 at index {}: {}",
