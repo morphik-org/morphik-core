@@ -104,7 +104,7 @@ jobs:
           claude_sonnet = { model_name = "claude-3-7-sonnet-latest" }
 
           # Google Gemini models
-          gemini_flash = { model_name = "gemini/gemini-2.5-flash-preview-05-20" }
+          gemini_flash = { model_name = "gemini/gemini-3.6-flash" }
 
           # Embedding models
           openai_embedding = { model_name = "text-embedding-3-small" }

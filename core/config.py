@@ -20,6 +20,7 @@ load_local_env(override=True)
 # (The revision cannot be passed to the model load, which would apply it to the base-weights repo too.)
 COLQWEN_MODEL_ID = "tsystems/colqwen2.5-3b-multilingual-v1.0"
 COLQWEN_REVISION = "0724953ed80e1bc45ca11b66d0b9e70c362d1cf9"
+GEMINI_METADATA_DEFAULT = "gemini-3.5-flash-lite"
 
 
 class ParserXMLSettings(BaseModel):
@@ -43,7 +44,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     TURBOPUFFER_API_KEY: Optional[str] = None
     GEMINI_API_BASE_URL: str = "https://generativelanguage.googleapis.com"
-    GEMINI_METADATA_MODEL: str = "gemini-2.5-flash"
+    GEMINI_METADATA_MODEL: Optional[str] = None  # By default, select a model for the configured endpoint.
 
     # API configuration
     HOST: str
