@@ -12,18 +12,30 @@ special handling for typed metadata (number, decimal, datetime, date).
 
 Supported operators: $and, $or, $nor, $not, $eq, $ne, $gt, $gte, $lt, $lte,
 $in, $nin, $exists, $type, $regex, $contains.
+
+Field names and values never appear in the SQL text. ``build`` returns the clause together with the bound
+parameters it refers to; pass both to ``text(clause).bindparams(**params)``.
 """
 
+import copy
 import json
+import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.utils.typed_metadata import TypedMetadataError, canonicalize_type_name
 
 
 class InvalidMetadataFilterError(ValueError):
     """Raised when metadata filters are malformed or unsupported."""
+
+
+def _bind(params: Dict[str, str], prefix: str, value: str) -> str:
+    """Register a bound parameter and return the SQL expression that reads it as text."""
+    name = f"{prefix}_{len(params)}"
+    params[name] = value
+    return f"CAST(:{name} AS text)"
 
 
 class MetadataFilterBuilder:
@@ -39,22 +51,29 @@ class MetadataFilterBuilder:
         self.metadata_column = metadata_column
         self.metadata_types_column = metadata_types_column
         self._column_fields = column_fields or {"filename": "filename"}
+        self._params: Dict[str, str] = {}
 
-    def build(self, filters: Optional[Dict[str, Any]]) -> str:
-        """Construct a SQL WHERE clause from a metadata filter dictionary."""
+    def build(self, filters: Optional[Dict[str, Any]]) -> Tuple[str, Dict[str, str]]:
+        """Construct a SQL WHERE clause and its bound parameters from a metadata filter dictionary."""
         if filters is None:
-            return ""
+            return "", {}
 
         if not isinstance(filters, dict):
             raise InvalidMetadataFilterError("Metadata filters must be provided as a JSON object.")
 
         if not filters:
-            return ""
+            return "", {}
 
-        clause = self._parse_metadata_filter(filters, context="metadata filter")
+        # Builders are shared between requests, so each build collects parameters on its own copy.
+        worker = copy.copy(self)
+        worker._params = {}
+        clause = worker._parse_metadata_filter(filters, context="metadata filter")
         if not clause:
             raise InvalidMetadataFilterError("Metadata filter produced no valid conditions.")
-        return clause
+        return clause, worker._params
+
+    def _bind(self, value: str) -> str:
+        return _bind(self._params, "mf", value)
 
     def _parse_metadata_filter(self, expression: Any, context: str) -> str:
         """Recursively parse a document-operator metadata filter into SQL."""
@@ -201,12 +220,13 @@ class MetadataFilterBuilder:
         """Build SQL clause for a reserved column field (e.g., filename)."""
         column = self._column_fields[field]
         builder = TextColumnFilterBuilder(column)
+        builder._params, builder._prefix = self._params, "mf"
 
         if isinstance(value, dict):
             if not value:
                 raise InvalidMetadataFilterError(f"{field} filter cannot be empty.")
             if any(key.startswith("$") for key in value):
-                return builder.build(value)
+                return builder._parse_filter(value, context="filename filter")
             raise InvalidMetadataFilterError(
                 f"{field} filter must use operators (e.g., {{'{field}': {{'$eq': 'example.pdf'}}}})."
             )
@@ -226,8 +246,7 @@ class MetadataFilterBuilder:
         elif not isinstance(expected, bool):
             raise InvalidMetadataFilterError(f"$exists operator for field '{field}' expects a boolean value.")
 
-        field_key = self._escape_single_quotes(field)
-        clause = f"({self.metadata_column} ? '{field_key}')"
+        clause = f"({self.metadata_column} ? {self._bind(field)})"
         return clause if expected else f"(NOT {clause})"
 
     def _build_comparison_clause(self, field: str, operator: str, operand: Any) -> str:
@@ -275,13 +294,13 @@ class MetadataFilterBuilder:
         except InvalidMetadataFilterError:
             return ""
 
-        field_key = self._escape_single_quotes(field)
+        field_key = self._bind(field)
         type_expr = self._metadata_type_expr(field_key)
         value_expr = (
-            f"(CASE WHEN {type_expr} = 'number' THEN ({self.metadata_column} ->> '{field_key}')::double precision "
+            f"(CASE WHEN {type_expr} = 'number' THEN ({self.metadata_column} ->> {field_key})::double precision "
             "ELSE NULL END)"
         )
-        return f"({value_expr} {sql_operator} {literal})"
+        return f"({value_expr} {sql_operator} CAST({self._bind(literal)} AS double precision))"
 
     def _build_decimal_comparison_clause(self, field: str, sql_operator: str, operand: Any) -> str:
         """Build comparison clause for 'decimal' typed metadata."""
@@ -290,13 +309,13 @@ class MetadataFilterBuilder:
         except InvalidMetadataFilterError:
             return ""
 
-        field_key = self._escape_single_quotes(field)
+        field_key = self._bind(field)
         type_expr = self._metadata_type_expr(field_key)
         value_expr = (
-            f"(CASE WHEN {type_expr} = 'decimal' THEN ({self.metadata_column} ->> '{field_key}')::numeric "
+            f"(CASE WHEN {type_expr} = 'decimal' THEN ({self.metadata_column} ->> {field_key})::numeric "
             "ELSE NULL END)"
         )
-        return f"({value_expr} {sql_operator} {literal}::numeric)"
+        return f"({value_expr} {sql_operator} CAST({self._bind(literal)} AS numeric))"
 
     def _build_datetime_comparison_clause(self, field: str, sql_operator: str, operand: Any) -> str:
         """Build comparison clause for 'datetime' typed metadata."""
@@ -305,10 +324,10 @@ class MetadataFilterBuilder:
         except InvalidMetadataFilterError:
             return ""
 
-        field_key = self._escape_single_quotes(field)
+        field_key = self._bind(field)
         type_expr = self._metadata_type_expr(field_key)
         value_expr = (
-            f"(CASE WHEN {type_expr} = 'datetime' THEN ({self.metadata_column} ->> '{field_key}')::timestamptz "
+            f"(CASE WHEN {type_expr} = 'datetime' THEN ({self.metadata_column} ->> {field_key})::timestamptz "
             "ELSE NULL END)"
         )
         return f"({value_expr} {sql_operator} {literal})"
@@ -320,21 +339,20 @@ class MetadataFilterBuilder:
         except InvalidMetadataFilterError:
             return ""
 
-        field_key = self._escape_single_quotes(field)
+        field_key = self._bind(field)
         type_expr = self._metadata_type_expr(field_key)
         value_expr = (
-            f"(CASE WHEN {type_expr} = 'date' THEN ({self.metadata_column} ->> '{field_key}')::date " "ELSE NULL END)"
+            f"(CASE WHEN {type_expr} = 'date' THEN ({self.metadata_column} ->> {field_key})::date ELSE NULL END)"
         )
         return f"({value_expr} {sql_operator} {literal})"
 
     def _build_string_comparison_clause(self, field: str, sql_operator: str, operand: str) -> str:
         """Build comparison clause for 'string' typed metadata (only for $eq/$ne)."""
-        field_key = self._escape_single_quotes(field)
-        escaped_value = self._escape_single_quotes(operand)
+        field_key = self._bind(field)
         type_expr = self._metadata_type_expr(field_key)
-        value_expr = f"({self.metadata_column} ->> '{field_key}')"
+        value_expr = f"({self.metadata_column} ->> {field_key})"
         # For strings without explicit type, assume string type (COALESCE handles missing metadata_types)
-        return f"((COALESCE({type_expr}, 'string') = 'string') AND {value_expr} {sql_operator} '{escaped_value}')"
+        return f"((COALESCE({type_expr}, 'string') = 'string') AND {value_expr} {sql_operator} {self._bind(operand)})"
 
     def _build_type_clause(self, field: str, operand: Any) -> str:
         """Build clause enforcing metadata type."""
@@ -354,9 +372,9 @@ class MetadataFilterBuilder:
             except TypedMetadataError as exc:
                 raise InvalidMetadataFilterError(str(exc)) from exc
 
-        field_key = self._escape_single_quotes(field)
+        field_key = self._bind(field)
         if not self.metadata_types_column:
-            jsonb_type_expr = f"jsonb_typeof({self.metadata_column} -> '{field_key}')"
+            jsonb_type_expr = f"jsonb_typeof({self.metadata_column} -> {field_key})"
             type_map = {
                 "string": "string",
                 "number": "number",
@@ -368,10 +386,13 @@ class MetadataFilterBuilder:
                 "datetime": "string",
                 "date": "string",
             }
-            clauses = [f"({jsonb_type_expr} = '{type_map.get(type_name, type_name)}')" for type_name in canonical_types]
+            clauses = [
+                f"({jsonb_type_expr} = {self._bind(type_map.get(type_name, type_name))})"
+                for type_name in canonical_types
+            ]
         else:
-            type_expr = f"COALESCE({self.metadata_types_column} ->> '{field_key}', 'string')"
-            clauses = [f"({type_expr} = '{type_name}')" for type_name in canonical_types]
+            type_expr = f"COALESCE({self.metadata_types_column} ->> {field_key}, 'string')"
+            clauses = [f"({type_expr} = {self._bind(type_name)})" for type_name in canonical_types]
         if len(clauses) == 1:
             return clauses[0]
         return "(" + " OR ".join(clauses) + ")"
@@ -391,8 +412,7 @@ class MetadataFilterBuilder:
                 f"Use explicit operators like {{'$eq': value}} for typed comparisons with date, datetime, or Decimal objects."
             ) from exc
 
-        escaped_payload = json_payload.replace("'", "''")
-        base_clause = f"({self.metadata_column} @> '{escaped_payload}'::jsonb)"
+        base_clause = f"({self.metadata_column} @> CAST({self._bind(json_payload)} AS jsonb))"
 
         array_clause = self._build_array_membership_clause(field, value)
         if array_clause:
@@ -412,12 +432,11 @@ class MetadataFilterBuilder:
         except (TypeError, ValueError):
             return ""
 
-        escaped_array_payload = array_payload.replace("'", "''")
-        field_key = self._escape_single_quotes(field)
+        field_key = self._bind(field)
 
         return (
-            f"((jsonb_typeof({self.metadata_column} -> '{field_key}') = 'array') "
-            f"AND (({self.metadata_column} -> '{field_key}') @> '{escaped_array_payload}'::jsonb))"
+            f"((jsonb_typeof({self.metadata_column} -> {field_key}) = 'array') "
+            f"AND (({self.metadata_column} -> {field_key}) @> CAST({self._bind(array_payload)} AS jsonb)))"
         )
 
     def _build_regex_clause(self, field: str, operand: Any) -> str:
@@ -425,11 +444,10 @@ class MetadataFilterBuilder:
         pattern, case_insensitive = self._normalize_regex_operand(operand, field)
         regex_operator = "~*" if case_insensitive else "~"
 
-        escaped_pattern = pattern.replace("\\", "\\\\").replace("'", "''")
-        field_key = self._escape_single_quotes(field)
+        pattern_expr = self._bind(pattern)
 
-        base_clause = f"(({self.metadata_column} ->> '{field_key}') {regex_operator} '{escaped_pattern}')"
-        array_clause = self._build_array_regex_clause(field, regex_operator, escaped_pattern)
+        base_clause = f"(({self.metadata_column} ->> {self._bind(field)}) {regex_operator} {pattern_expr})"
+        array_clause = self._build_array_regex_clause(field, regex_operator, pattern_expr)
         if array_clause:
             return f"({base_clause} OR {array_clause})"
         return base_clause
@@ -460,14 +478,14 @@ class MetadataFilterBuilder:
             f"$regex operator for field '{field}' expects a string or object with 'pattern'."
         )
 
-    def _build_array_regex_clause(self, field: str, regex_operator: str, escaped_pattern: str) -> str:
+    def _build_array_regex_clause(self, field: str, regex_operator: str, pattern_expr: str) -> str:
         """Run regex comparisons against each JSON array element."""
-        field_key = self._escape_single_quotes(field)
+        field_key = self._bind(field)
         array_value_expr = "trim('\"' FROM arr.value::text)"
         return (
-            f"((jsonb_typeof({self.metadata_column} -> '{field_key}') = 'array') AND EXISTS ("
-            f"SELECT 1 FROM jsonb_array_elements({self.metadata_column} -> '{field_key}') AS arr(value) "
-            f"WHERE jsonb_typeof(arr.value) = 'string' AND {array_value_expr} {regex_operator} '{escaped_pattern}'))"
+            f"((jsonb_typeof({self.metadata_column} -> {field_key}) = 'array') AND EXISTS ("
+            f"SELECT 1 FROM jsonb_array_elements({self.metadata_column} -> {field_key}) AS arr(value) "
+            f"WHERE jsonb_typeof(arr.value) = 'string' AND {array_value_expr} {regex_operator} {pattern_expr}))"
         )
 
     def _build_contains_clause(self, field: str, operand: Any) -> str:
@@ -475,11 +493,10 @@ class MetadataFilterBuilder:
         value, case_sensitive = self._normalize_contains_operand(operand, field)
         like_operator = "LIKE" if case_sensitive else "ILIKE"
 
-        escaped_pattern = self._escape_like_pattern(value)
-        field_key = self._escape_single_quotes(field)
+        pattern_expr = self._bind(f"%{_escape_like_pattern(value)}%")
 
-        base_clause = f"(({self.metadata_column} ->> '{field_key}') {like_operator} '%{escaped_pattern}%')"
-        array_clause = self._build_array_like_clause(field, like_operator, escaped_pattern)
+        base_clause = f"(({self.metadata_column} ->> {self._bind(field)}) {like_operator} {pattern_expr})"
+        array_clause = self._build_array_like_clause(field, like_operator, pattern_expr)
         if array_clause:
             return f"({base_clause} OR {array_clause})"
         return base_clause
@@ -506,28 +523,22 @@ class MetadataFilterBuilder:
             f"$contains operator for field '{field}' expects a string or object with 'value'."
         )
 
-    def _escape_like_pattern(self, value: str) -> str:
-        """Escape wildcard characters for SQL LIKE/ILIKE patterns."""
-        escaped = value.replace("\\", "\\\\")
-        escaped = escaped.replace("%", "\\%").replace("_", "\\_")
-        return escaped.replace("'", "''")
-
-    def _build_array_like_clause(self, field: str, like_operator: str, escaped_pattern: str) -> str:
+    def _build_array_like_clause(self, field: str, like_operator: str, pattern_expr: str) -> str:
         """Apply LIKE/ILIKE matching to each string element in JSON arrays."""
-        field_key = self._escape_single_quotes(field)
+        field_key = self._bind(field)
         array_value_expr = "trim('\"' FROM arr.value::text)"
         return (
-            f"((jsonb_typeof({self.metadata_column} -> '{field_key}') = 'array') AND EXISTS ("
-            f"SELECT 1 FROM jsonb_array_elements({self.metadata_column} -> '{field_key}') AS arr(value) "
+            f"((jsonb_typeof({self.metadata_column} -> {field_key}) = 'array') AND EXISTS ("
+            f"SELECT 1 FROM jsonb_array_elements({self.metadata_column} -> {field_key}) AS arr(value) "
             f"WHERE jsonb_typeof(arr.value) = 'string' AND "
-            f"{array_value_expr} {like_operator} '%{escaped_pattern}%'))"
+            f"{array_value_expr} {like_operator} {pattern_expr}))"
         )
 
     def _metadata_type_expr(self, field_key: str) -> str:
-        """Return SQL expression fetching the stored metadata type for a field."""
+        """Return SQL expression fetching the stored metadata type for a field (field_key is a bound expression)."""
         if not self.metadata_types_column:
             return "NULL"
-        return f"({self.metadata_types_column} ->> '{field_key}')"
+        return f"({self.metadata_types_column} ->> {field_key})"
 
     def _map_comparison_operator(self, operator: str) -> str:
         """Map comparison operators to SQL symbols."""
@@ -552,6 +563,8 @@ class MetadataFilterBuilder:
             value = Decimal(text)
         except (InvalidOperation, ValueError) as exc:  # noqa: BLE001
             raise InvalidMetadataFilterError(f"'{operand}' is not a valid numeric literal.") from exc
+        if not value.is_finite():
+            raise InvalidMetadataFilterError(f"'{operand}' is not a valid numeric literal.")
 
         normalized = format(value.normalize(), "f")
         if "." in normalized:
@@ -561,14 +574,12 @@ class MetadataFilterBuilder:
     def _format_datetime_literal(self, operand: Any, field: str) -> str:
         """Serialize datetime operands into SQL timestamptz literals."""
         iso_value = self._coerce_datetime_string(operand, field, is_date=False)
-        escaped = self._escape_single_quotes(iso_value)
-        return f"'{escaped}'::timestamptz"
+        return f"CAST({self._bind(iso_value)} AS timestamptz)"
 
     def _format_date_literal(self, operand: Any, field: str) -> str:
         """Serialize date operands into SQL date literals."""
         iso_value = self._coerce_datetime_string(operand, field, is_date=True)
-        escaped = self._escape_single_quotes(iso_value)
-        return f"'{escaped}'::date"
+        return f"CAST({self._bind(iso_value)} AS date)"
 
     def _coerce_datetime_string(self, operand: Any, field: str, is_date: bool) -> str:
         """Convert supported operand types into ISO date/datetime strings."""
@@ -603,10 +614,10 @@ class MetadataFilterBuilder:
 
         return dt_value.isoformat()
 
-    @staticmethod
-    def _escape_single_quotes(value: str) -> str:
-        """Escape single quotes for SQL literals."""
-        return value.replace("'", "''")
+
+def _escape_like_pattern(value: str) -> str:
+    """Escape wildcard characters for SQL LIKE/ILIKE patterns."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class TextColumnFilterBuilder:
@@ -614,22 +625,29 @@ class TextColumnFilterBuilder:
 
     def __init__(self, column: str):
         self._column = column
+        # Parameter names carry the column so that two column filters can share one statement.
+        self._prefix = "f_" + re.sub(r"\W", "_", column)
+        self._params: Dict[str, str] = {}
 
-    def build(self, filters: Optional[Dict[str, Any]]) -> str:
-        """Construct a SQL WHERE clause from a filter dictionary."""
+    def build(self, filters: Optional[Dict[str, Any]]) -> Tuple[str, Dict[str, str]]:
+        """Construct a SQL WHERE clause and its bound parameters from a filter dictionary."""
         if filters is None:
-            return ""
+            return "", {}
 
         if not isinstance(filters, dict):
             raise InvalidMetadataFilterError("Filename filters must be provided as a JSON object.")
 
         if not filters:
-            return ""
+            return "", {}
 
+        self._params = {}
         clause = self._parse_filter(filters, context="filename filter")
         if not clause:
             raise InvalidMetadataFilterError("Filename filter produced no valid conditions.")
-        return clause
+        return clause, self._params
+
+    def _bind(self, value: str) -> str:
+        return _bind(self._params, self._prefix, value)
 
     def _parse_filter(self, expression: Any, context: str) -> str:
         """Recursively parse an operator filter into SQL."""
@@ -718,23 +736,20 @@ class TextColumnFilterBuilder:
                 return f"({column} IS NULL)"
             if not isinstance(operand, str):
                 raise InvalidMetadataFilterError("Filename $eq operator expects a string value.")
-            escaped = self._escape_single_quotes(operand)
-            return f"({column} = '{escaped}')"
+            return f"({column} = {self._bind(operand)})"
 
         if operator == "$ne":
             if operand is None:
                 return f"({column} IS NOT NULL)"
             if not isinstance(operand, str):
                 raise InvalidMetadataFilterError("Filename $ne operator expects a string value.")
-            escaped = self._escape_single_quotes(operand)
-            return f"({column} IS DISTINCT FROM '{escaped}')"
+            return f"({column} IS DISTINCT FROM {self._bind(operand)})"
 
         if operand is None or not isinstance(operand, str):
             raise InvalidMetadataFilterError(f"Filename {operator} operator expects a string value.")
 
-        escaped = self._escape_single_quotes(operand)
         sql_operator = self._map_comparison_operator(operator)
-        return f"({column} {sql_operator} '{escaped}')"
+        return f"({column} {sql_operator} {self._bind(operand)})"
 
     def _build_in_clause(self, operand: Any, negate: bool) -> str:
         """Build IN/NOT IN clauses with NULL handling."""
@@ -748,7 +763,7 @@ class TextColumnFilterBuilder:
         for item in values:
             if not isinstance(item, str):
                 raise InvalidMetadataFilterError("Filename $in/$nin operator expects string values.")
-            escaped_values.append(f"'{self._escape_single_quotes(item)}'")
+            escaped_values.append(self._bind(item))
 
         column = self._column
         in_list = ", ".join(escaped_values)
@@ -786,8 +801,7 @@ class TextColumnFilterBuilder:
         pattern, case_insensitive = self._normalize_regex_operand(operand)
         regex_operator = "~*" if case_insensitive else "~"
 
-        escaped_pattern = pattern.replace("\\", "\\\\").replace("'", "''")
-        return f"({self._column} {regex_operator} '{escaped_pattern}')"
+        return f"({self._column} {regex_operator} {self._bind(pattern)})"
 
     def _normalize_regex_operand(self, operand: Any) -> tuple[str, bool]:
         """Validate regex operands; accept strings or {'pattern','flags'} with only the 'i' flag."""
@@ -818,8 +832,8 @@ class TextColumnFilterBuilder:
         value, case_sensitive = self._normalize_contains_operand(operand)
         like_operator = "LIKE" if case_sensitive else "ILIKE"
 
-        escaped_pattern = self._escape_like_pattern(value)
-        return f"({self._column} {like_operator} '%{escaped_pattern}%')"
+        pattern_expr = self._bind(f"%{_escape_like_pattern(value)}%")
+        return f"({self._column} {like_operator} {pattern_expr})"
 
     def _normalize_contains_operand(self, operand: Any) -> tuple[str, bool]:
         """Validate substring operands; accept strings or {'value','case_sensitive'}."""
@@ -839,18 +853,7 @@ class TextColumnFilterBuilder:
 
         raise InvalidMetadataFilterError("Filename $contains operator expects a string or object with 'value'.")
 
-    def _escape_like_pattern(self, value: str) -> str:
-        """Escape wildcard characters for SQL LIKE/ILIKE patterns."""
-        escaped = value.replace("\\", "\\\\")
-        escaped = escaped.replace("%", "\\%").replace("_", "\\_")
-        return escaped.replace("'", "''")
-
     def _map_comparison_operator(self, operator: str) -> str:
         """Map comparison operators to SQL symbols."""
         mapping = {"$gt": ">", "$gte": ">=", "$lt": "<", "$lte": "<="}
         return mapping[operator]
-
-    @staticmethod
-    def _escape_single_quotes(value: str) -> str:
-        """Escape single quotes for SQL literals."""
-        return value.replace("'", "''")

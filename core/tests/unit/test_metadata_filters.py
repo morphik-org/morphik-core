@@ -4,7 +4,15 @@ from datetime import date, datetime
 
 import pytest
 
-from core.database.metadata_filters import InvalidMetadataFilterError, MetadataFilterBuilder
+from core.database.metadata_filters import InvalidMetadataFilterError, MetadataFilterBuilder, TextColumnFilterBuilder
+
+
+def render(builder, filters):
+    """Return the clause with each bound parameter shown in place, so assertions can read names and values."""
+    sql, params = builder.build(filters)
+    for name, value in params.items():
+        sql = sql.replace(f":{name} ", f"'{value}' ")
+    return sql
 
 
 class TestBasicFilters:
@@ -14,7 +22,7 @@ class TestBasicFilters:
         """Test simple equality filter."""
         builder = MetadataFilterBuilder()
         filters = {"department": "engineering"}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert sql is not None
         assert "department" in sql
@@ -24,7 +32,7 @@ class TestBasicFilters:
         """Test $and operator."""
         builder = MetadataFilterBuilder()
         filters = {"$and": [{"dept": "eng"}, {"active": True}]}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "AND" in sql
         assert "dept" in sql
@@ -34,7 +42,7 @@ class TestBasicFilters:
         """Test $or operator."""
         builder = MetadataFilterBuilder()
         filters = {"$or": [{"dept": "eng"}, {"dept": "sales"}]}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "OR" in sql
         assert "dept" in sql
@@ -43,7 +51,7 @@ class TestBasicFilters:
         """Test $in operator."""
         builder = MetadataFilterBuilder()
         filters = {"status": {"$in": ["active", "pending"]}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "status" in sql
         assert "active" in sql and "pending" in sql
@@ -52,7 +60,7 @@ class TestBasicFilters:
         """Test $nin (not in) operator."""
         builder = MetadataFilterBuilder()
         filters = {"status": {"$nin": ["deleted", "archived"]}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "NOT" in sql
         assert "status" in sql
@@ -61,7 +69,7 @@ class TestBasicFilters:
         """Test $exists operator."""
         builder = MetadataFilterBuilder()
         filters = {"optional_field": {"$exists": True}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "optional_field" in sql
 
@@ -69,7 +77,7 @@ class TestBasicFilters:
         """Test $not operator."""
         builder = MetadataFilterBuilder()
         filters = {"status": {"$not": {"$eq": "deleted"}}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "NOT" in sql
         assert "status" in sql
@@ -78,7 +86,7 @@ class TestBasicFilters:
         """Filename filters should target the filename column."""
         builder = MetadataFilterBuilder()
         filters = {"filename": {"$eq": "report.pdf"}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "filename" in sql
         assert "report.pdf" in sql
@@ -88,7 +96,7 @@ class TestBasicFilters:
         """Filename filters should compose with metadata filters."""
         builder = MetadataFilterBuilder()
         filters = {"$or": [{"filename": {"$regex": "report"}}, {"status": "active"}]}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "OR" in sql
         assert "filename" in sql
@@ -102,7 +110,7 @@ class TestComparisonOperators:
         """Test $gt (greater than) operator with numbers."""
         builder = MetadataFilterBuilder()
         filters = {"priority": {"$gt": 5}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "priority" in sql
         assert ">" in sql
@@ -113,7 +121,7 @@ class TestComparisonOperators:
         """Test $gte (greater than or equal) operator."""
         builder = MetadataFilterBuilder()
         filters = {"score": {"$gte": 100}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "score" in sql
         assert ">=" in sql
@@ -122,7 +130,7 @@ class TestComparisonOperators:
         """Test $lt (less than) operator."""
         builder = MetadataFilterBuilder()
         filters = {"age": {"$lt": 65}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "age" in sql
         assert "<" in sql
@@ -131,7 +139,7 @@ class TestComparisonOperators:
         """Test $lte (less than or equal) operator."""
         builder = MetadataFilterBuilder()
         filters = {"temperature": {"$lte": 100}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "temperature" in sql
         assert "<=" in sql
@@ -140,7 +148,7 @@ class TestComparisonOperators:
         """Test comparison with decimal string."""
         builder = MetadataFilterBuilder()
         filters = {"price": {"$lte": "99.99"}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "price" in sql
         assert "<=" in sql
@@ -150,7 +158,7 @@ class TestComparisonOperators:
         """Test comparison with datetime string."""
         builder = MetadataFilterBuilder()
         filters = {"created_at": {"$gt": "2024-01-01T00:00:00Z"}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "created_at" in sql
         assert ">" in sql
@@ -162,7 +170,7 @@ class TestComparisonOperators:
         builder = MetadataFilterBuilder()
         dt = datetime(2024, 1, 1, 12, 0, 0)
         filters = {"created_at": {"$gte": dt}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "created_at" in sql
         assert ">=" in sql
@@ -172,7 +180,7 @@ class TestComparisonOperators:
         """Test comparison with date string."""
         builder = MetadataFilterBuilder()
         filters = {"start_date": {"$lt": "2024-12-31"}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "start_date" in sql
         assert "<" in sql
@@ -182,7 +190,7 @@ class TestComparisonOperators:
         builder = MetadataFilterBuilder()
         d = date(2024, 6, 15)
         filters = {"event_date": {"$gte": d}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "event_date" in sql
         assert "2024-06-15" in sql
@@ -196,7 +204,7 @@ class TestComparisonOperators:
                 {"age": {"$lt": 65}},
             ]
         }
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "age" in sql
         assert ">=" in sql
@@ -210,7 +218,7 @@ class TestTypeOperator:
         """Test $type operator with single type."""
         builder = MetadataFilterBuilder()
         filters = {"value": {"$type": "number"}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "value" in sql
         assert "number" in sql or "metadata_types" in sql
@@ -219,7 +227,7 @@ class TestTypeOperator:
         """Test $type operator with list of types."""
         builder = MetadataFilterBuilder()
         filters = {"value": {"$type": ["number", "decimal"]}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "value" in sql
         # Should have OR clause for multiple types
@@ -229,7 +237,7 @@ class TestTypeOperator:
         """Test $type operator with type alias (should canonicalize)."""
         builder = MetadataFilterBuilder()
         filters = {"value": {"$type": "int"}}  # alias for 'number'
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "value" in sql
         # Should be canonicalized to 'number'
@@ -270,7 +278,7 @@ class TestComplexFilters:
                 {"active": True},
             ]
         }
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "AND" in sql
         assert "OR" in sql
@@ -288,7 +296,7 @@ class TestComplexFilters:
                 {"priority": {"$gt": 5}},
             ]
         }
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "priority" in sql
         assert "number" in sql or "metadata_types" in sql
@@ -302,7 +310,7 @@ class TestSQLInjectionProtection:
         """Test that single quotes are properly escaped."""
         builder = MetadataFilterBuilder()
         filters = {"name": "O'Brien"}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         # Should not break SQL - either escaped or safe
         assert "O'Brien" in sql or "O''Brien" in sql
@@ -313,14 +321,55 @@ class TestSQLInjectionProtection:
         filters = {"email": {"$regex": "'; DROP TABLE users; --"}}
 
         # Should not raise exception - should be escaped/sanitized
-        sql = builder.build(filters)
+        sql = render(builder, filters)
         assert sql is not None
+
+    def test_field_names_and_values_are_bound_not_written_into_the_sql(self):
+        """Nothing the caller supplies may reach the SQL text, whatever characters it contains."""
+        hostile = ["x' OR '1'='1", "a :b", "%(x)s", "back\\:slash", "'; DROP TABLE documents; --"]
+        for text_value in hostile:
+            filters = {
+                text_value: {"$eq": text_value, "$contains": text_value, "$regex": text_value, "$exists": True},
+                "tags": {"$in": [text_value]},
+                "filename": {"$in": [text_value], "$ne": text_value},
+            }
+            sql, params = MetadataFilterBuilder().build(filters)
+
+            assert text_value not in sql
+            assert "'" not in sql.replace("'string'", "").replace("'array'", "").replace("'\"'", "")
+            assert text_value in params.values()
+            assert all(f":{name} " in sql for name in params)
+
+    def test_regex_pattern_reaches_postgres_unchanged(self):
+        """A backslash in a pattern is a regex escape, as documented, not a literal backslash."""
+        sql, params = MetadataFilterBuilder().build({"filename": {"$regex": "^report_.*\\.pdf$"}})
+
+        assert list(params.values()) == ["^report_.*\\.pdf$"]
+
+    def test_non_finite_numbers_are_rejected(self):
+        for operand in ("NaN", "Infinity", "-Infinity"):
+            with pytest.raises(InvalidMetadataFilterError):
+                MetadataFilterBuilder().build({"score": {"$gt": operand}})
+
+    def test_filters_on_two_columns_can_share_a_statement(self):
+        _, app_params = TextColumnFilterBuilder("apps.app_id").build({"$eq": "a"})
+        _, name_params = TextColumnFilterBuilder("apps.name").build({"$in": ["b", "c"]})
+
+        assert not set(app_params) & set(name_params)
+
+    def test_a_shared_builder_keeps_each_build_separate(self):
+        builder = MetadataFilterBuilder()
+        _, first = builder.build({"a": "1"})
+        _, second = builder.build({"b": "2", "c": "3"})
+
+        assert len(first) < len(second)
+        assert '{"a": "1"}' in first.values() and '{"a": "1"}' not in second.values()
 
     def test_unicode_values(self):
         """Test that unicode values are properly handled."""
         builder = MetadataFilterBuilder()
         filters = {"name": "测试用户"}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "name" in sql
         # Unicode should be safely included
@@ -334,14 +383,14 @@ class TestEdgeCases:
         """Test that empty filters return empty string."""
         builder = MetadataFilterBuilder()
         filters = {}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert sql == ""
 
     def test_none_filters(self):
         """Test that None filters return empty string."""
         builder = MetadataFilterBuilder()
-        sql = builder.build(None)
+        sql = render(builder, None)
 
         assert sql == ""
 
@@ -349,7 +398,7 @@ class TestEdgeCases:
         """Test that zero is properly handled."""
         builder = MetadataFilterBuilder()
         filters = {"count": {"$gt": 0}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "count" in sql
         assert "0" in sql
@@ -358,7 +407,7 @@ class TestEdgeCases:
         """Test that negative numbers work."""
         builder = MetadataFilterBuilder()
         filters = {"balance": {"$lt": -100}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "balance" in sql
         assert "-100" in sql or "100" in sql  # May be represented differently
@@ -367,7 +416,7 @@ class TestEdgeCases:
         """Test handling of very large decimal values."""
         builder = MetadataFilterBuilder()
         filters = {"amount": {"$eq": "999999999999.99"}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "amount" in sql
 
@@ -375,7 +424,7 @@ class TestEdgeCases:
         """Test scientific notation in comparisons."""
         builder = MetadataFilterBuilder()
         filters = {"large_number": {"$gt": 1e10}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "large_number" in sql
 
@@ -383,7 +432,7 @@ class TestEdgeCases:
         """Test datetime with Z suffix."""
         builder = MetadataFilterBuilder()
         filters = {"timestamp": {"$gte": "2024-01-15T12:30:00Z"}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "timestamp" in sql
         assert "2024-01-15" in sql
@@ -392,7 +441,7 @@ class TestEdgeCases:
         """Test datetime with timezone offset."""
         builder = MetadataFilterBuilder()
         filters = {"timestamp": {"$lte": "2024-01-15T12:30:00+05:00"}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "timestamp" in sql
 
@@ -400,7 +449,7 @@ class TestEdgeCases:
         """Test leap year date."""
         builder = MetadataFilterBuilder()
         filters = {"date": {"$eq": "2024-02-29"}}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "date" in sql
         assert "2024-02-29" in sql
@@ -409,7 +458,7 @@ class TestEdgeCases:
         """Test empty string values."""
         builder = MetadataFilterBuilder()
         filters = {"field": ""}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "field" in sql
 
@@ -417,6 +466,6 @@ class TestEdgeCases:
         """Test field names containing dots."""
         builder = MetadataFilterBuilder()
         filters = {"nested.field.name": "value"}
-        sql = builder.build(filters)
+        sql = render(builder, filters)
 
         assert "nested.field.name" in sql or "nested" in sql

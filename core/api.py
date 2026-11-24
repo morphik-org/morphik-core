@@ -1383,7 +1383,8 @@ async def delete_cloud_app(
         if not token_app_id:
             raise HTTPException(status_code=403, detail="App-scoped token required to delete applications")
 
-    logger.info(f"Deleting app {app_name} for user {user_id} (admin_call={is_admin_call})")
+    caller = "admin secret" if is_admin_call else "app token"
+    logger.info(f"Deleting app {app_name} for user {user_id} (authorized by {caller})")
 
     from sqlalchemy import delete as sa_delete
     from sqlalchemy import select
