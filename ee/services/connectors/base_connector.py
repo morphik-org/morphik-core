@@ -1,4 +1,5 @@
 import hashlib
+import os
 import re
 from abc import ABC, abstractmethod
 from io import BytesIO
@@ -44,14 +45,12 @@ class BaseConnector(ABC):
 
     def _build_storage_path(self, base_dir: Union[str, Path], prefix: str, suffix: str) -> Path:
         """Construct a normalized, directory-confined path for storing connector secrets."""
-        base_path = Path(base_dir)
-        base_path.mkdir(parents=True, exist_ok=True)
-        filename = f"{prefix}{self.user_storage_id}{suffix}"
-        base_resolved = base_path.resolve()
-        full_path = (base_resolved / filename).resolve()
-        if base_resolved not in full_path.parents and full_path != base_resolved:
+        base = os.path.realpath(base_dir)
+        os.makedirs(base, exist_ok=True)
+        full_path = os.path.normpath(os.path.join(base, f"{prefix}{self.user_storage_id}{suffix}"))
+        if not full_path.startswith(base + os.sep):
             raise ValueError("Unsafe storage path resolved outside of configured directory")
-        return full_path
+        return Path(full_path)
 
     @abstractmethod
     async def get_auth_status(self) -> ConnectorAuthStatus:

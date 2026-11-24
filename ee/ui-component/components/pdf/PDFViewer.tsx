@@ -766,13 +766,11 @@ export function PDFViewer({ apiBaseUrl, authToken, initialDocumentId, onChatTogg
 
         console.log("Final download URL:", downloadUrl);
 
-        // Use the download URL to load the document
+        // Send the token only to our own API. Presigned storage URLs carry their own credentials.
+        const pageUrl = window.location.href;
+        const isApiUrl = new URL(downloadUrl, pageUrl).origin === new URL(apiBaseUrl ?? "", pageUrl).origin;
         const response = await fetch(downloadUrl, {
-          headers: downloadUrl.includes("s3.amazonaws.com")
-            ? {}
-            : {
-                ...(authToken && { Authorization: `Bearer ${authToken}` }),
-              },
+          headers: isApiUrl && authToken ? { Authorization: `Bearer ${authToken}` } : {},
         });
 
         if (!response.ok) {

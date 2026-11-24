@@ -1,7 +1,7 @@
 import logging
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import jwt
 from sqlalchemy import func, or_, select, text
@@ -450,22 +450,22 @@ class UserService:
                     stmt = stmt.where(AppModel.created_by_user_id == user_id)
 
             if app_id_filter:
-                app_id_clause = self._build_text_filter_clause(
+                app_id_clause, app_id_params = self._build_text_filter_clause(
                     app_id_filter,
                     field_name="app_id",
                     column="apps.app_id",
                     label="App ID",
                 )
-                stmt = stmt.where(text(app_id_clause))
+                stmt = stmt.where(text(app_id_clause).bindparams(**app_id_params))
 
             if name_filter:
-                name_clause = self._build_text_filter_clause(
+                name_clause, name_params = self._build_text_filter_clause(
                     name_filter,
                     field_name="name",
                     column="apps.name",
                     label="App name",
                 )
-                stmt = stmt.where(text(name_clause))
+                stmt = stmt.where(text(name_clause).bindparams(**name_params))
 
             stmt = stmt.offset(normalized_offset).limit(normalized_limit)
             result = await session.execute(stmt)
@@ -484,7 +484,9 @@ class UserService:
             for app in apps
         ]
 
-    def _build_text_filter_clause(self, filter_expression: Any, *, field_name: str, column: str, label: str) -> str:
+    def _build_text_filter_clause(
+        self, filter_expression: Any, *, field_name: str, column: str, label: str
+    ) -> Tuple[str, Dict[str, str]]:
         normalized = self._normalize_text_filter_expression(filter_expression, field_name, label)
         builder = TextColumnFilterBuilder(column)
         try:
