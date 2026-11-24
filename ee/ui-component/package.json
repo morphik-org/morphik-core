@@ -11,7 +11,6 @@
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,scss,md}\""
   },
   "dependencies": {
-    "@radix-ui/primitive": "^1.1.2",
     "@radix-ui/react-accordion": "^1.2.3",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-checkbox": "^1.1.5",
@@ -31,41 +30,28 @@
     "@tailwindcss/container-queries": "^0.1.1",
     "@types/react-syntax-highlighter": "^15.5.13",
     "eslint": "^8",
-    "eslint-config-next": "14.2.16",
+    "eslint-config-next": "15.5.29",
     "eslint-plugin-prettier": "^5.4.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
-    "accessor-fn": "^1.5.3",
-    "accordion": "^3.0.2",
-    "alert": "^6.0.2",
-    "caniuse-lite": "^1.0.30001714",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "formdata-node": "^6.0.3",
-    "label": "^0.2.2",
     "lucide-react": "^0.469.0",
-    "next": "^14",
+    "next": "~15.5.29",
     "next-themes": "^0.4.6",
-    "openai": "^4.28.4",
-    "pdfjs-dist": "^5.3.31",
-    "react": "^18",
-    "react-dom": "^18",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "react-pdf": "^9.2.1",
     "react-syntax-highlighter": "^15.6.1",
     "remark-gfm": "^4.0.1",
-    "shadcn": "^2.4.0-canary.11",
-    "shadcn-ui": "^0.9.4",
-    "sharp": "^0.34.1",
-    "sheet": "^0.2.0",
+    "sharp": "^0.35.5",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7",
-    "web-streams-polyfill": "^4.1.0"
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "@shadcn/ui": "^0.0.4",
     "@types/node": "^20",
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "eslint-config-prettier": "^10.1.2",
     "postcss": "^8.5.3",
     "prettier": "^3.5.3",
@@ -73,6 +59,6 @@
     "typescript": "^5.8.3"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.18"
   }
 }
