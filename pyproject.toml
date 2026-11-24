@@ -13,7 +13,6 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "fastapi>=0.115.12",
     "filetype>=1.2.0",
-    "flagembedding>=1.4.2",
     "google-api-python-client>=2.169.0",
     "google-auth>=2.40.1",
     "google-auth-oauthlib>=1.2.2",
@@ -48,8 +47,7 @@ dependencies = [
     "torch==2.13.0",
     "torchvision==0.28.0",
     "tqdm>=4.67.1",
-    # 5.24 removed transformers.modeling_attn_mask_utils, which FlagEmbedding 1.4.2 still imports.
-    "transformers>=5.10.0,<5.24",
+    "transformers>=5.10.0",
     "docling>=2.15.0",
     "pdf2image>=1.16.0",
     "uvicorn>=0.34.2",
