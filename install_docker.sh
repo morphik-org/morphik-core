@@ -400,14 +400,11 @@ echo ""
 read -p "Do you have a GPU available for Morphik to use? (y/N): " has_gpu < /dev/tty
 
 if [[ "$has_gpu" != "y" && "$has_gpu" != "Y" ]]; then
-    print_warning "Disabling multimodal embeddings and reranking since no GPU is available."
+    print_warning "Disabling multimodal embeddings since no GPU is available."
     print_info "Morphik will still work great with text-based embeddings!"
-    print_info "You can enable multimodal embeddings and reranking later if you add GPU support."
+    print_info "You can enable multimodal embeddings later if you add GPU support."
     # Disable ColPali in morphik.toml
     sed -i.bak 's/enable_colpali = true/enable_colpali = false/' morphik.toml
-    rm -f morphik.toml.bak
-    # Ensure reranking is disabled in morphik.toml
-    sed -i.bak 's/use_reranker = .*/use_reranker = false/' morphik.toml
     rm -f morphik.toml.bak
     print_success "Configuration updated for CPU-only operation."
 else
