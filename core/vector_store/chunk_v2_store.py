@@ -375,9 +375,9 @@ class ChunkV2Store:
                 conditions.append(ChunkV2Model.folder_path.in_(folder_paths))
 
             if metadata_filters:
-                clause = self._metadata_filter_builder.build(metadata_filters)
+                clause, clause_params = self._metadata_filter_builder.build(metadata_filters)
                 if clause:
-                    conditions.append(text(clause))
+                    conditions.append(text(clause).bindparams(**clause_params))
 
             distance = ChunkV2Model.embedding.op("<=>")(query_embedding)
             query = (

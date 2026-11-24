@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import desc, select, text
 from sqlalchemy.exc import ProgrammingError
@@ -473,9 +473,10 @@ class PostgresDatabase:
         try:
             async with self.async_session() as session:
                 access_filter = self._build_access_filter_optimized(auth)
-                metadata_filter = self._build_metadata_filter(filters)
+                metadata_filter, metadata_params = self._build_metadata_filter(filters)
                 system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
                 filter_params = self._build_filter_params(auth, system_filters)
+                filter_params.update(metadata_params)
 
                 where_clauses = [f"({access_filter})"]
                 if metadata_filter:
@@ -1124,9 +1125,10 @@ class PostgresDatabase:
             async with self.async_session() as session:
                 # Build query
                 access_filter = self._build_access_filter_optimized(auth)
-                metadata_filter = self._build_metadata_filter(filters)
+                metadata_filter, metadata_params = self._build_metadata_filter(filters)
                 system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
                 filter_params = self._build_filter_params(auth, system_filters)
+                filter_params.update(metadata_params)
 
                 logger.debug(f"Access filter: {access_filter}")
                 logger.debug(f"Metadata filter: {metadata_filter}")
@@ -1216,8 +1218,8 @@ class PostgresDatabase:
         # Filter by owner_id to maintain backwards compatibility
         return "owner_id = :user_id"
 
-    def _build_metadata_filter(self, filters: Optional[Dict[str, Any]]) -> str:
-        """Delegate metadata filtering to the shared builder (supports arrays, regex, substring operators)."""
+    def _build_metadata_filter(self, filters: Optional[Dict[str, Any]]) -> Tuple[str, Dict[str, str]]:
+        """Delegate metadata filtering to the shared builder; returns the clause and its bound parameters."""
         return self._metadata_filter_builder.build(filters)
 
     def _build_system_metadata_filter_optimized(self, system_filters: Optional[Dict[str, Any]]) -> str:
@@ -2712,9 +2714,10 @@ class PostgresDatabase:
             async with self.async_session() as session:
                 # Build base query using existing patterns
                 access_filter = self._build_access_filter_optimized(auth)
-                metadata_filter = self._build_metadata_filter(filters)
+                metadata_filter, metadata_params = self._build_metadata_filter(filters)
                 system_metadata_filter = self._build_system_metadata_filter_optimized(system_filters)
                 filter_params = self._build_filter_params(auth, system_filters)
+                filter_params.update(metadata_params)
 
                 # Build WHERE clauses
                 where_clauses = [f"({access_filter})"]
