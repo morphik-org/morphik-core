@@ -24,7 +24,6 @@ from core.models.documents import ChunkResult, Document, DocumentContent, Docume
 from core.models.prompts import QueryPromptOverrides
 from core.models.summary import SummaryResponse, SummaryUpsertRequest
 from core.parser.base_parser import BaseParser
-from core.reranker.base_reranker import BaseReranker
 from core.storage.base_storage import BaseStorage
 from core.vector_store.base_vector_store import BaseVectorStore
 from core.vector_store.chunk_v2_store import ChunkV2Store
@@ -57,7 +56,6 @@ class DocumentService:
         parser: BaseParser,
         embedding_model: BaseEmbeddingModel,
         completion_model: Optional[BaseCompletionModel] = None,
-        reranker: Optional[BaseReranker] = None,
         enable_colpali: bool = False,
         colpali_embedding_model=None,  # Optional[ColpaliEmbeddingModel] = None,
         colpali_vector_store: Optional[BaseVectorStore] = None,
@@ -69,7 +67,6 @@ class DocumentService:
         self.parser = parser
         self.embedding_model = embedding_model
         self.completion_model = completion_model
-        self.reranker = reranker
         self.colpali_embedding_model = colpali_embedding_model
         self.colpali_vector_store = colpali_vector_store
         self.v2_chunk_store = v2_chunk_store
@@ -211,12 +208,6 @@ class DocumentService:
             local_perf = True
             retrieve_start_time = time.time()
 
-        # 4 configurations:
-        # 1. No reranking, no colpali -> just return regular chunks
-        # 2. No reranking, colpali  -> return colpali chunks + regular chunks - no need to run smaller colpali model
-        # 3. Reranking, no colpali -> sort regular chunks by re-ranker score
-        # 4. Reranking, colpali -> return merged chunks sorted by smaller colpali model score
-
         # Setup phase
         if perf_tracker:
             perf_tracker.start_phase("retrieve_setup")
@@ -224,7 +215,6 @@ class DocumentService:
             setup_start = time.time()
 
         settings = get_settings()
-        should_rerank = use_reranking if use_reranking is not None else settings.USE_RERANKING
         multivector_available = bool(self.colpali_embedding_model and self.colpali_vector_store)
         requested_multivector = use_colpali if use_colpali is not None else False
         using_multivector = bool(requested_multivector and settings.ENABLE_COLPALI and multivector_available)
@@ -379,22 +369,14 @@ class DocumentService:
         # Check if we're using colpali multivector search
         search_multi = using_multivector and self.colpali_vector_store and query_embedding_multivector is not None
 
-        # For regular reranking (without colpali), we'll use the existing reranker if available
-        # When ColPali is enabled we rely on the ColPali vector store scoring directly.
-        use_standard_reranker = should_rerank and (not using_multivector) and self.reranker is not None
-
         # Search chunks with vector similarity in parallel
-        # When using standard reranker, we get more chunks initially to improve reranking quality
         search_tasks = []
         if not using_multivector:
-            oversample_k = k
-            if use_standard_reranker:
-                oversample_k = max(k, min(3 * k, 20))
             search_tasks.append(
                 measure_phase(
                     self.vector_store.query_similar(
                         query_embedding_regular,
-                        k=oversample_k,
+                        k=k,
                         doc_ids=doc_ids,
                         app_id=auth.app_id,
                         skip_image_content=skip_image_content,
@@ -450,22 +432,6 @@ class DocumentService:
                 f"Found {len(chunks_multivector)} similar chunks via multivector embedding "
                 f"since we are also using colpali"
             )
-
-        # Rerank chunks using the standard reranker if enabled and available
-        # This handles configuration 3: Reranking without colpali
-        if perf_tracker:
-            perf_tracker.start_phase("retrieve_reranking")
-        else:
-            reranking_start = time.time()
-
-        if chunks and use_standard_reranker:
-            chunks = await self.reranker.rerank(query, chunks)
-            chunks.sort(key=lambda x: x.score, reverse=True)
-            chunks = chunks[:k]
-            logger.debug(f"Reranked {k*10} chunks and selected the top {k}")
-
-        if not perf_tracker:
-            phase_times["reranking"] = time.time() - reranking_start
 
         # Combine multiple chunk sources if needed
         if perf_tracker:
@@ -1059,7 +1025,7 @@ class DocumentService:
             min_score: Minimum similarity score
             max_tokens: Maximum tokens for completion
             temperature: Temperature for completion
-            use_reranking: Whether to use reranking
+            use_reranking: Deprecated and ignored
             use_colpali: Whether to use colpali embedding
             prompt_overrides: Optional customizations for entity extraction, resolution, and query prompts
             folder_name: Optional folder to scope the operation to

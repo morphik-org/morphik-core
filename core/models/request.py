@@ -141,7 +141,7 @@ class RetrieveRequest(BaseModel):
     )
     use_reranking: Optional[bool] = Field(
         default=None,
-        description="When provided, overrides the workspace reranking configuration for this request.",
+        description="Deprecated and ignored: the text reranker has been removed.",
     )
     use_colpali: Optional[bool] = Field(
         default=None,

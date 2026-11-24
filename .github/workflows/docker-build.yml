@@ -150,15 +150,6 @@ jobs:
           model = "openai_gpt4-1-mini"
           frame_sample_rate = -1
 
-          [reranker]
-          use_reranker = false
-          provider = "flag"
-          model_name = "BAAI/bge-reranker-large"
-          query_max_length = 256
-          passage_max_length = 512
-          use_fp16 = true
-          device = "cpu"
-
           [storage]
           provider = "local"
           storage_path = "./storage"

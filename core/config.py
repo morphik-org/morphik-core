@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import os
 from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional
@@ -13,6 +14,8 @@ from utils.env_loader import load_local_env
 # Default to loading from .env unless a secret manager (e.g., Infisical) is
 # injecting variables.
 load_local_env(override=True)
+
+logger = logging.getLogger(__name__)
 
 
 # ColQwen model. The processor is loaded at a pinned revision: the upstream repository changed its
@@ -97,15 +100,6 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int
     USE_CONTEXTUAL_CHUNKING: bool = False
     PARSER_XML: ParserXMLSettings = ParserXMLSettings()
-
-    # Reranker configuration
-    USE_RERANKING: bool
-    RERANKER_PROVIDER: Optional[Literal["flag"]] = None
-    RERANKER_MODEL: Optional[str] = None
-    RERANKER_QUERY_MAX_LENGTH: Optional[int] = None
-    RERANKER_PASSAGE_MAX_LENGTH: Optional[int] = None
-    RERANKER_USE_FP16: Optional[bool] = None
-    RERANKER_DEVICE: Optional[str] = None
 
     # Storage configuration
     STORAGE_PROVIDER: Literal["local", "aws-s3"]
@@ -299,19 +293,8 @@ def get_settings() -> Settings:
             ignore_tags=xml_config.get("ignore_tags", ["TOC", "INDEX"]),
         )
 
-    # Load reranker config
-    settings_dict["USE_RERANKING"] = config["reranker"]["use_reranker"]
-    if settings_dict["USE_RERANKING"]:
-        settings_dict.update(
-            {
-                "RERANKER_PROVIDER": config["reranker"]["provider"],
-                "RERANKER_MODEL": config["reranker"]["model_name"],
-                "RERANKER_QUERY_MAX_LENGTH": config["reranker"]["query_max_length"],
-                "RERANKER_PASSAGE_MAX_LENGTH": config["reranker"]["passage_max_length"],
-                "RERANKER_USE_FP16": config["reranker"]["use_fp16"],
-                "RERANKER_DEVICE": config["reranker"]["device"],
-            }
-        )
+    if config.get("reranker", {}).get("use_reranker"):
+        logger.warning("The [reranker] section in morphik.toml is ignored: the text reranker has been removed.")
 
     # Load storage config
     settings_dict.update(

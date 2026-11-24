@@ -13,7 +13,6 @@ No behaviour has changed – only the physical location of the code.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from core.completion.litellm_completion import LiteLLMCompletionModel
 from core.config import get_settings
@@ -21,7 +20,6 @@ from core.database.postgres_database import PostgresDatabase
 from core.embedding.colpali_api_embedding_model import ColpaliApiEmbeddingModel
 from core.embedding.litellm_embedding import LiteLLMEmbeddingModel
 from core.parser.morphik_parser import MorphikParser
-from core.reranker.flag_reranker import FlagReranker
 from core.services.document_service import DocumentService
 from core.services.ingestion_service import IngestionService
 from core.services.v2_document_service import V2DocumentService
@@ -96,25 +94,6 @@ logger.info("Initialized LiteLLM embedding model with model key: %s", settings.E
 
 completion_model = LiteLLMCompletionModel(model_key=settings.COMPLETION_MODEL)
 logger.info("Initialized LiteLLM completion model with model key: %s", settings.COMPLETION_MODEL)
-
-# ---------------------------------------------------------------------------
-# Optional reranker
-# ---------------------------------------------------------------------------
-
-reranker: Optional[FlagReranker] = None
-if settings.USE_RERANKING:
-    match settings.RERANKER_PROVIDER:
-        case "flag":
-            reranker = FlagReranker(
-                model_name=settings.RERANKER_MODEL,
-                device=settings.RERANKER_DEVICE,
-                use_fp16=settings.RERANKER_USE_FP16,
-                query_max_length=settings.RERANKER_QUERY_MAX_LENGTH,
-                passage_max_length=settings.RERANKER_PASSAGE_MAX_LENGTH,
-            )
-        case _:
-            raise ValueError(f"Unsupported reranker provider: {settings.RERANKER_PROVIDER}")
-logger.debug("Reranker enabled: %s", bool(reranker))
 
 # ---------------------------------------------------------------------------
 # ColPali multi-vector support
@@ -206,7 +185,6 @@ document_service = DocumentService(
     parser=parser,
     embedding_model=embedding_model,
     completion_model=completion_model,
-    reranker=reranker,
     enable_colpali=settings.ENABLE_COLPALI,
     colpali_embedding_model=colpali_embedding_model,
     colpali_vector_store=colpali_vector_store,
