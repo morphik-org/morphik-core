@@ -18,7 +18,6 @@ export function extractTokenFromUri(uri: string | undefined): string | null {
   if (!uri) return null;
 
   try {
-    console.log("Attempting to extract token from URI:", uri);
     // The URI format is: morphik://appname:token@host
     // We need to extract just the token part (after the colon and before the @)
 
@@ -35,15 +34,13 @@ export function extractTokenFromUri(uri: string | undefined): string | null {
     if (authPart.includes(":")) {
       // Format is appname:token
       const fullToken = authPart.split(":")[1];
-      console.log("Extracted token:", fullToken ? `${fullToken.substring(0, 5)}...` : "null");
       return fullToken;
     } else {
       // Old format with just token (no appname:)
-      console.log("Extracted token (old format):", authPart ? `${authPart.substring(0, 5)}...` : "null");
       return authPart;
     }
-  } catch (err) {
-    console.error("Error extracting token from URI:", err);
+  } catch {
+    console.error("Error extracting token from URI");
     return null;
   }
 }
@@ -85,10 +82,9 @@ export function getApiBaseUrlFromUri(uri: string | undefined, defaultUrl: string
       }
     }
 
-    console.log("Extracted API base URL:", host);
     return host;
-  } catch (err) {
-    console.error("Error extracting host from URI:", err);
+  } catch {
+    console.error("Error extracting host from URI");
     return defaultUrl; // Default on error
   }
 }
