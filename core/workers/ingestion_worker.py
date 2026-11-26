@@ -2133,7 +2133,7 @@ class WorkerSettings:
     health_check_interval = 600  # Extended to 10 minutes to reduce Redis overhead
     job_timeout = 7200  # Extended to 2 hours for large document processing
     max_tries = 5  # Retry failed jobs up to 5 times
-    poll_delay = 2.0  # Increased poll delay to prevent Redis connection saturation
+    poll_delay = settings.ARQ_POLL_DELAY
 
     # High reliability settings
     allow_abort_jobs = False  # Don't abort jobs on worker shutdown
