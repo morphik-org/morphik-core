@@ -1,0 +1,8 @@
+body{font:16px system-ui,sans-serif;color:#172033;background:#f5f7fb;margin:0}
+main{max-width:1100px;margin:0 auto;padding:2rem}.summary,.note{color:#526071}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1rem}
+.chart,table{background:white;border:1px solid #dbe2ec;border-radius:10px;padding:1rem}
+.chart svg{width:100%;height:auto}.axis{stroke:#94a3b8}.series{fill:none;stroke-width:3}
+circle{fill:white;stroke:currentColor;stroke-width:2}table{width:100%;border-collapse:collapse;padding:0}
+th,td{text-align:left;padding:.65rem;border-bottom:1px solid #e5e7eb}th{background:#eef2f7}
+.range{font-size:.9rem;color:#526071}
