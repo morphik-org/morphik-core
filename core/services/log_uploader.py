@@ -101,21 +101,30 @@ class LogUploader:
 
     def _upload_cycle(self) -> None:
         with self._lock:
-            telemetry_paths = self._gather_telemetry_files()
-            if not telemetry_paths:
-                LOGGER.debug("No telemetry events to upload")
-                return
+            telemetry_paths: Sequence[Path] = ()
+            enforce_budget = False
+            budget_root = self.log_dir
+            try:
+                telemetry_paths = self._gather_telemetry_files()
+                if not telemetry_paths:
+                    LOGGER.debug("No telemetry events to upload")
+                    return
 
-            bundle = self._build_telemetry_bundle(telemetry_paths)
-            if not bundle:
-                LOGGER.debug("Telemetry bundle contained no events")
-                return
+                bundle = self._build_telemetry_bundle(telemetry_paths)
+                if not bundle:
+                    LOGGER.debug("Telemetry bundle contained no events")
+                    return
 
-            if self._post_usage_payload(bundle):
-                self._truncate_files(telemetry_paths)
-                self._enforce_local_budget()
-            else:
-                LOGGER.warning("Telemetry proxy upload failed; retaining local files")
+                if self._post_usage_payload(bundle):
+                    enforce_budget = True
+                    self._truncate_files(telemetry_paths)
+                else:
+                    enforce_budget = True
+                    budget_root = self.telemetry_dir
+                    LOGGER.warning("Telemetry proxy upload failed; enforcing telemetry log budget before retry")
+            finally:
+                if enforce_budget:
+                    self._enforce_local_budget_safely(root=budget_root)
 
     def _gather_telemetry_files(self) -> List[Path]:
         files: List[Path] = []
@@ -271,17 +280,27 @@ class LogUploader:
             except OSError as exc:
                 LOGGER.warning("Unable to truncate %s: %s", path, exc)
 
-    def _enforce_local_budget(self) -> None:
+    def _enforce_local_budget_safely(self, *, root: Optional[Path] = None) -> None:
+        try:
+            self._enforce_local_budget(root=root)
+        except Exception as exc:
+            LOGGER.warning("Unable to enforce telemetry log budget: %s", exc, exc_info=True)
+
+    def _enforce_local_budget(self, *, root: Optional[Path] = None) -> None:
         if self.max_local_bytes <= 0:
             return
+        search_root = Path(root) if root is not None else self.log_dir
         files: List[tuple[Path, int, float]] = []
         total = 0
-        for path in self.log_dir.rglob("*"):
+        for path in search_root.rglob("*"):
             if not path.is_file():
                 continue
             try:
                 stat = path.stat()
             except FileNotFoundError:
+                continue
+            except OSError as exc:
+                LOGGER.warning("Unable to stat %s while enforcing log budget: %s", path, exc)
                 continue
             total += stat.st_size
             files.append((path, stat.st_size, stat.st_mtime))
@@ -292,6 +311,9 @@ class LogUploader:
             try:
                 path.unlink()
             except FileNotFoundError:
+                continue
+            except OSError as exc:
+                LOGGER.warning("Unable to remove %s while enforcing log budget: %s", path, exc)
                 continue
             LOGGER.warning("Removed %s to enforce %s-byte log budget", path, self.max_local_bytes)
             total -= size
